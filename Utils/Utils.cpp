@@ -11,10 +11,12 @@
 #include"Eigen/Dense"
 
 #ifdef _DEBUG
+#pragma comment(lib,"ComplexMat_d.lib")
 #pragma comment(lib, "Registration_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
 #else
+#pragma comment(lib,"ComplexMat.lib")
 #pragma comment(lib, "Registration.lib")
 #pragma comment(lib, "FormatConversion.lib")
 #pragma comment(lib, "Deflat.lib")

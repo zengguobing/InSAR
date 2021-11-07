@@ -7,11 +7,6 @@
 #include<iostream>
 #include<string>
 #include"..\include\sar_comm.h"
-#ifdef _DEBUG
-#pragma comment(lib,"ComplexMat_d.lib")
-#else
-#pragma comment(lib,"ComplexMat.lib")
-#endif // _DEBUG
 #define INPUTMAXSIZE 1024
 #define PI 3.141592653589793238
 #define VEL_C 299792458.0
