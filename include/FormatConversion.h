@@ -4,7 +4,7 @@
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
 #include"hdf5.h"
-#include"..\..\tinyxml_2_6_2\tinyxml\tinyxml.h"
+#include"..\include\tinyxml.h"
 #define Big2Little32(A) ((uint32_t)(A&0xff000000)>>24|(uint32_t)(A&0x00ff0000)>>8 | (uint32_t)(A&0x0000ff00)<<8|(uint32_t)(A&0x000000ff)<<24)
 #define Big2Little16(A) ((uint16_t)(A&0xff00)>>8 | (uint16_t)(A&0x00ff)<<8)
 /*********************************************************/

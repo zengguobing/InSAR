@@ -3,11 +3,7 @@
 #define __FILTER__H__
 #include"..\include\Package.h"
 #include"..\include\Utils.h"
-#ifdef _DEBUG
-#pragma comment(lib, "Utils_d.lib")
-#else
-#pragma comment(lib, "Utils.lib")
-#endif // _DEBUG
+
 
 
 

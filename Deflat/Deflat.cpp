@@ -3,11 +3,15 @@
 
 #include "stdafx.h"
 #include"..\include\Deflat.h"
-#include"FormatConversion.h"
+#include"..\include\FormatConversion.h"
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
+#pragma comment(lib, "ComplexMat_d.lib")
+#pragma comment(lib, "Utils_d.lib")
 #else
 #pragma comment(lib, "FormatConversion.lib")
+#pragma comment(lib, "ComplexMat.lib")
+#pragma comment(lib, "Utils.lib")
 #endif // _DEBUG
 using namespace cv;
 inline bool return_check(int ret, const char* detail_info, const char* error_head)

@@ -13,6 +13,13 @@
 	   fprintf(stderr, "%s\n\n", message); \
 	   return -1; \
 }
+#ifdef _DEBUG
+#pragma comment(lib, "ComplexMat.lib")
+#pragma comment(lib, "Utils.lib")
+#else
+#pragma comment(lib, "ComplexMat.lib")
+#pragma comment(lib, "Utils.lib")
+#endif // _DEBUG
 using namespace cv;
 inline bool return_check(int ret, const char* detail_info, const char* error_head)
 {

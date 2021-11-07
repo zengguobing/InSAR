@@ -4,13 +4,7 @@
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
 #include"..\include\Utils.h"
-#ifdef _DEBUG
-#pragma comment(lib, "ComplexMat_d.lib")
-#pragma comment(lib, "Utils_d.lib")
-#else
-#pragma comment(lib, "ComplexMat.lib")
-#pragma comment(lib, "Utils.lib")
-#endif // _DEBUG
+
 
 
 class InSAR_API Deflat

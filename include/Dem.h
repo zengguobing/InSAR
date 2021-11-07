@@ -3,13 +3,7 @@
 #define __DEM__H__
 #include"..\include\Package.h"
 #include"..\include\Deflat.h"
-#ifdef _DEBUG
-#pragma comment(lib, "Utils_d.lib")
-#pragma comment(lib, "Deflat_d.lib")
-#else
-#pragma comment(lib, "Utils.lib")
-#pragma comment(lib, "Deflat.lib")
-#endif // _DEBUG
+
 
 
 class InSAR_API Dem
