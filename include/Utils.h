@@ -6,7 +6,7 @@
 #include<fstream>
 #include<iostream>
 #include<string>
-#include"sar_comm.h"
+#include"..\include\sar_comm.h"
 #ifdef _DEBUG
 #pragma comment(lib,"ComplexMat_d.lib")
 #else
