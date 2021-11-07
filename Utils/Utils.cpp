@@ -8554,7 +8554,7 @@ int Utils::MB_phase_estimation(
 
 	}
 
-	//分块读取、计算、储存
+	//分块读取、计算和储存
 
 	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad;
 	vector<ComplexMat> slc_series, slc_series_filter;
