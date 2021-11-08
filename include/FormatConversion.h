@@ -411,10 +411,10 @@ public:
 	* 参数3：自定义h5文件
 	*/
 	int ALOS2h5(const char* IMG_file, const char* LED_file, const char* dst_h5);
-	/*
-	* 将原h5文件中的参数信息拷贝到另一个h5中
-	* 参数1：原始h5文件
-	* 参数2：目标h5文件
+	/** @brief 将原h5文件中的参数信息拷贝到另一个h5中
+	
+    @param Input_file        原始h5文件
+	@param Output_file       输出h5文件
 	*/
 	int Copy_para_from_h5_2_h5(const char* Input_file, const char* Output_file);
 
