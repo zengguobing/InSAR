@@ -4177,3 +4177,101 @@ int XMLFile::get_stateVec_from_sentinel(Mat& stateVec)
 	return 0;
 }
 
+int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char* Output_file)
+{
+	if (Input_file == NULL ||
+		Output_file == NULL)
+	{
+		fprintf(stderr, "Copy_para_from_h5_2_h5(): input check failed!\n");
+		return -1;
+	}
+
+	string tmp_str;;
+	Mat tmp_mat;
+	/*图像类型*/
+	if (!read_str_from_h5(Input_file, "file_type", tmp_str))
+		write_str_to_h5(Output_file, "file_type", tmp_str.c_str());
+	/*卫星名称*/
+	if (!read_str_from_h5(Input_file, "sensor", tmp_str))
+		write_str_to_h5(Output_file, "sensor", tmp_str.c_str());
+	/*极化方式*/
+	if (!read_str_from_h5(Input_file, "polarization", tmp_str))
+		write_str_to_h5(Output_file, "polarization", tmp_str.c_str());
+	/*拍摄模式*/
+	if (!read_str_from_h5(Input_file, "imaging_mode", tmp_str))
+		write_str_to_h5(Output_file, "imaging_mode", tmp_str.c_str());
+	/*左右视*/
+	if (!read_str_from_h5(Input_file, "lookside", tmp_str))
+		write_str_to_h5(Output_file, "lookside", tmp_str.c_str());
+	/*轨道方向*/
+	if (!read_str_from_h5(Input_file, "orbit_dir", tmp_str))
+		write_str_to_h5(Output_file, "orbit_dir", tmp_str.c_str());
+	/*轨道高度*/
+	if (!read_array_from_h5(Input_file, "orbit_altitude", tmp_mat))
+		write_array_to_h5(Output_file, "orbit_altitude", tmp_mat);
+	/*载频*/
+	if (!read_array_from_h5(Input_file, "carrier_frequency", tmp_mat))
+		write_array_to_h5(Output_file, "carrier_frequency", tmp_mat);
+	/*航偏角*/
+	if (!read_array_from_h5(Input_file, "heading", tmp_mat))
+		write_array_to_h5(Output_file, "heading", tmp_mat);
+	/*脉冲重复频率*/
+	if (!read_array_from_h5(Input_file, "prf", tmp_mat))
+		write_array_to_h5(Output_file, "prf", tmp_mat);
+
+	/*方位向分辨率*/
+	if (!read_array_from_h5(Input_file, "azimuth_resolution", tmp_mat))
+		write_array_to_h5(Output_file, "azimuth_resolution", tmp_mat);
+	/*距离向分辨率*/
+	if (!read_array_from_h5(Input_file, "range_resolution", tmp_mat))
+		write_array_to_h5(Output_file, "range_resolution", tmp_mat);
+	/*方位向采样间隔*/
+	if (!read_array_from_h5(Input_file, "azimuth_spacing", tmp_mat))
+		write_array_to_h5(Output_file, "azimuth_spacing", tmp_mat);
+	/*距离向采样间隔*/
+	if (!read_array_from_h5(Input_file, "range_spacing", tmp_mat))
+		write_array_to_h5(Output_file, "range_spacing", tmp_mat);
+	/*卫星轨道*/
+	if (!read_array_from_h5(Input_file, "state_vec", tmp_mat))
+		write_array_to_h5(Output_file, "state_vec", tmp_mat);
+	/*精密轨道数据*/
+	if (!read_array_from_h5(Input_file, "fine_state_vec", tmp_mat))
+		write_array_to_h5(Output_file, "fine_state_vec", tmp_mat);
+	/*拍摄开始时间*/
+	if (!read_str_from_h5(Input_file, "acquisition_start_time", tmp_str))
+		write_str_to_h5(Output_file, "acquisition_start_time", tmp_str.c_str());
+	/*拍摄开始时间*/
+	if (!read_str_from_h5(Input_file, "acquisition_stop_time", tmp_str))
+		write_str_to_h5(Output_file, "acquisition_stop_time", tmp_str.c_str());
+	/*多普勒中心频率*/
+	if (!read_array_from_h5(Input_file, "doppler_centroid", tmp_mat))
+		write_array_to_h5(Output_file, "doppler_centroid", tmp_mat);
+	/*多普勒中心频率系数a*/
+	if (!read_array_from_h5(Input_file, "doppler_coefficient_a", tmp_mat))
+		write_array_to_h5(Output_file, "doppler_coefficient_a", tmp_mat);
+	/*多普勒中心频率系数b*/
+	if (!read_array_from_h5(Input_file, "doppler_coefficient_b", tmp_mat))
+		write_array_to_h5(Output_file, "doppler_coefficient_b", tmp_mat);
+	/*经度拟合系数*/
+	if (!read_array_from_h5(Input_file, "lon_coefficient", tmp_mat))
+		write_array_to_h5(Output_file, "lon_coefficient", tmp_mat);
+	/*纬度拟合系数*/
+	if (!read_array_from_h5(Input_file, "lat_coefficient", tmp_mat))
+		write_array_to_h5(Output_file, "lat_coefficient", tmp_mat);
+	/*行坐标拟合系数*/
+	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
+		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
+	/*列坐标拟合系数b*/
+	if (!read_array_from_h5(Input_file, "col_coefficient", tmp_mat))
+		write_array_to_h5(Output_file, "col_coefficient", tmp_mat);
+	/*下视角拟合系数*/
+	if (!read_array_from_h5(Input_file, "inc_coefficient", tmp_mat))
+		write_array_to_h5(Output_file, "inc_coefficient", tmp_mat);
+	/*下视角拟合系数r*/
+	if (!read_array_from_h5(Input_file, "inc_coefficient_r", tmp_mat))
+		write_array_to_h5(Output_file, "inc_coefficient_r", tmp_mat);
+	/*行坐标拟合系数*/
+	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
+		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
+	return 0;
+}
