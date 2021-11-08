@@ -35,6 +35,19 @@ inline float ReverseFloat(const float inFloat)
 	return retVal;
 }
 
+FormatConversion::FormatConversion()
+{
+	memset(this->error_head, 0, 256);
+	memset(this->parallel_error_head, 0, 256);
+	strcpy(this->error_head, "FORMATCONVERSION_DLL_ERROR: error happens when using ");
+	strcpy(this->parallel_error_head, "FORMATCONVERSION_DLL_ERROR: error happens when using parallel computing in function: ");
+}
+
+FormatConversion::~FormatConversion()
+{
+
+}
+
 int FormatConversion::utc2gps(const char* utc_time, double* gps_time)
 {
 	if (utc_time == NULL || gps_time == NULL)
@@ -3044,6 +3057,16 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 
 
 
+XMLFile::XMLFile()
+{
+	memset(m_xmlFileName, 0, 2048);
+	memset(this->error_head, 0, 256);
+	strcpy(this->error_head, "XMLFILE_DLL_ERROR: error happens when using ");
+}
+
+XMLFile::~XMLFile()
+{
+}
 
 int XMLFile::XMLFile_creat_new_project(const char* project_path, const char* project_name, const char* project_version)
 {

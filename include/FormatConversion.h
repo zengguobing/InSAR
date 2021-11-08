@@ -191,16 +191,7 @@ private:
 	
 };
 
-XMLFile::XMLFile()
-{
-	memset(m_xmlFileName, 0, 2048);
-	memset(this->error_head, 0, 256);
-	strcpy(this->error_head, "XMLFILE_DLL_ERROR: error happens when using ");
-}
 
-XMLFile::~XMLFile()
-{
-}
 
 /**************************************************/
 /*********           格式转换类库        **********/
@@ -424,18 +415,7 @@ private:
 
 };
 
-FormatConversion::FormatConversion()
-{
-	memset(this->error_head, 0, 256);
-	memset(this->parallel_error_head, 0, 256);
-	strcpy(this->error_head, "FORMATCONVERSION_DLL_ERROR: error happens when using ");
-	strcpy(this->parallel_error_head, "FORMATCONVERSION_DLL_ERROR: error happens when using parallel computing in function: ");
-}
 
-FormatConversion::~FormatConversion()
-{
-
-}
 
 
 
