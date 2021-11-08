@@ -3080,19 +3080,23 @@ int XMLFile::XMLFile_creat_new_project(const char* project_path, const char* pro
 	}
 	TiXmlDeclaration* declaration = new TiXmlDeclaration("1.0", "UTF-8", "yes");
 	doc.LinkEndChild(declaration);
+	TiXmlElement* Root = new TiXmlElement("Root");
+	doc.LinkEndChild(Root);
 	TiXmlElement* prj_info_node = new TiXmlElement("project_info");
-	doc.LinkEndChild(prj_info_node);
+	Root->LinkEndChild(prj_info_node);
 	prj_info_node->SetAttribute("version", "1.0");
 	TiXmlElement* prj_name_node = new TiXmlElement("project_name");
-	prj_name_node->LinkEndChild(new TiXmlText(project_name));
+	TiXmlText* content = new TiXmlText(project_name);
+	prj_name_node->LinkEndChild(content);
 	prj_info_node->LinkEndChild(prj_name_node);
+	content = new TiXmlText(project_path);
 	TiXmlElement* prj_path_node = new TiXmlElement("project_path");
-	prj_path_node->LinkEndChild(new TiXmlText(project_path));
+	prj_path_node->LinkEndChild(content);
 	prj_info_node->LinkEndChild(prj_path_node);
 
 	string path(project_path); string name(project_name);
-	name = path + "\\" + name;
-	this->doc.SaveFile(name.c_str());
+	string filename = path + "\\" + name;
+	this->doc.SaveFile(filename.c_str());
 	return 0;
 }
 
