@@ -5673,6 +5673,12 @@ int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_
 	Mat Slave_indx = Mat::zeros(1, n_images - 1, CV_32S);
 	Mat offset_topleft = Mat::zeros(n_images, 2, CV_32S);
 	int count = 0;
+	//创建配准后输出的h5文件
+	for (int i = 0; i < n_images; i++)
+	{
+		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	}
 	for (int i = 0; i < n_images; i++)
 	{
 		if (i != Master_index - 1)
