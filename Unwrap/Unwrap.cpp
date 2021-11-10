@@ -59,6 +59,18 @@ inline bool parallel_flag_change(volatile bool parallel_flag, int ret)
 		return false;
 	}
 }
+Unwrap::Unwrap()
+{
+	memset(this->error_head, 0, 256);
+	memset(this->parallel_error_head, 0, 256);
+	strcpy(this->error_head, "UNWRAP_DLL_ERROR: error happens when using ");
+	strcpy(this->parallel_error_head, "UNWRAP_DLL_ERROR: error happens when using parallel computing in function: ");
+}
+
+Unwrap::~Unwrap()
+{
+}
+
 int Unwrap::MCF(
 	Mat& wrapped_phase,
 	Mat& unwrapped_phase,
