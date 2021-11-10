@@ -5687,10 +5687,29 @@ int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_
 			count++;
 		}
 	}
+	//¼ì²é²¢È·±£SARÍ¼Ïñ³ß´ç´óÐ¡Ò»ÖÂ
+	int min_row = 10000000, min_col = 10000000;
+	Mat azimuth_len, range_len;
+	for (int i = 0; i < n_images; i++)
+	{
+		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", azimuth_len);
+		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", range_len);
+		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+		min_row = azimuth_len.at<int>(0, 0) > min_row ? min_row : azimuth_len.at<int>(0, 0);
+		min_col = range_len.at<int>(0, 0) > min_col ? min_col : range_len.at<int>(0, 0);
+	}
+	if (min_col < 1 || min_row < 1)
+	{
+		fprintf(stderr, "invalide SAR images size\n");
+		return -1;
+	}
+	
 	////////////´ÖÅä×¼///////////////
 	ComplexMat master, slave, master_out, slave_out;
 	ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master);
 	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+	master = master(cv::Range(0, min_row), cv::Range(0, min_col));
 	if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 	int nr = master.GetRows();
 	int nc = master.GetCols();
@@ -5701,6 +5720,7 @@ int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_
 		int slave_img = Slave_indx.at<int>(0, i);
 		ret = conversion.read_slc_from_h5(SAR_images[slave_img].c_str(), slave);
 		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		slave = slave(cv::Range(0, min_row), cv::Range(0, min_col));
 		if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
 		ret = coregis.real_coherent(master, slave, &move_r, &move_c);
 		if (return_check(ret, "real_coherent()", error_head)) return -1;
@@ -5770,6 +5790,12 @@ int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_
 	}
 	ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master);
 	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	azimuth_len.at<int>(0, 0) = master.GetRows();
+	range_len.at<int>(0, 0) = master.GetCols();
+	ret = conversion.write_array_to_h5(SAR_images_out[Master_index - 1].c_str(), "azimuth_len", azimuth_len);
+	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+	ret = conversion.write_array_to_h5(SAR_images_out[Master_index - 1].c_str(), "range_len", range_len);
+	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	//¸¨Í¼Ïñ²Ã¼ô
 	for (int i = 0; i < n_images - 1; i++)
 	{
@@ -5842,6 +5868,12 @@ int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_
 		//Ð´³ö
 		ret = conversion.write_slc_to_h5(SAR_images_out[slave_ix].c_str(), slave);
 		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		azimuth_len.at<int>(0, 0) = slave.GetRows();
+		range_len.at<int>(0, 0) = slave.GetCols();
+		ret = conversion.write_array_to_h5(SAR_images_out[slave_ix].c_str(), "azimuth_len", azimuth_len);
+		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+		ret = conversion.write_array_to_h5(SAR_images_out[slave_ix].c_str(), "range_len", range_len);
+		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	}
 	offset_topleft.copyTo(offset);
 
