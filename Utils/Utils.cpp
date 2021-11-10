@@ -8499,7 +8499,6 @@ int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, Com
 int Utils::MB_phase_estimation(
 	vector<string> coregis_slc_files,
 	vector<string> phase_files, 
-	vector<string> flat_phase_files,
 	int master_indx, 
 	int blocksize_row, 
 	int blocksize_col, 
@@ -8513,7 +8512,6 @@ int Utils::MB_phase_estimation(
 {
 	if (coregis_slc_files.size() < 2 ||
 		phase_files.size() != coregis_slc_files.size() ||
-		flat_phase_files.size() != phase_files.size()||
 		master_indx < 1 ||
 		master_indx > phase_files.size() ||
 		blocksize_row < 100 ||
@@ -8558,8 +8556,11 @@ int Utils::MB_phase_estimation(
 	}
 
 	//去平地相位
-	Mat stateVec1, prf, lon_coef, lat_coef, carrier_frequency, stateVec2, prf2, phase, phase_deflat, flat_phase;
+	Mat stateVec1, prf, lon_coef, lat_coef, 
+		carrier_frequency, stateVec2, prf2, phase,
+		phase_deflat, flat_phase_coef, azimuth_len, range_len;
 	phase = Mat::zeros(nr, nc, CV_64F);
+	azimuth_len = Mat::zeros(1, 1, CV_32S); range_len = Mat::zeros(1, 1, CV_32S);
 	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "state_vec", stateVec1);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "prf", prf);
@@ -8574,22 +8575,28 @@ int Utils::MB_phase_estimation(
 	{
 		if (i != master_indx - 1)
 		{
-			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "state_vec", stateVec2);
-			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "prf", prf2);
-			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-			ret = flat.deflat(stateVec1, stateVec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0, 1 / prf.at<double>(0, 0),
-				1 / prf2.at<double>(0, 0), 1, 3e8 / carrier_frequency.at<double>(0, 0), phase, flat_phase);
-			if (return_check(ret, "deflat()", error_head)) return -1;
-			ret = conversion.creat_new_h5(flat_phase_files[i].c_str());
-			if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-			ret = conversion.write_array_to_h5(flat_phase_files[i].c_str(), "phase", flat_phase);
-			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+			
 			//预先填充干涉相位
 			ret = conversion.creat_new_h5(phase_files[i].c_str());
 			if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "phase", flat_phase);
+			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "phase", phase);
 			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+			azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
+			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "azimuth_len", azimuth_len);
+			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "range_len", range_len);
+			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+			if (b_flat)
+			{
+				ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "state_vec", stateVec2);
+				if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+				ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "prf", prf2);
+				if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+				ret = flat.deflat(stateVec1, stateVec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0, 1 / prf.at<double>(0, 0),
+					1 / prf2.at<double>(0, 0), 1, 3e8 / carrier_frequency.at<double>(0, 0), phase, flat_phase_coef);
+				ret = conversion.write_array_to_h5(phase_files[i].c_str(), "flat_phase_coefficient", flat_phase_coef);
+				if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+			}
 		}
 
 	}
@@ -8599,6 +8606,7 @@ int Utils::MB_phase_estimation(
 	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad;
 	vector<ComplexMat> slc_series, slc_series_filter;
 	ComplexMat slc, slc2, temp;
+	Mat flat_phase;
 	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
 	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
 	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
@@ -8622,11 +8630,34 @@ int Utils::MB_phase_estimation(
 				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
 				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_im", top, left, bottom - top, right - left, slc.im);
 				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-				ret = conversion.read_subarray_from_h5(flat_phase_files[k].c_str(), "phase", top, left, bottom - top, right - left, flat_phase);
-				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-				ret = phase2cos(flat_phase, temp.re, temp.im);
-				if (return_check(ret, "phase2cos()", error_head)) return -1;
-				slc = slc * temp;
+				if (b_flat)
+				{
+					if (k != master_indx - 1)
+					{
+						flat_phase.create(bottom - top, left - right, CV_64F);
+						ret = conversion.read_array_from_h5(phase_files[k].c_str(), "flat_phase_coefficient", flat_phase_coef);
+						if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+#pragma omp parallel for schedule(guided)
+						for (int ii = top; ii < bottom; ii++)
+						{
+							Mat tempp(1, 6, CV_64F);
+							for (int jj = left; jj < right; jj++)
+							{
+								tempp.at<double>(0, 0) = 1.0;
+								tempp.at<double>(0, 1) = ii;
+								tempp.at<double>(0, 2) = jj;
+								tempp.at<double>(0, 3) = ii * jj;
+								tempp.at<double>(0, 4) = ii * ii;
+								tempp.at<double>(0, 5) = jj * jj;
+								flat_phase.at<double>(ii - top, jj - left) = sum(tempp.mul(flat_phase_coef))[0];
+							}
+						}
+						ret = phase2cos(flat_phase, temp.re, temp.im);
+						if (return_check(ret, "phase2cos()", error_head)) return -1;
+						slc = slc * temp;
+					}
+					
+				}
 				slc_series.push_back(slc);
 				slc_series_filter.push_back(slc);
 			}

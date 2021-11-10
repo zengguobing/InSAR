@@ -1252,7 +1252,6 @@ public:
 	
 	@param coregis_slc_files              配准后SAR图像数据堆栈（文件）
 	@param phase_files                    时间序列干涉相位（文件，与coregis_slc_files数量相同，主图像相位为0）
-	@param flat_phase_files               平地相位（文件，数量同phase_files， 主图像平地相位为0）                     
 	@param master_indx                    主图像序号
 	@param blocksize_row                  子块尺寸（行）
 	@param blocksize_col                  子块尺寸（列）
@@ -1266,7 +1265,6 @@ public:
 	int MB_phase_estimation(
 		vector<string> coregis_slc_files,
 		vector<string> phase_files,
-		vector<string> flat_phase_files,
 		int master_indx,
 		int blocksize_row,
 		int blocksize_col,

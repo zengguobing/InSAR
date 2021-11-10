@@ -68,7 +68,7 @@ public:
 	/** @brief 去平地
 	
 	@param stateVec1         轨道数据1（主星轨道，未插值）
-	@param stateVec2         轨道数据2（主星轨道，未插值）
+	@param stateVec2         轨道数据2（辅星轨道，未插值）
 	@param lon_coef          坐标转换系数矩阵（图像坐标-->经度）
 	@param lat_coef          坐标转换系数矩阵（图像坐标-->纬度）
 	@param phase             输入相位
@@ -80,7 +80,7 @@ public:
 	@param mode              收发方式(1：自发自收，2：单发双收)
 	@param wavelength        波长
 	@param phase_deflated    去平地相位（返回值）
-	@param flat_phase        平地相位（返回值，未缠绕）
+	@param flat_phase_coef   平地相位拟合系数（返回值）
 	*/
 	int deflat(
 		const Mat& stateVec1,
@@ -96,8 +96,9 @@ public:
 		int mode,
 		double wavelength,
 		Mat& phase_deflated,
-		Mat& flat_phase
+		Mat& flat_phase_coef
 	);
+
 	/** @brief 利用外部DEM数据去除地形相位
 
 	@param phase                 输入相位

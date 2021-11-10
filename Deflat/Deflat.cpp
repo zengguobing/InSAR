@@ -368,7 +368,22 @@ int Deflat::deflat(
 	return 0;
 }
 
-int Deflat::deflat(const Mat& stateVec1, const Mat& stateVec2, const Mat& lon_coef, const Mat& lat_coef, const Mat& phase, int offset_row, int offset_col, double height, double time_interval, double time_interval2, int mode, double wave_length, Mat& phase_deflated, Mat& flat_phase)
+int Deflat::deflat(
+	const Mat& stateVec1,
+	const Mat& stateVec2,
+	const Mat& lon_coef,
+	const Mat& lat_coef,
+	const Mat& phase, 
+	int offset_row,
+	int offset_col, 
+	double height,
+	double time_interval, 
+	double time_interval2,
+	int mode,
+	double wave_length,
+	Mat& phase_deflated,
+	Mat& flat_phase_coef
+)
 {
 	if (stateVec1.cols != 7 ||
 		stateVec2.cols != 7 ||
@@ -564,6 +579,7 @@ int Deflat::deflat(const Mat& stateVec1, const Mat& stateVec2, const Mat& lon_co
 
 	//求平地相位
 	cv::transpose(coef, coef);
+	coef.copyTo(flat_phase_coef);
 	lat = lat.reshape(0, rows);
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < rows; i++)
@@ -580,12 +596,12 @@ int Deflat::deflat(const Mat& stateVec1, const Mat& stateVec2, const Mat& lon_co
 			lat.at<double>(i, j) = sum(temp.mul(coef))[0];
 		}
 	}
-	lat.copyTo(flat_phase);
 	lat = phase - lat;
 	util.wrap(lat, lat);
 	lat.copyTo(phase_deflated);
 	return 0;
 }
+
 
 int Deflat::topo_removal(
 	const Mat& phase,
