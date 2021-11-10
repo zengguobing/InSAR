@@ -106,17 +106,7 @@ private:
 
 };
 
-Registration::Registration()
-{
-	memset(this->error_head, 0, 256);
-	memset(this->parallel_error_head, 0, 256);
-	strcpy(this->error_head, "REGISTRATION_DLL_ERROR: error happens when using ");
-	strcpy(this->parallel_error_head, "REGISTRATION_DLL_ERROR: error happens when using parallel computing in function: ");
-}
 
-Registration::~Registration()
-{
-}
 
 
 #endif // !__REGISTRATION__H__

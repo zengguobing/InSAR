@@ -6,8 +6,10 @@
 #include<tchar.h>
 #include <atlconv.h>
 #ifdef _DEBUG
+#pragma comment(lib,"ComplexMat_d.lib")
 #pragma comment(lib, "Utils_d.lib")
 #else
+#pragma comment(lib,"ComplexMat.lib")
 #pragma comment(lib, "Utils.lib")
 #endif // _DEBUG
 using namespace cv;
@@ -48,6 +50,18 @@ inline bool parallel_flag_change(volatile bool parallel_flag, int ret)
 	{
 		return false;
 	}
+}
+
+Filter::Filter()
+{
+	memset(this->error_head, 0, 256);
+	memset(this->parallel_error_head, 0, 256);
+	strcpy(this->error_head, "FILTER_DLL_ERROR: error happens when using ");
+	strcpy(this->parallel_error_head, "FILTER_DLL_ERROR: error happens when using parallel computing in function: ");
+}
+
+Filter::~Filter()
+{
 }
 
 int Filter::czt2(Mat& src, Mat& dst, int M, int N, double theta0, double phi0)

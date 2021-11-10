@@ -54,6 +54,18 @@ inline bool parallel_flag_change(volatile bool parallel_flag, int ret)
 	}
 }
 
+Deflat::Deflat()
+{
+	memset(this->error_head, 0, 256);
+	memset(this->parallel_error_head, 0, 256);
+	strcpy(this->error_head, "DEFLAT_DLL_ERROR: error happens when using ");
+	strcpy(this->parallel_error_head, "DEFLAT_DLL_ERROR: error happens when using parallel computing in function: ");
+}
+
+Deflat::~Deflat()
+{
+}
+
 int Deflat::get_xyz(double aztime, Mat& coef, Mat& pos_xyz)
 {
 	if (aztime < 0 ||

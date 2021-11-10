@@ -58,6 +58,29 @@ public:
 		double lon, double lat,
 		double width, double height
 	);
+	/** @brief 添加配准图像节点
+
+	@param datanode_node  配准图像节点名
+	@param node_name      配准图像名
+	@param node_path      配准图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param master_index   主图像序号
+	@param interp_times   插值倍数（2的n次幂）
+	@param block_size     子块尺寸（2的n次幂）
+	@param temporal_baseline 时间基线估计
+	@param B_effect       垂直基线估计
+	@param B_parallel     水平基线估计
+	*/
+	int XMLFile_add_regis(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		int master_index, int interp_times, int block_size,
+		const char* temporal_baseline, const char* B_effect, const char* B_parallel
+	);
 	/** @brief 返回字符串
 
 	@param n			输入整数值

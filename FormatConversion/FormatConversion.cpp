@@ -3215,12 +3215,40 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 	if (!DataNode)
 	{
 		DataNode = new TiXmlElement("DataNode");
-		doc.RootElement()->LinkEndChild(DataNode);
 		DataNode->SetAttribute("name", datanode_name);
-		DataNode->SetAttribute("index", "2");
+		int index = 1;
+		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
+		tmp = root->Value();
+		for (; root != NULL; root = root->NextSiblingElement(), index++)
+		{
+			int i = strcmp(root->Attribute("rank"), "import") == 0;
+			int j = strcmp(root->Attribute("rank"), "cut") == 0;
+			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
+				strcmp(root->Attribute("rank"), "complex-1.0") == 0)
+				continue;
+			else
+				break;
+		}
+		string index_str = int2str(index);
+		DataNode->SetAttribute("index", index_str.c_str());
 		DataNode->SetAttribute("data_count", "1");
 		DataNode->SetAttribute("data_processing", "cut");
 		DataNode->SetAttribute("rank", "complex-1.0");
+		if (!root)
+		{
+			doc.RootElement()->LinkEndChild(DataNode);
+		}
+		else
+		{
+			DataNode->InsertBeforeChild(root, *root->PreviousSibling()->ToElement());
+			while (!root)
+			{
+				index_str = int2str(++index);
+				root->SetAttribute("index", index_str.c_str());
+				root = root->NextSiblingElement();
+			}
+		}
+		
 		TiXmlElement* Data = new TiXmlElement("Data");
 		DataNode->LinkEndChild(Data);
 		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
@@ -3290,6 +3318,152 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 		Data->LinkEndChild(Data_Name);
 		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
 		Data_Rank->LinkEndChild(new TiXmlText("complex-1.0"));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(node_path));
+		Data->LinkEndChild(Data_Path);
+		/*TiXmlElement* Last_Data_Path = new TiXmlElement("Last_Data_Path");
+		Last_Data_Path->LinkEndChild(new TiXmlText(node_path));
+		Data->LinkEndChild(Last_Data_Path);*/
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(Row_offset);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(Col_offset);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+		DataNode->InsertBeforeChild(LastNode, *Data);
+	}
+	return 0;
+}
+
+int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name, const char* node_path, int Row_offset, int Col_offset, int master_index, int interp_times, int block_size, const char* temporal_baseline, const char* B_effect, const char* B_parallel)
+{
+	if (datanode_name == NULL ||
+		node_name == NULL ||
+		node_path == NULL ||
+		B_effect == NULL ||
+		B_parallel == NULL
+		)
+	{
+		fprintf(stderr, "XMLFile_add_cut(): input check failed!\n");
+		return -1;
+	}
+	TiXmlElement* DataNode = NULL;
+	int ret = find_node_with_attribute(doc.RootElement(), "DataNode", "name", datanode_name, DataNode);
+	string tmp;
+	if (!DataNode)
+	{
+		DataNode = new TiXmlElement("DataNode");
+		DataNode->SetAttribute("name", datanode_name);
+		int index = 1;
+		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
+		tmp = root->Value();
+		for (; root != NULL; root = root->NextSiblingElement(), index++)
+		{
+			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
+				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
+				strcmp(root->Attribute("rank"), "complex-2.0") == 0)
+				continue;
+			else
+				break;
+		}
+		string index_str = int2str(index);
+		DataNode->SetAttribute("index", index_str.c_str());
+		DataNode->SetAttribute("data_count", "1");
+		DataNode->SetAttribute("data_processing", "coregistration");
+		DataNode->SetAttribute("rank", "complex-2.0");
+		if (!root)
+		{
+			doc.RootElement()->LinkEndChild(DataNode);
+		}
+		else
+		{
+			DataNode->InsertBeforeChild(root, *root->PreviousSibling()->ToElement());
+			
+			while (!root)
+			{
+				index_str = int2str(++index);
+				root->SetAttribute("index", index_str.c_str());
+				root = root->NextSiblingElement();
+			}
+		}
+		TiXmlElement* Data = new TiXmlElement("Data");
+		DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(node_name));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText("complex-2.0"));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText("1"));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(node_path));
+		Data->LinkEndChild(Data_Path);
+		/*TiXmlElement* Last_Data_Path = new TiXmlElement("Last_Data_Path");
+		Last_Data_Path->LinkEndChild(new TiXmlText(node_path));
+		Data->LinkEndChild(Last_Data_Path);*/
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(Row_offset);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(Col_offset);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+
+		TiXmlElement* Data_Processing_Parameters = new TiXmlElement("Data_Processing_Parameters");
+		DataNode->LinkEndChild(Data_Processing_Parameters);
+		TiXmlElement* Master_index = new TiXmlElement("master_image");
+		tmp = int2str(master_index);
+		Master_index->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data_Processing_Parameters->LinkEndChild(Master_index);
+		TiXmlElement* Blocksize = new TiXmlElement("blocksize");
+		tmp = int2str(block_size);
+		Blocksize->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data_Processing_Parameters->LinkEndChild(Blocksize);
+		TiXmlElement* Interp_times = new TiXmlElement("interp_times");
+		tmp = int2str(interp_times);
+		Interp_times->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data_Processing_Parameters->LinkEndChild(Interp_times);
+		TiXmlElement* Temporal_baseline = new TiXmlElement("temporal_baseline_distribution");
+		Temporal_baseline->SetAttribute("unit", "day");
+		Temporal_baseline->LinkEndChild(new TiXmlText(temporal_baseline));
+		Data_Processing_Parameters->LinkEndChild(Temporal_baseline);
+		TiXmlElement* V_baseline = new TiXmlElement("effect_baseline_distribution");
+		V_baseline->SetAttribute("unit", "m");
+		V_baseline->LinkEndChild(new TiXmlText(B_effect));
+		Data_Processing_Parameters->LinkEndChild(V_baseline);
+		TiXmlElement* H_baseline = new TiXmlElement("parallel_baseline_distribution");
+		H_baseline->SetAttribute("unit", "m");
+		H_baseline->LinkEndChild(new TiXmlText(B_parallel));
+		Data_Processing_Parameters->LinkEndChild(H_baseline);
+	}
+	else
+	{
+		string str = DataNode->Attribute("data_count");
+		int index = str2int(str) + 1;
+		TiXmlElement* p = NULL;
+		tmp = int2str(index);
+		DataNode->SetAttribute("data_count", tmp.c_str());
+		TiXmlElement* LastNode = DataNode->LastChild()->ToElement();
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+
+		int data_count = 0;
+		ret = get_children_count(DataNode, &data_count);
+		//DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(node_name));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText("complex-2.0"));
 		Data->LinkEndChild(Data_Rank);
 		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
 		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));

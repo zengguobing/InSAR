@@ -67,15 +67,5 @@ private:
 	char parallel_error_head[256];
 };
 
-Filter::Filter()
-{
-	memset(this->error_head, 0, 256);
-	memset(this->parallel_error_head, 0, 256);
-	strcpy(this->error_head, "FILTER_DLL_ERROR: error happens when using ");
-	strcpy(this->parallel_error_head, "FILTER_DLL_ERROR: error happens when using parallel computing in function: ");
-}
 
-Filter::~Filter()
-{
-}
 #endif // !__FILTER__H__
