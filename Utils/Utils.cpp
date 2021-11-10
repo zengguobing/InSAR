@@ -7967,7 +7967,22 @@ int Utils::coord_conversion(Mat& coefficient, Mat& coord_in_1, Mat& coord_in_2, 
 	return 0;
 }
 
-int Utils::baseline_estimation(const Mat& stateVec1, const Mat& stateVec2, const Mat& lon_coef, const Mat& lat_coef, int offset_row, int offset_col, int scene_height, int scene_width, double time_interval, double time_interval2, double* B_effect, double* B_parallel, double* sigma_B_effect, double* sigma_B_parallel)
+int Utils::baseline_estimation(
+	const Mat& stateVec1,
+	const Mat& stateVec2, 
+	const Mat& lon_coef,
+	const Mat& lat_coef, 
+	int offset_row,
+	int offset_col,
+	int scene_height, 
+	int scene_width,
+	double time_interval,
+	double time_interval2,
+	double* B_effect,
+	double* B_parallel,
+	double* sigma_B_effect, 
+	double* sigma_B_parallel
+)
 {
 	if (stateVec1.cols != 7 ||
 		stateVec1.rows < 7 ||
