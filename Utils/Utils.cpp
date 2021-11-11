@@ -8449,7 +8449,7 @@ int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, Com
 		//cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\mask.bin", c);
 		if (count < 2) 
 		{
-			fprintf(stderr, "coherence_matrix_estimation(): no homogenous pixels inside estimation window!\n");
+			//fprintf(stderr, "coherence_matrix_estimation(): no homogenous pixels inside estimation window!\n");
 			return -1;
 		}
 		//估计相关矩阵
@@ -8517,8 +8517,6 @@ int Utils::MB_phase_estimation(
 	int master_indx, 
 	int blocksize_row, 
 	int blocksize_col, 
-	int offset_row,
-	int offset_col,
 	int homogeneous_test_wnd,
 	double thresh_c1_to_c2,
 	bool b_flat,
@@ -8533,15 +8531,18 @@ int Utils::MB_phase_estimation(
 		blocksize_col < 100 ||
 		thresh_c1_to_c2 < 0.0 ||
 		thresh_c1_to_c2 > 1.0 ||
-		homogeneous_test_wnd % 2 == 0||
-		offset_row < 0||
-		offset_col < 0
+		homogeneous_test_wnd % 2 == 0
 		)
 	{
 		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
 		return -1;
 	}
 	int homotest_radius = (homogeneous_test_wnd - 1) / 2;
+	if (blocksize_row <= homotest_radius || blocksize_col <= homotest_radius)
+	{
+		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
+		return -1;
+	}
 	int nr, nc, ret, n_images; Mat tmp;
 	n_images = coregis_slc_files.size();
 	FormatConversion conversion; Deflat flat;
@@ -8576,6 +8577,13 @@ int Utils::MB_phase_estimation(
 		phase_deflat, flat_phase_coef, azimuth_len, range_len;
 	phase = Mat::zeros(nr, nc, CV_64F);
 	azimuth_len = Mat::zeros(1, 1, CV_32S); range_len = Mat::zeros(1, 1, CV_32S);
+	int offset_row, offset_col;
+	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "offset_row", tmp);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	offset_row = tmp.at<int>(0, 0);
+	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "offset_col", tmp);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	offset_col = tmp.at<int>(0, 0);
 	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "state_vec", stateVec1);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "prf", prf);
@@ -8613,7 +8621,7 @@ int Utils::MB_phase_estimation(
 				if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 			}
 		}
-
+		fprintf(stdout, "去平地进度：%d/%d\n", i, n_images - 1);
 	}
 
 	//分块读取、计算和储存
@@ -8621,7 +8629,7 @@ int Utils::MB_phase_estimation(
 	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad;
 	vector<ComplexMat> slc_series, slc_series_filter;
 	ComplexMat slc, slc2, temp;
-	Mat flat_phase;
+	Mat flat_phase, ph;
 	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
 	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
 	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
@@ -8630,33 +8638,36 @@ int Utils::MB_phase_estimation(
 	{
 		for (int j = 0; j < block_num_col; j++)
 		{
-			top = i * blocksize_row - homotest_radius; top = top < 0 ? 0 : top;
-			bottom = top + blocksize_row + homogeneous_test_wnd - 1; bottom = bottom > nr - 1 ? nr - 1 : bottom;
-			left = j * blocksize_col - homotest_radius; left = left < 0 ? 0 : left;
-			right = left + blocksize_col + homogeneous_test_wnd - 1; right = right > nc - 1 ? nc - 1 : right;
-			top_pad = i * blocksize_row - top;
-			bottom_pad = bottom - (i + 1) * blocksize_row; bottom_pad = bottom_pad < 0 ? 0 : bottom_pad;
-			left_pad = j * blocksize_col - left;
-			right_pad = right - (i + 1) * blocksize_col; right_pad = right_pad < 0 ? 0 : right_pad;
+			top = i * blocksize_row;
+			top_pad = top - homotest_radius; top_pad = top_pad < 0 ? 0 : top_pad;
+			bottom = top + blocksize_row; bottom = bottom > nr ? nr : bottom;
+			bottom_pad = bottom + homotest_radius; bottom_pad = bottom_pad > nr ? nr : bottom_pad;
+			left = j * blocksize_col;
+			left_pad = left - homotest_radius; left_pad = left_pad < 0 ? 0 : left_pad;
+			right = left + blocksize_col; right = right > nc ? nc : right;
+			right_pad = right + homotest_radius; right_pad = right_pad > nc ? nc : right_pad;
+
 			//读取数据
 			for (int k = 0; k < n_images; k++)
 			{
-				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_re", top, left, bottom - top, right - left, slc.re);
+				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_re",
+					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.re);
 				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_im", top, left, bottom - top, right - left, slc.im);
+				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_im",
+					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.im);
 				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
 				if (b_flat)
 				{
 					if (k != master_indx - 1)
 					{
-						flat_phase.create(bottom - top, left - right, CV_64F);
+						flat_phase.create(bottom_pad - top_pad, right_pad - left_pad, CV_64F);
 						ret = conversion.read_array_from_h5(phase_files[k].c_str(), "flat_phase_coefficient", flat_phase_coef);
 						if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 #pragma omp parallel for schedule(guided)
-						for (int ii = top; ii < bottom; ii++)
+						for (int ii = top_pad; ii < bottom_pad; ii++)
 						{
 							Mat tempp(1, 6, CV_64F);
-							for (int jj = left; jj < right; jj++)
+							for (int jj = left_pad; jj < right_pad; jj++)
 							{
 								tempp.at<double>(0, 0) = 1.0;
 								tempp.at<double>(0, 1) = ii;
@@ -8664,7 +8675,7 @@ int Utils::MB_phase_estimation(
 								tempp.at<double>(0, 3) = ii * jj;
 								tempp.at<double>(0, 4) = ii * ii;
 								tempp.at<double>(0, 5) = jj * jj;
-								flat_phase.at<double>(ii - top, jj - left) = sum(tempp.mul(flat_phase_coef))[0];
+								flat_phase.at<double>(ii - top_pad, jj - left_pad) = sum(tempp.mul(flat_phase_coef))[0];
 							}
 						}
 						ret = phase2cos(flat_phase, temp.re, temp.im);
@@ -8678,10 +8689,10 @@ int Utils::MB_phase_estimation(
 			}
 			//计算
 #pragma omp parallel for schedule(guided)
-			for (int ii = top_pad; ii < (bottom - top - bottom_pad); ii++)
+			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
 			{
 				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue;
-				for (int jj = left_pad; jj < (right - left - right_pad); jj++)
+				for (int jj = (left - left_pad); jj < (right - left_pad); jj++)
 				{
 					coherence_matrix_estimation(slc_series, coherence_matrix, homogeneous_test_wnd, homogeneous_test_wnd, ii, jj);
 					HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
@@ -8706,14 +8717,16 @@ int Utils::MB_phase_estimation(
 			for (int kk = 0; kk < n_images; kk++)
 			{
 				if (kk == master_indx - 1) continue;
-				ret = multilook(slc, slc_series_filter[i], 1, 1, phase);
+				ret = multilook(slc, slc_series_filter[kk], 1, 1, phase);
+				phase(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
 				if (return_check(ret, "multilook()", error_head)) return -1;
-				ret = conversion.write_subarray_to_h5(phase_files[kk].c_str(), "phase", phase, top, left, bottom - top, right - left);
+				ret = conversion.write_subarray_to_h5(phase_files[kk].c_str(), "phase", ph, top, left, bottom - top, right - left);
 				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
 			}
 			slc_series.clear();
 			slc_series_filter.clear();
 			
+			fprintf(stdout, "估计相位进度：%lf\n", double((i + 1) * block_num_col + j + 1) / double((block_num_col) * (block_num_row)));
 		}
 	}
 

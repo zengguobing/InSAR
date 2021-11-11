@@ -1253,10 +1253,8 @@ public:
 	@param coregis_slc_files              配准后SAR图像数据堆栈（文件）
 	@param phase_files                    时间序列干涉相位（文件，与coregis_slc_files数量相同，主图像相位为0）
 	@param master_indx                    主图像序号
-	@param blocksize_row                  子块尺寸（行）
-	@param blocksize_col                  子块尺寸（列）
-	@param offset_row                     主图像左上角在原图像的中的行偏移量
-	@param offset_col                     主图像左上角在原图像的中的列偏移量
+	@param blocksize_row                  子块尺寸（行，必须大于同质检验搜索窗口半径）
+	@param blocksize_col                  子块尺寸（列，必须大于同质检验搜索窗口半径）
 	@param homogeneous_test_wnd           同质检验搜索窗口大小（奇数，homogeneous_test_wnd×homogeneous_test_wnd， 默认为21×21）
 	@param thresh_c1_to_c2                协方差矩阵第2特征值与第1特征值比值阈值（0-1之间，默认为0.7）
 	@param b_flat                         是否去平地相位（默认是）
@@ -1268,8 +1266,6 @@ public:
 		int master_indx,
 		int blocksize_row,
 		int blocksize_col,
-		int offset_row,
-		int offset_col,
 		int homogeneous_test_wnd = 21,
 		double thresh_c1_to_c2 = 0.7,
 		bool b_flat = true,
