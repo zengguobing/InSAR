@@ -142,12 +142,46 @@ struct triangle
 	int neigh2;
 	/*相邻三角形序号3*/
 	int neigh3;
-	/*边1*/
+	/*边1（从1开始）*/
 	int edge1;
-	/*边2*/
+	/*边2（从1开始）*/
 	int edge2;
-	/*边3*/
+	/*边3（从1开始）*/
 	int edge3;
+
+	/*默认构造函数*/
+	triangle()
+	{
+		num = p1 = p2 = p3 = neigh1 = neigh2 = neigh3 = edge1 = edge2 = edge3 = 0;
+		residue = 0.0;
+	}
+	/*拷贝构造函数*/
+	triangle(const triangle& cp)
+	{
+		this->edge1 = cp.edge1;
+		this->edge2 = cp.edge2;
+		this->edge3 = cp.edge3;
+		this->neigh1 = cp.neigh1;
+		this->neigh2 = cp.neigh2;
+		this->neigh3 = cp.neigh3;
+		this->num = cp.num;
+		this->p1 = cp.p1; this->p2 = cp.p2; this->p3 = cp.p3;
+		this->residue = cp.residue;
+	}
+	/*赋值(深拷贝)*/
+	triangle operator= (const triangle& cp)
+	{
+		this->edge1 = cp.edge1;
+		this->edge2 = cp.edge2;
+		this->edge3 = cp.edge3;
+		this->neigh1 = cp.neigh1;
+		this->neigh2 = cp.neigh2;
+		this->neigh3 = cp.neigh3;
+		this->num = cp.num;
+		this->p1 = cp.p1; this->p2 = cp.p2; this->p3 = cp.p3;
+		this->residue = cp.residue;
+		return *this;
+	}
 };
 
 
@@ -186,6 +220,45 @@ struct tri_edge
 	double delta_height;
 	/*模型相干系数*/
 	double MC;
+	/*端点相位差（相位差定义为：大序号端点减小序号端点）*/
+	double phase_diff;
+
+	/*默认构造函数*/
+	tri_edge() {
+		gain = 0.0;
+		quality = 0.0;
+		num = 0;
+		end1 = 0; end2 = 0;
+		isResidueEdge = false;
+		isBoundry = false;
+		delta_vel = 0.0;
+		delta_height = 0.0; MC = 0.0; phase_diff = 0.0;
+	}
+	/*拷贝构造函数*/
+	tri_edge(const tri_edge& cp)
+	{
+		gain = cp.gain;
+		quality = cp.quality;
+		num = cp.num;
+		end1 = cp.end1; end2 = cp.end2;
+		isResidueEdge = cp.isResidueEdge;
+		isBoundry = cp.isBoundry;
+		delta_vel = cp.delta_vel;
+		delta_height = cp.delta_height; MC = cp.MC; phase_diff = cp.phase_diff;
+	}
+	/*赋值函数（深拷贝赋值）*/
+	tri_edge operator = (const tri_edge& cp)
+	{
+		gain = cp.gain;
+		quality = cp.quality;
+		num = cp.num;
+		end1 = cp.end1; end2 = cp.end2;
+		isResidueEdge = cp.isResidueEdge;
+		isBoundry = cp.isBoundry;
+		delta_vel = cp.delta_vel;
+		delta_height = cp.delta_height; MC = cp.MC; phase_diff = cp.phase_diff;
+		return *this;
+	}
 };
 
 /*********************************************************/
@@ -204,7 +277,33 @@ struct edge_index
 	
 };
 
+/*-------------------------------------------------------*/
+/*                   规则网格节点结构体                  */
+/*-------------------------------------------------------*/
 
+struct node_index
+{
+	/*节点行数（从0开始）*/
+	int row;
+	/*节点列数（从0开始）*/
+	int col;
+	/*默认构造函数*/
+	node_index()
+	{
+		row = 0; col = 0;
+	}
+	/*拷贝构造函数*/
+	node_index(const node_index& cp)
+	{
+		this->row = cp.row; this->col = cp.col;
+	}
+	/*赋值函数*/
+	node_index operator = (const node_index& cp)
+	{
+		this->row = cp.row; this->col = cp.col;
+		return *this;
+	}
+};
 
 
 /*********************************************************/
@@ -277,6 +376,18 @@ public:
 	* 参数5 Delaunay三角网边数量
 	*/
 	int residue(triangle* tri, int num_triangle, vector<tri_node>& nodes, tri_edge* edges, int num_edges);
+	/** @brief 计算Delaunay三角网络的残差值（并且标注残差边和残差节点）
+	
+	@param triangle                              Delaunay三角网三角形结构体数组
+	@param nodes                                 Delaunay三角网节点数组
+	@param edges                                 Delaunay三角网边结构体数组
+	@return 成功返回0，否则返回-1
+	*/
+	int residue(
+		vector<triangle>& triangle,
+		vector<tri_node>& nodes,
+		vector<tri_edge>& edges
+	);
 	/*计算mask（筛选高质量点）
 	* 参数1 相关系数矩阵
 	* 参数2 mask举矩阵（返回值）
@@ -349,6 +460,22 @@ public:
 		long num_edges,
 		Mat& cost
 	);
+	/** @brief 写入DIMACS文件（描述最小费用问题，Delaunay三角网络）
+	
+	@param DIMACS_file_problem                         目标DIMACS文件
+	@param triange                                     Delaunay三角形结构体数组
+	@param nodes                                       Delaunay三角网节点数组
+	@param edges                                       Delaunay三角网边结构体数组
+	@param cost                                        每个节点的费用
+	@return 成功返回0，否则返回-1
+	*/
+	int write_DIMACS(
+		const char* DIMACS_file_problem,
+		vector<triangle>& triangle,
+		vector<tri_node>& nodes,
+		vector<tri_edge>& edges,
+		const Mat& cost
+	);
 	/*读取DIMACS文件（获取求解器求解结果）
 	 参数1 最小费用流问题解文件
 	 参数2 枝切路径1
@@ -372,6 +499,20 @@ public:
 		vector<tri_node>& nodes,
 		triangle* tri,
 		int num_triangle
+	);
+	/** @brief 读取DIMACS文件（获取求解器求解结果）
+	
+	@param DIMACS_file_solution                         最小费用流问题解文件
+	@param edges                                        Delaunay三角网边结构体数组
+	@param nodes                                        Delaunay三角网节点数组
+	@param triangle                                     Delaunay三角网三角形数组
+	@param return 成功返回0，否则返回-1
+	*/
+	int read_DIMACS(
+		const char* DIMACS_file_solution,
+		vector<tri_edge>& edges,
+		vector<tri_node>& nodes,
+		vector<triangle>& triangle
 	);
 	/*将OpenCV Mat数据以二进制方式写入目标文件
 	* 参数1 目标文件名
@@ -652,6 +793,20 @@ public:
 	* 参数5 节点数
 	*/
 	int read_edges(const char* filename, tri_edge** edges, long* num_edges, int** neighbours, long num_nodes);
+	/** @brief 从.edge文件读取Delaunay三角网的边信息
+	
+	@param edge_file               .edge文件
+	@param num_nodes               节点数
+	@param edges                   Delaunay三角网边数组（返回值）
+	@param node_neighbours         每个节点的邻接边数（返回值）
+	@return  成功返回0， 否则返回-1
+	*/
+	int read_edges(
+		const char* edge_file,
+		vector<tri_edge>& edges,
+		vector<int>& node_neighbours,
+		long num_nodes
+	);
 	/*初始化Delaunay三角网节点
 	* 参数1 节点数组（返回值）
 	* 参数2 相位(double型)
@@ -670,13 +825,53 @@ public:
 		int* num_neighbour,
 		int num_nodes
 	);
+	/** @brief 初始化Delaunay三角网节点
+	
+	@param node_array                 节点数组（返回值）
+	@param phase                      相位值
+	@param mask                       相位掩膜
+	@param edges                      Delaunay三角网络边结构体数组
+	@param node_neighbours            每个节点的邻边个数
+	@param num_nodes                  节点数
+	@return 成功返回0，否则返回-1
+	*/
+	int init_tri_node(
+		vector<tri_node>& node_array,
+		const Mat& phase,
+		const Mat& mask,
+		const vector<tri_edge>& edges,
+		const vector<int>& node_neighbours,
+		int num_nodes
+	);
+	/** @brief 初始化Delaunay三角网络边相位差
+	
+	@param edges                  Delaunay三角网络边数组（已经使用read_edges函数初始化过的）
+	@param node_array             Delaunay三角网络节点数组（已经使用init_tri_node函数初始化过的）
+	@return 成功返回0，否则返回-1
+	*/
+	int init_edge_phase_diff(
+		vector<tri_edge>& edges,
+		const vector<tri_node>& node_array
+	);
 	/*初始化Delaunay三角网边的相位质量
 	* 参数1 相位质量图
 	* 参数2 Delaunay三角网边结构体数组指针
 	* 参数3 Delaunay三角网边结构体数组大小
-	* 参数4 Delaunay三角网边节点数组
+	* 参数4 Delaunay三角网节点数组
 	*/
 	int init_edges_quality(Mat& quality, tri_edge* edges, int num_edges, vector<tri_node>& nodes);
+	/** @brief 初始化Delaunay三角网边的相位质量
+	
+	@param quality_map                    相位质量图
+	@param edges                          Delaunay三角网边结构体数组
+	@param nodes                          Delaunay三角网节点数组
+	@return 成功返回0， 否则返回-1
+	*/
+	int init_edges_quality(
+		const Mat& quality_map,
+		vector<tri_edge>& edges,
+		const vector<tri_node>& nodes
+	);
 	/*从.ele文件和.neigh文件读取Delaunay三角网的三角形信息
 	* 参数1 .ele文件
 	* 参数2 .neigh文件
@@ -695,6 +890,22 @@ public:
 		tri_edge* edges,
 		int num_edgs
 	);
+	/** @brief 从.ele文件和.neigh文件读取Delaunay三角网的三角形信息
+	
+	@param ele_file                        .ele文件
+	@param neigh_file                      .neigh文件
+	@param triangle                        三角形结构体数组（返回值）
+	@param nodes                           Delaunay三角网节点数组
+	@param edges                           Delaunay三角网边数组
+	@return 成功返回0，否则返回-1
+	*/
+	int read_triangle(
+		const char* ele_file,
+		const char* neigh_file,
+		vector<triangle>& triangle,
+		vector<tri_node>& nodes,
+		vector<tri_edge>& edges
+	);
 	/*生成Delaunay三角网
 	* 参数1 .node文件
 	* 参数2 triangle.exe程序路径
@@ -704,7 +915,7 @@ public:
 	* 参数1 .node文件
 	* 参数2 节点数组
 	*/
-	int write_node_file(const char* filename, Mat& mask);
+	int write_node_file(const char* filename, const Mat& mask);
 
 
 
@@ -1252,9 +1463,12 @@ public:
 	
 	@param coregis_slc_files              配准后SAR图像数据堆栈（文件）
 	@param phase_files                    时间序列干涉相位（文件，与coregis_slc_files数量相同，主图像相位为0）
-	@param master_indx                    主图像序号
+	@param coherence_files                各辅图像与主图像之间的相关系数文件（是否估计相关系数取决于输入参数b_coh_est）
+	@param master_indx                    主图像序号（从1开始）
 	@param blocksize_row                  子块尺寸（行，必须大于同质检验搜索窗口半径）
 	@param blocksize_col                  子块尺寸（列，必须大于同质检验搜索窗口半径）
+	@param out_mask                       掩膜输出（标记经过EVD法估计的像素点，与参数thresh_c1_to_c2有关）
+	@param b_coh_est                      是否估计相关系数（默认是）
 	@param homogeneous_test_wnd           同质检验搜索窗口大小（奇数，homogeneous_test_wnd×homogeneous_test_wnd， 默认为21×21）
 	@param thresh_c1_to_c2                协方差矩阵第2特征值与第1特征值比值阈值（0-1之间，默认为0.7）
 	@param b_flat                         是否去平地相位（默认是）
@@ -1263,13 +1477,100 @@ public:
 	int MB_phase_estimation(
 		vector<string> coregis_slc_files,
 		vector<string> phase_files,
+		vector<string> coherence_files,
 		int master_indx,
 		int blocksize_row,
 		int blocksize_col,
+		Mat& out_mask,
+		bool b_coh_est = true,
 		int homogeneous_test_wnd = 21,
 		double thresh_c1_to_c2 = 0.7,
 		bool b_flat = true,
 		bool b_normalize = true
+	);
+	/** @brief 区域生长法解缠（delaunay三角网）
+	
+	@param nodes                       Delaunay三角网络节点数组
+	@param edges                       Delaunay三角网络边结构体数组
+	@param start_edge                  积分起始边序号（从1开始）
+	@param distance_thresh             边长阈值，超过此阈值不通过此边积分
+	@param quality_thresh              质量阈值，低于此阈值不通过此边积分
+	@return 成功返回0，否则返回-1
+	*/
+	int unwrap_region_growing(
+		vector<tri_node>& nodes,
+		const vector<tri_edge>& edges,
+		size_t start_edge,
+		double distance_thresh,
+		double quality_thresh
+	);
+	/** @brief 3D相位解缠，1D时间-->2D空间
+	
+	@param mask                          需要解缠的像素点掩膜(int型)
+	@param quality_map                   质量图
+	@param wrapped_phase_series          待解缠相位时间序列
+	@param unwrapped_phase_series        解缠相位时间序列
+	@param delaunay_exe_path             生成Delaunay三角网的可执行程序（delaunay.exe）所在路径
+	@param tmp_file_path                 产生的临时文件储存路径
+	@param distance_thresh               积分解缠距离阈值，超过此阈值不通过该边积分解缠，不能小于1
+	@param quality_thresh                质量阈值，低于此阈值不通过此边积分
+	@return 成功返回0，否则返回-1
+	*/
+	int unwrap_3D(
+		const Mat& mask,
+		const vector<Mat>& quality_map,
+		vector<Mat>& wrapped_phase_series,
+		vector<Mat>& unwrapped_phase_series,
+		const char* delaunay_exe_path,
+		const char* tmp_file_path,
+		double distance_thresh,
+		double quality_thresh
+	);
+	/** @brief 3D相位解缠（Delaunay三角网最小费用流法）
+	
+	@param mask                          需要解缠的像素点掩膜(int型)
+	@param quality_map                   质量图
+	@param wrapped_phase_series          待解缠相位时间序列
+	@param unwrapped_phase_series        解缠相位时间序列
+	@param delaunay_exe_path             生成Delaunay三角网的可执行程序（delaunay.exe）所在路径
+	@param mcf_exe_path                  最小费用流求解器可执行程序（mcf.exe）所在路径
+	@param tmp_file_path                 产生的临时文件储存路径
+	@param distance_thresh               积分解缠距离阈值，超过此阈值不通过该边积分解缠，不能小于1
+	@return 成功返回0，否则返回-1
+	*/
+	int unwrap_3D_mcf(
+		const Mat& mask,
+		const vector<Mat>& quality_map,
+		vector<Mat>& wrapped_phase_series,
+		vector<Mat>& unwrapped_phase_series,
+		const char* delaunay_exe_path,
+		const char* mcf_exe_path,
+		const char* tmp_file_path,
+		double distance_thresh
+	);
+	/** @brief 自适应分块3D相位解缠
+	
+	@param mask                          需要解缠的像素点掩膜(int型)
+	@param quality_map                   质量图
+	@param wrapped_phase_series          待解缠相位时间序列
+	@param unwrapped_phase_series        解缠相位时间序列
+	@param delaunay_exe_path             生成Delaunay三角网的可执行程序（delaunay.exe）所在路径
+	@param mcf_exe_path                  最小费用流求解器可执行程序（mcf.exe）所在路径
+	@param tmp_file_path                 产生的临时文件储存路径
+	@param distance_thresh               积分解缠距离阈值，超过此阈值不通过该边积分解缠，不能小于1
+	@param quality_thresh                质量阈值，低于此阈值不通过此边积分
+	@return 成功返回0，否则返回-1
+	*/
+	int unwrap_3D_adaptive_tiling(
+		const Mat& mask,
+		const vector<Mat>& quality_map,
+		vector<Mat>& wrapped_phase_series,
+		vector<Mat>& unwrapped_phase_series,
+		const char* delaunay_exe_path,
+		const char* mcf_exe_path,
+		const char* tmp_file_path,
+		double distance_thresh,
+		double quality_thresh
 	);
 private:
 	char error_head[256];

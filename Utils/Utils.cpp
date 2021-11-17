@@ -5,6 +5,7 @@
 #include"..\include\Utils.h"
 #include"..\include\Registration.h"
 #include"..\include\Deflat.h"
+#include"..\include\Unwrap.h"
 #include<tchar.h>
 #include <atlconv.h>
 #include"../include/FormatConversion.h"
@@ -15,11 +16,13 @@
 #pragma comment(lib, "Registration_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
+#pragma comment(lib, "Unwrap_d.lib")
 #else
 #pragma comment(lib,"ComplexMat.lib")
 #pragma comment(lib, "Registration.lib")
 #pragma comment(lib, "FormatConversion.lib")
 #pragma comment(lib, "Deflat.lib")
+#pragma comment(lib, "Unwrap.lib")
 #endif // _DEBUG
 
 using namespace cv;
@@ -298,6 +301,176 @@ int Utils::write_DIMACS(const char* DIMACS_file_problem, triangle* tri, int num_
 				nodes[(tri + i)->p2 - 1].get_pos(&rows, &cols);
 				if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
 				nodes[(tri + i)->p3 - 1].get_pos(&rows, &cols);
+				if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
+				cost_mean = cost_mean / 3;
+				fprintf(fp, "a %d %d %d %d %lf\n", i + 1, num_triangle + 1, lower_bound, upper_bound, cost_mean);
+				fprintf(fp, "a %d %d %d %d %lf\n", num_triangle + 1, i + 1, lower_bound, upper_bound, cost_mean);
+			}
+		}
+	}
+	if (fp) fclose(fp);
+	fp = NULL;
+	return 0;
+}
+
+int Utils::write_DIMACS(
+	const char* DIMACS_file_problem,
+	vector<triangle>& triangle,
+	vector<tri_node>& nodes,
+	vector<tri_edge>& edges,
+	const Mat& cost
+)
+{
+	if (DIMACS_file_problem == NULL ||
+		triangle.size() < 1||
+		nodes.size() < 3 ||
+		edges.size() < 3 ||
+		cost.rows < 2 ||
+		cost.cols < 2 ||
+		cost.channels() != 1 ||
+		cost.type() != CV_64F
+		)
+	{
+		fprintf(stderr, "write_DIMACS(): input check failed!\n\n");
+		return -1;
+	}
+	FILE* fp = NULL;
+	fp = fopen(DIMACS_file_problem, "wt");
+	if (fp == NULL)
+	{
+		fprintf(stderr, "write_DIMACS(): can't open %s\n", DIMACS_file_problem);
+		return -1;
+	}
+
+	int ret, num_nodes;
+	int num_triangle = triangle.size();
+	num_nodes = nodes.size();
+	long num_arcs = 0;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		if (triangle[i].neigh1 > 0) num_arcs++;
+		if (triangle[i].neigh2 > 0) num_arcs++;
+		if (triangle[i].neigh3 > 0) num_arcs++;
+	}
+
+	//统计正负残差点并写入节点信息
+	int positive, negative, total;
+	positive = 0;
+	negative = 0;
+	double thresh = 0.7;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		if (triangle[i].residue > thresh)
+		{
+			positive++;
+		}
+		if (triangle[i].residue < -thresh)
+		{
+			negative++;
+		}
+	}
+	bool b_balanced = (positive == negative);
+	if (negative == 0 && positive == 0)
+	{
+		if (fp) fclose(fp);
+		fprintf(stderr, "write_DIMACS(): no residue point!\n\n");
+		return -1;
+	}
+	fprintf(fp, "c This is MCF problem file.\n");
+	fprintf(fp, "c Problem line(nodes, links)\n");
+	//统计边缘三角形个数
+	long boundry_tri = 0;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		if (edges[triangle[i].edge1 - 1].isBoundry ||
+			edges[triangle[i].edge2 - 1].isBoundry ||
+			edges[triangle[i].edge3 - 1].isBoundry)
+		{
+			boundry_tri++;
+		}
+	}
+	long n;
+	if (!b_balanced)
+	{
+		n = num_triangle + 1;
+		fprintf(fp, "p min %ld %ld\n", n, num_arcs + boundry_tri * 2);
+	}
+	else
+	{
+		n = num_triangle;
+		fprintf(fp, "p min %ld %ld\n", n, num_arcs);
+	}
+	fprintf(fp, "c Node descriptor lines\n");
+	positive = 0;
+	negative = 0;
+	int count = 0;
+	bool b_positive, b_negative, is_residue;
+	double sum = 0.0;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		if (triangle[i].residue > thresh)
+		{
+			fprintf(fp, "n %d %lf\n", i + 1, triangle[i].residue);
+			sum += triangle[i].residue;
+		}
+		if (triangle[i].residue < -thresh)
+		{
+			fprintf(fp, "n %d %lf\n", i + 1, triangle[i].residue);
+			sum += triangle[i].residue;
+		}
+	}
+	//写入大地节点
+	if (!b_balanced)
+	{
+		fprintf(fp, "n %d %lf\n", num_triangle + 1, -sum);
+	}
+
+	//写入流费用
+	fprintf(fp, "c Arc descriptor lines(from, to, minflow, maxflow, cost)\n");
+	int rows, cols;
+	int lower_bound = 0;
+	int upper_bound = 1;
+	double cost_mean;
+	int nr = cost.rows;
+	int nc = cost.cols;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		if (triangle[i].p1 >= 1 &&
+			triangle[i].p1 <= num_nodes &&
+			triangle[i].p2 >= 1 &&
+			triangle[i].p2 <= num_nodes &&
+			triangle[i].p3 >= 1 &&
+			triangle[i].p3 <= num_nodes
+			)
+		{
+			cost_mean = 0.0;
+			nodes[triangle[i].p1 - 1].get_pos(&rows, &cols);
+			if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
+			nodes[triangle[i].p2 - 1].get_pos(&rows, &cols);
+			if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
+			nodes[triangle[i].p3 - 1].get_pos(&rows, &cols);
+			if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
+			cost_mean = cost_mean / 3;
+			if (triangle[i].neigh1 > 0) fprintf(fp, "a %d %d %d %d %lf\n", i + 1, triangle[i].neigh1, lower_bound, upper_bound, cost_mean);
+			if (triangle[i].neigh2 > 0) fprintf(fp, "a %d %d %d %d %lf\n", i + 1, triangle[i].neigh2, lower_bound, upper_bound, cost_mean);
+			if (triangle[i].neigh3 > 0) fprintf(fp, "a %d %d %d %d %lf\n", i + 1, triangle[i].neigh3, lower_bound, upper_bound, cost_mean);
+		}
+	}
+	if (!b_balanced)
+	{
+		//写入边界流费用
+		for (int i = 0; i < num_triangle; i++)
+		{
+			if (edges[triangle[i].edge1 - 1].isBoundry ||
+				edges[triangle[i].edge2 - 1].isBoundry ||
+				edges[triangle[i].edge3 - 1].isBoundry)
+			{
+				cost_mean = 0.0;
+				nodes[triangle[i].p1 - 1].get_pos(&rows, &cols);
+				if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
+				nodes[triangle[i].p2 - 1].get_pos(&rows, &cols);
+				if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
+				nodes[triangle[i].p3 - 1].get_pos(&rows, &cols);
 				if (rows >= 0 && rows <= nr - 1) cost_mean += cost.at<double>(rows, cols);
 				cost_mean = cost_mean / 3;
 				fprintf(fp, "a %d %d %d %d %lf\n", i + 1, num_triangle + 1, lower_bound, upper_bound, cost_mean);
@@ -1011,6 +1184,84 @@ int Utils::residue(triangle* tri, int num_triangle, vector<tri_node>& nodes, tri
 	return 0;
 }
 
+int Utils::residue(vector<triangle>& triangle, vector<tri_node>& nodes, vector<tri_edge>& edges)
+{
+	if (triangle.size() < 1 ||
+		nodes.size() < 1 ||
+		edges.size() < 3 
+		)
+	{
+		fprintf(stderr, "residue(): input check failed!\n\n");
+		return -1;
+	}
+	int num_triangle = triangle.size();
+	double thresh = 500;
+	int num_nodes = nodes.size();
+	int end1, end2, end3, tmp;
+	double x1, y1, x2, y2, x3, y3, direction, delta12, delta23, delta31, residue, phi1, phi2, phi3, distance1,
+		distance2, distance3;
+	int row1, col1, row2, col2, row3, col3;
+	bool b_res = false;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		end1 = triangle[i].p1;
+		end2 = triangle[i].p2;
+		end3 = triangle[i].p3;
+		if (end1 > end2)
+		{
+			tmp = end1;
+			end1 = end2;
+			end2 = tmp;
+		}
+
+		nodes[end1 - 1].get_pos(&row1, &col1);
+		nodes[end2 - 1].get_pos(&row2, &col2);
+		nodes[end3 - 1].get_pos(&row3, &col3);
+
+		nodes[end1 - 1].get_distance(nodes[end2 - 1], &distance1);
+		nodes[end2 - 1].get_distance(nodes[end3 - 1], &distance2);
+		nodes[end3 - 1].get_distance(nodes[end1 - 1], &distance3);
+		b_res = true;
+		if ((distance1 > thresh) || (distance2 > thresh) || (distance3 > thresh)) b_res = false;
+
+		nodes[end1 - 1].get_phase(&phi1);
+		nodes[end2 - 1].get_phase(&phi2);
+		nodes[end3 - 1].get_phase(&phi3);
+
+		x2 = double(col2 - col1);
+		y2 = -double(row1 - row2);
+		x1 = double(col1 - col3);
+		y1 = -double(row3 - row1);
+		direction = x1 * y2 - x2 * y1;
+
+		delta12 = atan2(sin(phi2 - phi1), cos(phi2 - phi1));
+		delta23 = atan2(sin(phi3 - phi2), cos(phi3 - phi2));
+		delta31 = atan2(sin(phi1 - phi3), cos(phi1 - phi3));
+
+		double res = (delta12 + delta23 + delta31) / 2.0 / PI;
+		if (fabs(res) > 0.7 && !b_res)//标注边长超过阈值的残差边和残差节点
+		{
+			edges[triangle[i].edge1 - 1].isResidueEdge = true;
+			edges[triangle[i].edge2 - 1].isResidueEdge = true;
+			edges[triangle[i].edge3 - 1].isResidueEdge = true;
+
+			nodes[triangle[i].p1 - 1].set_residue(true);
+			nodes[triangle[i].p2 - 1].set_residue(true);
+			nodes[triangle[i].p3 - 1].set_residue(true);
+		}
+		res = b_res ? res : 0.0;
+		if (direction < 0.0)//在目标三角形中顺残差方向(残差方向定义为逆时针方向)
+		{
+			triangle[i].residue = res;
+		}
+		else
+		{
+			triangle[i].residue = -res;
+		}
+	}
+	return 0;
+}
+
 int Utils::gen_mask(Mat& coherence, Mat& mask, int wnd_size, double thresh)
 {
 	if (coherence.rows < 2 ||
@@ -1523,6 +1774,281 @@ int Utils::read_DIMACS(const char* DIMACS_file_solution, tri_edge* edges, int nu
 				else
 				{
 					(edges + target_edges - 1)->gain = -flow;
+				}
+			}
+		}
+		GET_NEXT_LINE;
+	}
+
+	if (fp)
+	{
+		fclose(fp);
+		fp = NULL;
+	}
+	return 0;
+}
+
+int Utils::read_DIMACS(
+	const char* DIMACS_file_solution,
+	vector<tri_edge>& edges, 
+	vector<tri_node>& nodes,
+	vector<triangle>& triangle
+)
+{
+	if (DIMACS_file_solution == NULL ||
+		edges.size() < 3 ||
+		nodes.size() < 3 ||
+		triangle.size() < 1
+		)
+	{
+		fprintf(stderr, "read_DIMACS(): input check failed!\n\n");
+		return -1;
+	}
+	FILE* fp = NULL;
+	fp = fopen(DIMACS_file_solution, "rt");
+	if (fp == NULL)
+	{
+		fprintf(stderr, "read_DIMACS(): can't open %s \n", DIMACS_file_solution);
+		return -1;
+	}
+
+	char instring[256];
+	char ch;
+	double obj_value = 0;
+	int i, tmp, end1, end2, end3, row1, col1, row2, col2, row3, col3;
+	int end[3];
+	double x1, y1, x2, y2, direction;
+	long from, to;
+	double flow = 0;
+	bool flag;
+	int x[3];
+	int y[3];
+	long* ptr_neigh = NULL;
+	int num_neigh, target_edges;
+	int num_nodes = nodes.size();
+	int num_triangle = triangle.size(); int num_edges = edges.size();
+	/////////////////////读取注释///////////////////////////
+	GET_NEXT_LINE;
+	while (ch != 's' && ch)
+	{
+		if (ch != 'c')
+		{
+			if (fp) fclose(fp);
+			fprintf(stderr, "read_DIMACS(): unknown file format!\n\n");
+			return -1;
+		}
+		GET_NEXT_LINE;
+	}
+	/////////////////////读取优化目标值/////////////////////
+	for (i = 1; i < 81; i++)
+	{
+		if (isspace((int)instring[i]) > 0)
+		{
+			i++;
+			break;
+		}
+	}
+	if (sscanf(&(instring[i]), "%lf", &obj_value) != 1)
+	{
+		if (fp) fclose(fp);
+		fprintf(stderr, "read_DIMACS(): unknown file format!\n\n");
+		return -1;
+	}
+	if (obj_value < 0.0)
+	{
+		if (fp) fclose(fp);
+		fprintf(stderr, "read_DIMACS(): this problem can't be solved(unbounded or infeasible)!\n\n");
+		return -1;
+	}
+	////////////////////////读取MCF结果////////////////////////
+	GET_NEXT_LINE;
+	while (ch && ch == 'f')
+	{
+		if (sscanf(&(instring[2]), "%ld %ld %lf", &from, &to, &flow) != 3 ||
+			flow < 0.0 || from < 0 || to < 0)
+		{
+			if (fp) fclose(fp);
+			fprintf(stderr, "read_DIMACS(): unknown file format!\n\n");
+			return -1;
+		}
+		//非接地边
+		if (from > 0 &&
+			from <= num_triangle &&
+			to > 0 &&
+			to <= num_triangle)
+		{
+			/////////寻找两个三角形的公共边//////////////
+			{
+				end[0] = -1;
+				end[1] = -1;
+				x[0] = triangle[from - 1].p1;
+				x[1] = triangle[from - 1].p2;
+				x[2] = triangle[from - 1].p3;
+				y[0] = triangle[to - 1].p1;
+				y[1] = triangle[to - 1].p2;
+				y[2] = triangle[to - 1].p3;
+				i = 0; tmp = 0; flag = false;
+				while (end[0] == -1 || end[1] == -1)
+				{
+					if (i > 2)
+					{
+						if (fp) fclose(fp);
+						fprintf(stderr, "read_DIMACS(): illegal Delaunay triangle!\n\n");
+						return -1;
+					}
+					for (int j = 0; j < 3; j++)
+					{
+						if (x[i] == y[j])
+						{
+							end[tmp] = x[i];
+							tmp++;
+							if (i == 0) flag = true;
+							break;
+						}
+					}
+					i++;
+
+				}
+			}
+			if (i == 3)
+			{
+				if (flag) end[2] = x[1];
+				else
+				{
+					end[2] = x[0];
+				}
+			}
+			else
+			{
+				end[2] = x[2];
+			}
+			if (end[0] > end[1])
+			{
+				end1 = end[1];
+				end2 = end[0];
+			}
+			else
+			{
+				end1 = end[0];
+				end2 = end[1];
+			}
+			end3 = end[2];
+			/////////寻找两个三角形的公共边//////////////
+
+
+
+			if (end1 > 0 && end1 <= num_nodes && end2 > 0 && end2 <= num_nodes && end3 > 0 && end3 <= num_nodes)
+			{
+				//找到边序号target_edges
+				nodes[end1 - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+				for (i = 0; i < num_neigh; i++)
+				{
+					if ((ptr_neigh + i) != NULL && *(ptr_neigh + i) > 0 && *(ptr_neigh + i) <= num_edges)
+					{
+						if (edges[*(ptr_neigh + i) - 1].end1 == end2 || edges[*(ptr_neigh + i) - 1].end2 == end2)
+						{
+							target_edges = *(ptr_neigh + i);
+						}
+					}
+				}
+
+				nodes[end1 - 1].get_pos(&row1, &col1);
+				nodes[end2 - 1].get_pos(&row2, &col2);
+				nodes[end3 - 1].get_pos(&row3, &col3);
+				x1 = double(col1 - col3);
+				y1 = -double(row3 - row1);
+				x2 = double(col2 - col1);
+				y2 = -double(row1 - row2);
+				direction = x1 * y2 - x2 * y1;
+				if (direction < 0.0)//在目标三角形中顺残差方向
+				{
+					edges[target_edges - 1].gain = -flow;
+				}
+				else
+				{
+					edges[target_edges - 1].gain = flow;
+				}
+			}
+		}
+		//接地边
+		if (from == num_triangle + 1 || to == num_triangle + 1)
+		{
+			if (from == num_triangle + 1)
+			{
+				if (edges[triangle[to - 1].edge1 - 1].isBoundry)target_edges = triangle[to - 1].edge1;
+				else if (edges[triangle[to - 1].edge2 - 1].isBoundry) target_edges = triangle[to - 1].edge2;
+				else target_edges = triangle[to - 1].edge3;
+
+
+				if (edges[target_edges - 1].end1 > edges[target_edges].end2)
+				{
+					end1 = edges[target_edges].end2;
+					end2 = edges[target_edges].end1;
+				}
+				else
+				{
+					end1 = edges[target_edges].end1;
+					end2 = edges[target_edges].end2;
+				}
+
+				if (triangle[to - 1].p1 != end1 && triangle[to - 1].p1 != end2) end3 = triangle[to - 1].p1;
+				else if (triangle[to - 1].p2 != end1 && triangle[to - 1].p2 != end2) end3 = triangle[to - 1].p2;
+				else end3 = triangle[to - 1].p3;
+
+				nodes[end1 - 1].get_pos(&row1, &col1);
+				nodes[end2 - 1].get_pos(&row2, &col2);
+				nodes[end3 - 1].get_pos(&row3, &col3);
+				x1 = double(col1 - col3);
+				y1 = -double(row3 - row1);
+				x2 = double(col2 - col1);
+				y2 = -double(row1 - row2);
+				direction = x1 * y2 - x2 * y1;
+				if (direction < 0.0)//在目标三角形中顺残差方向
+				{
+					edges[target_edges - 1].gain = flow;
+				}
+				else
+				{
+					edges[target_edges - 1].gain = -flow;
+				}
+			}
+			else
+			{
+				if (edges[triangle[from - 1].edge1 - 1].isBoundry)target_edges = triangle[from - 1].edge1;
+				else if (edges[triangle[from - 1].edge2 - 1].isBoundry) target_edges = triangle[from - 1].edge2;
+				else target_edges = triangle[from - 1].edge3;
+
+
+				if (edges[target_edges - 1].end1 > edges[target_edges].end2)
+				{
+					end1 = edges[target_edges].end2;
+					end2 = edges[target_edges].end1;
+				}
+				else
+				{
+					end1 = edges[target_edges].end1;
+					end2 = edges[target_edges].end2;
+				}
+
+				if (triangle[from - 1].p1 != end1 && triangle[from - 1].p1 != end2) end3 = triangle[from - 1].p1;
+				else if (triangle[from - 1].p2 != end1 && triangle[from - 1].p2 != end2) end3 = triangle[from - 1].p2;
+				else end3 = triangle[from - 1].p3;
+
+				nodes[end1 - 1].get_pos(&row1, &col1);
+				nodes[end2 - 1].get_pos(&row2, &col2);
+				nodes[end3 - 1].get_pos(&row3, &col3);
+				x1 = double(col1 - col3);
+				y1 = -double(row3 - row1);
+				x2 = double(col2 - col1);
+				y2 = -double(row1 - row2);
+				direction = x1 * y2 - x2 * y1;
+				if (direction < 0.0)//在目标三角形中顺残差方向
+				{
+					edges[target_edges - 1].gain = -flow;
+				}
+				else
+				{
+					edges[target_edges - 1].gain = flow;
 				}
 			}
 		}
@@ -4275,6 +4801,83 @@ int Utils::read_edges(const char* filename, tri_edge** edges, long* num_edges, i
 		*(*neighbours + end1 - 1) = *(*neighbours + end1 - 1) + 1;//统计每个节点有多少邻接边
 		*(*neighbours + end2 - 1) = *(*neighbours + end2 - 1) + 1;
 	}
+	if (fp)
+	{
+		fclose(fp);
+		fp = NULL;
+	}
+	return 0;
+}
+
+int Utils::read_edges(const char* edge_file, vector<tri_edge>& edges, std::vector<int>& node_neighbours, long num_nodes)
+{
+	if (edge_file == NULL ||
+		num_nodes < 3)
+	{
+		fprintf(stderr, "read_edges(): input check failed!\n\n");
+		return -1;
+	}
+	FILE* fp = NULL;
+	fp = fopen(edge_file, "rt");
+	if (fp == NULL)
+	{
+		fprintf(stderr, "read_edges(): can't open %s\n", edge_file);
+		return -1;
+	}
+	char str[1024];
+	char* ptr;
+	fgets(str, 1024, fp);
+	long long num_edges = 0;
+	num_edges = strtol(str, &ptr, 0);
+	if (num_edges <= 0)
+	{
+		fprintf(stderr, "read_edges(): %s is unknown format!\n", edge_file);
+		if (fp)
+		{
+			fclose(fp);
+			fp = NULL;
+		}
+		return -1;
+	}
+	edges.clear(); node_neighbours.clear();
+	edges.resize(num_edges);
+	node_neighbours.resize(num_nodes);
+	long end1, end2, edges_number, boundry_marker;
+	for (int i = 0; i < num_edges; i++)
+	{
+		fgets(str, 1024, fp);
+		edges_number = strtol(str, &ptr, 0);
+		end1 = strtol(ptr, &ptr, 0);
+		end2 = strtol(ptr, &ptr, 0);
+		boundry_marker = strtol(ptr, &ptr, 0);
+		edges[i].end1 = end1;
+		edges[i].end2 = end2;
+		edges[i].num = i + 1;
+		edges[i].gain = 0;
+		edges[i].isResidueEdge = false;
+		edges[i].phase_diff = 0.0;
+		edges[i].isBoundry = (boundry_marker == 1);
+		if (end1 < 1 ||
+			end1 > num_nodes ||
+			end2 < 1 ||
+			end2 > num_nodes)
+		{
+			fprintf(stderr, "read_edges(): endpoints exceed 1~num_nodes!\n");
+			if (fp)
+			{
+				fclose(fp);
+				fp = NULL;
+			}
+			return -1;
+		}
+		node_neighbours[end1 - 1] += 1;//统计每个节点有多少邻接边
+		node_neighbours[end2 - 1] += 1;//统计每个节点有多少邻接边
+	}
+	if (fp)
+	{
+		fclose(fp);
+		fp = NULL;
+	}
 	return 0;
 }
 
@@ -4361,6 +4964,122 @@ int Utils::init_tri_node(vector<tri_node>& node_array, Mat& phase, Mat& mask, tr
 	return 0;
 }
 
+int Utils::init_tri_node(
+	vector<tri_node>& node_array,
+	const Mat& phase,
+	const Mat& mask,
+	const vector<tri_edge>& edges,
+	const vector<int>& node_neighbours,
+	int num_nodes
+)
+{
+	if (phase.rows < 2 ||
+		phase.cols < 2 ||
+		phase.channels() != 1 ||
+		phase.type() != CV_64F ||
+		mask.rows != phase.rows ||
+		mask.cols != phase.cols ||
+		mask.channels() != 1 ||
+		mask.type() != CV_32S ||
+		edges.size() < 3 ||
+		(node_neighbours.size() - num_nodes) != 0 ||
+		num_nodes < 3)
+	{
+		fprintf(stderr, "init_tri_node(): input check failed!\n\n");
+		return -1;
+	}
+	int sum = cv::countNonZero(mask);;
+	if (sum != num_nodes)
+	{
+		fprintf(stderr, "init_tri_node(): mask and num_nodes mismatch!\n\n");
+		return -1;
+	}
+	long long num_edges = edges.size();
+	node_array.clear();
+	node_array.resize(num_nodes);
+	int rows = phase.rows;
+	int cols = phase.cols;
+	int count = 0;
+	tri_node* ptr = NULL;
+	double Phase;
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			if (mask.at<int>(i, j) > 0)
+			{
+				Phase = phase.at<double>(i, j);
+				ptr = new tri_node(i, j, node_neighbours[count], Phase);
+				if (mask.at<int>(i, j) > 1)//邻接已解缠节点标记
+				{
+					ptr->set_status(true);
+				}
+				node_array[count] = *ptr;
+				delete ptr;
+				ptr = NULL;
+				count++;
+
+			}
+		}
+	}
+
+	long* neighbour_ptr = NULL;
+	int dummy, ret;
+	tri_edge tmp;
+	for (int i = 0; i < num_edges; i++)
+	{
+		tmp = edges[i];
+		if (tmp.end1 < 0 ||
+			tmp.end2 < 0 ||
+			tmp.end1 > node_array.size() ||
+			tmp.end2 > node_array.size())
+		{
+			fprintf(stderr, "init_tri_node(): edges' endpoint exceed legal value!\n\n");
+			return -1;
+		}
+		ret = node_array[tmp.end1 - 1].get_neigh_ptr(&neighbour_ptr, &dummy);
+		if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
+		while (neighbour_ptr != NULL && *neighbour_ptr != -1)
+		{
+			neighbour_ptr = neighbour_ptr + 1;
+		}
+		*neighbour_ptr = i + 1;
+
+		ret = node_array[tmp.end2 - 1].get_neigh_ptr(&neighbour_ptr, &dummy);
+		if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
+		while (neighbour_ptr != NULL && *neighbour_ptr != -1)
+		{
+			neighbour_ptr = neighbour_ptr + 1;
+		}
+		*neighbour_ptr = i + 1;
+	}
+	return 0;
+}
+
+int Utils::init_edge_phase_diff(vector<tri_edge>& edges, const vector<tri_node>& node_array)
+{
+	if (edges.size() < 3 || node_array.size() < 3)
+	{
+		fprintf(stderr, "init_edge_phase_diff(): input check failed!\n");
+		return -1;
+	}
+	size_t num_nodes = node_array.size();
+	size_t num_edges = edges.size();
+	size_t end1, end2;
+	double phi1, phi2;
+	for (size_t i = 0; i < num_edges; i++)
+	{
+		end1 = edges[i].end1 < edges[i].end2 ? edges[i].end1 : edges[i].end2;
+		end2 = edges[i].end1 < edges[i].end2 ? edges[i].end2 : edges[i].end1;
+		node_array[end1 - 1].get_phase(&phi1);
+		node_array[end2 - 1].get_phase(&phi2);
+		phi1 = phi2 - phi1;
+		phi1 = atan2(sin(phi1), cos(phi1));
+		edges[i].phase_diff = phi1;
+	}
+	return 0;
+}
+
 int Utils::init_edges_quality(Mat& quality, tri_edge* edges, int num_edges, vector<tri_node>& nodes)
 {
 	if (quality.rows < 2 ||
@@ -4385,6 +5104,34 @@ int Utils::init_edges_quality(Mat& quality, tri_edge* edges, int num_edges, vect
 		nodes[(edges + i)->end2 - 1].get_pos(&rows, &cols);
 		qual += quality.at<double>(rows, cols);
 		(edges + i)->quality = qual / 2.0;
+	}
+	return 0;
+}
+
+int Utils::init_edges_quality(const Mat& quality_map, vector<tri_edge>& edges, const vector<tri_node>& nodes)
+{
+	if (quality_map.rows < 2 ||
+		quality_map.cols < 2 ||
+		quality_map.type() != CV_64F ||
+		quality_map.channels() != 1 ||
+		edges.size() < 3 ||
+		nodes.size() < 3
+		)
+	{
+		fprintf(stderr, "init_edges_quality(): input check failed!\n\n");
+		return -1;
+	}
+	int rows, cols;
+	double qual = 0.0;
+	size_t num_edges = edges.size();
+	for (int i = 0; i < num_edges; i++)
+	{
+		qual = 0.0;
+		nodes[edges[i].end1 - 1].get_pos(&rows, &cols);
+		qual += quality_map.at<double>(rows, cols);
+		nodes[edges[i].end2 - 1].get_pos(&rows, &cols);
+		qual += quality_map.at<double>(rows, cols);
+		edges[i].quality = qual / 2.0;
 	}
 	return 0;
 }
@@ -4544,6 +5291,137 @@ int Utils::read_triangle(
 	return 0;
 }
 
+int Utils::read_triangle(
+	const char* ele_file,
+	const char* neigh_file, 
+	vector<triangle>& triangle,
+	vector<tri_node>& nodes,
+	vector<tri_edge>& edges
+)
+{
+	if (ele_file == NULL ||
+		neigh_file == NULL ||
+		nodes.size() < 3 ||
+		edges.size() < 3
+		)
+	{
+		fprintf(stderr, "read_triangle(): input check failed!\n\n");
+		return -1;
+	}
+	FILE* fp_ele, * fp_neigh;
+	fp_ele = NULL;
+	fp_neigh = NULL;
+	fp_ele = fopen(ele_file, "rt");
+	if (fp_ele == NULL)
+	{
+		fprintf(stderr, "read_triangle(): can't open %s\n", ele_file);
+		return -1;
+	}
+	fp_neigh = fopen(neigh_file, "rt");
+	if (fp_neigh == NULL)
+	{
+		fprintf(stderr, "read_triangle(): can't open %s\n", neigh_file);
+		if (fp_ele)
+		{
+			fclose(fp_ele);
+			fp_ele = NULL;
+		}
+		return -1;
+	}
+
+	char str[INPUTMAXSIZE];
+	char* ptr;
+	fgets(str, INPUTMAXSIZE, fp_ele);
+	long num_triangle = strtol(str, &ptr, 0);
+	if (num_triangle < 1)
+	{
+		fprintf(stderr, "read_triangle(): number of triangles exceed legal range!\n");
+		if (fp_ele)
+		{
+			fclose(fp_ele);
+			fp_ele = NULL;
+		}
+		if (fp_neigh)
+		{
+			fclose(fp_neigh);
+			fp_neigh = NULL;
+		}
+		return -1;
+	}
+	fgets(str, INPUTMAXSIZE, fp_neigh);
+	triangle.resize(num_triangle);
+
+	int p1, p2, p3, neigh1, neigh2, neigh3, num1, num2;
+	for (int i = 0; i < num_triangle; i++)
+	{
+		fgets(str, INPUTMAXSIZE, fp_ele);
+		num1 = strtol(str, &ptr, 0);
+		p1 = strtol(ptr, &ptr, 0);
+		p2 = strtol(ptr, &ptr, 0);
+		p3 = strtol(ptr, &ptr, 0);
+
+		fgets(str, INPUTMAXSIZE, fp_neigh);
+		num2 = strtol(str, &ptr, 0);
+		neigh1 = strtol(ptr, &ptr, 0);
+		neigh2 = strtol(ptr, &ptr, 0);
+		neigh3 = strtol(ptr, &ptr, 0);
+		triangle[i].p1 = p1;
+		triangle[i].p2 = p2;
+		triangle[i].p3 = p3;
+		triangle[i].neigh1 = neigh1;
+		triangle[i].neigh2 = neigh2;
+		triangle[i].neigh3 = neigh3;
+		triangle[i].num = num1;
+	}
+	if (fp_ele)
+	{
+		fclose(fp_ele);
+		fp_ele = NULL;
+	}
+	if (fp_neigh)
+	{
+		fclose(fp_neigh);
+		fp_neigh = NULL;
+	}
+	//获取三角形的边序号
+	long* ptr_neigh = NULL;
+	int num_neigh, count;
+	int edge[3];
+	memset(edge, 0, sizeof(int) * 3);
+	for (int j = 0; j < num_triangle; j++)
+	{
+		count = 0;
+		nodes[triangle[j].p1 - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+		for (int i = 0; i < num_neigh; i++)
+		{
+			if ((edges[*(ptr_neigh + i) - 1].end1 == triangle[j].p2) ||
+				(edges[*(ptr_neigh + i) - 1].end1 == triangle[j].p3) ||
+				(edges[*(ptr_neigh + i) - 1].end2 == triangle[j].p2)||
+				(edges[*(ptr_neigh + i) - 1].end2 == triangle[j].p3)
+				)
+			{
+				edge[count] = *(ptr_neigh + i);
+				count++;
+			}
+		}
+		nodes[triangle[j].p2 - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+		for (int i = 0; i < num_neigh; i++)
+		{
+			if ((edges[*(ptr_neigh + i) - 1].end1 == triangle[j].p3) ||
+				(edges[*(ptr_neigh + i) - 1].end2 == triangle[j].p3))
+			{
+				edge[count] = *(ptr_neigh + i);
+				//count++;
+			}
+		}
+		triangle[j].edge1 = edge[0];
+		triangle[j].edge2 = edge[1];
+		triangle[j].edge3 = edge[2];
+	}
+
+	return 0;
+}
+
 int Utils::gen_delaunay(const char* filename, const char* exe_path)
 {
 	if (filename == NULL ||
@@ -4622,7 +5500,7 @@ int Utils::gen_delaunay(const char* filename, const char* exe_path)
 }
 
 
-int Utils::write_node_file(const char* filename, Mat& mask)
+int Utils::write_node_file(const char* filename, const Mat& mask)
 {
 	if (filename == NULL ||
 		mask.rows < 2 ||
@@ -8514,9 +9392,12 @@ int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, Com
 int Utils::MB_phase_estimation(
 	vector<string> coregis_slc_files,
 	vector<string> phase_files, 
+	vector<string> coherence_files,
 	int master_indx, 
 	int blocksize_row, 
 	int blocksize_col, 
+	Mat& out_mask,
+	bool b_coh_est,
 	int homogeneous_test_wnd,
 	double thresh_c1_to_c2,
 	bool b_flat,
@@ -8525,6 +9406,7 @@ int Utils::MB_phase_estimation(
 {
 	if (coregis_slc_files.size() < 2 ||
 		phase_files.size() != coregis_slc_files.size() ||
+		coherence_files.size() != phase_files.size() ||
 		master_indx < 1 ||
 		master_indx > phase_files.size() ||
 		blocksize_row < 100 ||
@@ -8552,6 +9434,7 @@ int Utils::MB_phase_estimation(
 	ret = conversion.read_array_from_h5(coregis_slc_files[0].c_str(), "range_len", tmp);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	nc = tmp.at<int>(0, 0);
+	Mat mask = Mat::zeros(nr, nc, CV_32S); mask.copyTo(out_mask); mask.release();
 	//检查输入SAR图像尺寸是否相同
 	for (int i = 1; i < n_images; i++)
 	{
@@ -8596,30 +9479,39 @@ int Utils::MB_phase_estimation(
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	for (int i = 0; i < n_images; i++)
 	{
-		if (i != master_indx - 1)
+		//预先填充相关系数
+		if (b_coh_est)
 		{
-			
-			//预先填充干涉相位
-			ret = conversion.creat_new_h5(phase_files[i].c_str());
+			ret = conversion.creat_new_h5(coherence_files[i].c_str());
 			if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "phase", phase);
+			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "coherence", phase);
 			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 			azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
-			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "azimuth_len", azimuth_len);
+			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "azimuth_len", azimuth_len);
 			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "range_len", range_len);
+			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "range_len", range_len);
 			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-			if (b_flat)
-			{
-				ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "state_vec", stateVec2);
-				if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-				ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "prf", prf2);
-				if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-				ret = flat.deflat(stateVec1, stateVec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0, 1 / prf.at<double>(0, 0),
-					1 / prf2.at<double>(0, 0), 1, 3e8 / carrier_frequency.at<double>(0, 0), phase, flat_phase_coef);
-				ret = conversion.write_array_to_h5(phase_files[i].c_str(), "flat_phase_coefficient", flat_phase_coef);
-				if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-			}
+		}
+		//预先填充干涉相位
+		ret = conversion.creat_new_h5(phase_files[i].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "phase", phase);
+		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+		azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
+		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "azimuth_len", azimuth_len);
+		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "range_len", range_len);
+		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+		if (b_flat)
+		{
+			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "state_vec", stateVec2);
+			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "prf", prf2);
+			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+			ret = flat.deflat(stateVec1, stateVec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0, 1 / prf.at<double>(0, 0),
+				1 / prf2.at<double>(0, 0), 1, 3e8 / carrier_frequency.at<double>(0, 0), phase, flat_phase_coef);
+			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "flat_phase_coefficient", flat_phase_coef);
+			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 		}
 		fprintf(stdout, "去平地进度：%d/%d\n", i, n_images - 1);
 	}
@@ -8628,8 +9520,9 @@ int Utils::MB_phase_estimation(
 
 	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad;
 	vector<ComplexMat> slc_series, slc_series_filter;
+	vector<Mat> coherence_series; coherence_series.resize(n_images);
 	ComplexMat slc, slc2, temp;
-	Mat flat_phase, ph;
+	Mat flat_phase, ph, zeromat;
 	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
 	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
 	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
@@ -8687,23 +9580,43 @@ int Utils::MB_phase_estimation(
 				slc_series.push_back(slc);
 				slc_series_filter.push_back(slc);
 			}
+
+			//填充相关系数
+			if (b_coh_est)
+			{
+				zeromat = Mat::zeros(flat_phase.rows, flat_phase.cols, CV_64F);
+				for (int mm = 0; mm < n_images; mm++)
+				{
+					zeromat.copyTo(coherence_series[mm]);
+				}
+			}
 			//计算
 #pragma omp parallel for schedule(guided)
 			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
 			{
-				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue;
+				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue; int ret;
 				for (int jj = (left - left_pad); jj < (right - left_pad); jj++)
 				{
-					coherence_matrix_estimation(slc_series, coherence_matrix, homogeneous_test_wnd, homogeneous_test_wnd, ii, jj);
-					HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
-					if (!eigenvalue.empty())
+					ret = coherence_matrix_estimation(slc_series, coherence_matrix, homogeneous_test_wnd, homogeneous_test_wnd, ii, jj);
+					if (ret == 0)
 					{
-						if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
+						ret = HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
+						if (!eigenvalue.empty() && ret == 0)
 						{
-							for (int kk = 0; kk < n_images; kk++)
+							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
 							{
-								slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
-								slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
+								out_mask.at<int>(ii + top_pad, jj + left_pad) = 1;
+								for (int kk = 0; kk < n_images; kk++)
+								{
+									slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
+									slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
+									if (b_coh_est)
+									{
+										coherence_series[kk].at<double>(ii, jj) = coherence_matrix(cv::Range(master_indx - 1, master_indx),
+											cv::Range(kk, kk + 1)).GetMod().at<double>(0, 0);
+									}
+									
+								}
 							}
 						}
 					}
@@ -8716,12 +9629,16 @@ int Utils::MB_phase_estimation(
 			slc = slc_series_filter[master_indx - 1];
 			for (int kk = 0; kk < n_images; kk++)
 			{
-				if (kk == master_indx - 1) continue;
+				coherence_series[kk](cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
+				ret = conversion.write_subarray_to_h5(coherence_files[kk].c_str(), "coherence", ph, top, left, bottom - top, right - left);
+				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
+				//if (kk == master_indx - 1) continue;
 				ret = multilook(slc, slc_series_filter[kk], 1, 1, phase);
-				phase(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
 				if (return_check(ret, "multilook()", error_head)) return -1;
+				phase(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
 				ret = conversion.write_subarray_to_h5(phase_files[kk].c_str(), "phase", ph, top, left, bottom - top, right - left);
 				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
+				
 			}
 			slc_series.clear();
 			slc_series_filter.clear();
@@ -8730,6 +9647,684 @@ int Utils::MB_phase_estimation(
 		}
 	}
 
+	return 0;
+}
+
+int Utils::unwrap_region_growing(
+	vector<tri_node>& nodes, 
+	const vector<tri_edge>& edges, 
+	size_t start_edge, 
+	double distance_thresh, 
+	double quality_thresh
+)
+{
+	if (nodes.size() < 3 ||
+		edges.size() < 3 ||
+		start_edge < 1 ||
+		start_edge > edges.size()
+		)
+	{
+		fprintf(stderr, "unwrap_region_growing(): input check failed!\n\n");
+		return -1;
+	}
+	if (distance_thresh < 1.0) distance_thresh = 1.0;
+	if (quality_thresh > 0.9) quality_thresh = 0.9;
+	//找到增量积分起始点
+	int ix = 0;
+	double MC = -1.0;
+	size_t num_edges = edges.size();
+	//for (int i = 0; i < num_edges; i++)
+	//{
+	//	if (edges[i].MC > MC)
+	//	{
+	//		ix = i;
+	//		MC = edges[i].MC;
+	//	}
+	//}
+	size_t start = edges[start_edge - 1].end1;
+
+	//采用类似质量图法解缠的算法进行增量积分集成
+	edge_index tmp;
+	priority_queue<edge_index> que;
+	//nodes[start - 1].set_vel(0.0);//起始点形变速率和高程误差设置为0，后续可根据参考点进行校正
+	//nodes[start - 1].set_height(0.0);
+	nodes[start - 1].set_status(true);
+	long* ptr_neigh = NULL;
+	int num_neigh, end2, number, row1, col1, row2, col2;
+	double distance, phase, MC_total, phase_total, delta_phase;
+
+	nodes[start - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+	for (int i = 0; i < num_neigh; i++)
+	{
+		end2 = edges[*(ptr_neigh + i) - 1].end1 == start ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+		nodes[start - 1].get_distance(nodes[end2 - 1], &distance);
+		if (!nodes[end2 - 1].get_status() &&
+			distance <= distance_thresh &&
+			edges[*(ptr_neigh + i) - 1].quality > quality_thresh
+			)
+		{
+			tmp.num = *(ptr_neigh + i);
+			tmp.quality = -edges[*(ptr_neigh + i) - 1].quality;
+			que.push(tmp);
+		}
+	}
+
+	while (que.size() != 0)
+	{
+		tmp = que.top();
+		que.pop();
+		if (nodes[edges[tmp.num - 1].end1 - 1].get_status())
+		{
+			number = edges[tmp.num - 1].end1;
+			end2 = edges[tmp.num - 1].end2;
+		}
+		else
+		{
+			number = edges[tmp.num - 1].end2;
+			end2 = edges[tmp.num - 1].end1;
+		}
+		MC_total = 1e-10;
+		phase_total = 0.0;
+		if (!nodes[end2 - 1].get_status())
+		{
+			nodes[end2 - 1].get_pos(&row2, &col2);
+			nodes[end2 - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+			for (int i = 0; i < num_neigh; i++)
+			{
+				number = edges[*(ptr_neigh + i) - 1].end1 == end2 ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+				if (nodes[number - 1].get_status())
+				{
+					nodes[number - 1].get_phase(&phase);
+					nodes[number - 1].get_pos(&row1, &col1);
+					if (row1 > row2)
+					{
+						delta_phase = -edges[*(ptr_neigh + i) - 1].phase_diff;
+					}
+					if (row1 < row2)
+					{
+						delta_phase = edges[*(ptr_neigh + i) - 1].phase_diff;
+					}
+					if (row1 == row2)
+					{
+						if (col1 > col2)
+						{
+							delta_phase = -edges[*(ptr_neigh + i) - 1].phase_diff;
+						}
+						else
+						{
+							delta_phase = edges[*(ptr_neigh + i) - 1].phase_diff;
+						}
+					}
+					phase_total += (delta_phase + phase) * edges[*(ptr_neigh + i) - 1].quality;
+					MC_total += edges[*(ptr_neigh + i) - 1].quality;
+				}
+			}
+			nodes[end2 - 1].set_phase(phase_total / MC_total);
+			nodes[end2 - 1].set_status(true);
+			nodes[end2 - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+			number = end2;
+			for (int i = 0; i < num_neigh; i++)
+			{
+
+				end2 = edges[*(ptr_neigh + i) - 1].end1 == number ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+				nodes[number - 1].get_distance(nodes[end2 - 1], &distance);
+				if (!nodes[end2 - 1].get_status() &&
+					distance <= distance_thresh &&
+					edges[*(ptr_neigh + i) - 1].quality > quality_thresh
+					)
+				{
+					tmp.num = *(ptr_neigh + i);
+					tmp.quality = -edges[*(ptr_neigh + i) - 1].quality;
+					que.push(tmp);
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+int Utils::unwrap_3D(
+	const Mat& mask,
+	const vector<Mat>& quality_map,
+	vector<Mat>& wrapped_phase_series,
+	vector<Mat>& unwrapped_phase_series,
+	const char* delaunay_exe_path,
+	const char* tmp_file_path,
+	double distance_thresh,
+	double quality_thresh
+)
+{
+	if (mask.rows < 2 ||
+		mask.cols < 2 ||
+		mask.type() != CV_32S ||
+		wrapped_phase_series.size() < 2||
+		delaunay_exe_path == NULL||
+		tmp_file_path == NULL ||
+		quality_map.size() != wrapped_phase_series.size()
+		)
+	{
+		fprintf(stderr, "unwrap_3D(): input check failed!\n");
+		return -1;
+	}
+
+	quality_thresh = quality_thresh > 1.0 ? 0.9 : quality_thresh;
+	distance_thresh = distance_thresh < 1.0 ? 1.0 : distance_thresh;
+
+	/*----------------------------------*/
+	/*            时间维解缠            */
+	/*----------------------------------*/
+
+	/*
+	* 利用mask生成delaunay三角网络
+	*/
+	size_t nr = mask.rows;
+	size_t nc = mask.cols;
+	long num_nodes = cv::countNonZero(mask);
+	if (num_nodes < 3)
+	{
+		fprintf(stderr, "unwrap_3D(): at least 3 nodes are needed!\n");
+		return -1;
+	}
+	int ret;
+	int n_images = wrapped_phase_series.size();
+	for (size_t i = 0; i < n_images; i++)
+	{
+		if (quality_map[i].rows != nr || quality_map[i].cols != nc)
+		{
+			fprintf(stderr, "unwrap_3D(): quality map size mismatch!\n");
+			return -1;
+		}
+		if (wrapped_phase_series[i].rows != nr || wrapped_phase_series[i].cols != nc)
+		{
+			fprintf(stderr, "unwrap_3D(): wrapped phase size mismatch!\n");
+			return -1;
+		}
+	}
+	unwrapped_phase_series.resize(n_images);
+	vector<tri_node> nodes; vector<vector<tri_node>> nodes_vec; nodes_vec.resize(n_images);
+	vector<tri_edge> edges; vector<vector<tri_edge>> edges_vec; edges_vec.resize(n_images);
+	vector<int> node_neighbour;
+	string tmp_folder(tmp_file_path);
+	string node_file = tmp_folder + "\\triangle.node";
+	ret = write_node_file(node_file.c_str(), mask);
+	if (return_check(ret, "write_node_file()", error_head)) return -1;
+	ret = gen_delaunay(node_file.c_str(), delaunay_exe_path);
+	if (return_check(ret, "gen_delaunay()", error_head)) return -1;
+	string edge_file = tmp_folder + "\\triangle.1.edge";
+	ret = read_edges(edge_file.c_str(), edges, node_neighbour, num_nodes);
+	if (return_check(ret, "read_edges()", error_head)) return -1;
+	for (int i = 0; i < n_images; i++)
+	{
+		ret = init_tri_node(nodes, wrapped_phase_series[i], mask, edges, node_neighbour, num_nodes);
+		if (return_check(ret, "init_tri_node()", error_head)) return -1;
+		ret = init_edge_phase_diff(edges, nodes);
+		if (return_check(ret, "init_edge_phase_diff()", error_head)) return -1;
+		ret = init_edges_quality(quality_map[i], edges, nodes);
+		if (return_check(ret, "init_edges_quality()", error_head)) return -1;
+		nodes_vec[i] = nodes;
+		edges_vec[i] = edges;
+	}
+
+	/*
+	* 一维高斯滤波
+	*/
+
+	int Gaussian_radius = 2;
+	double sigma = 1.0;
+	Mat Gaussian_template = Mat::zeros(2 * Gaussian_radius + 1, 1, CV_64F);
+	for (int i = 0; i < 2 * Gaussian_radius + 1; i++)
+	{
+		Gaussian_template.at<double>(i, 0) = exp(-(double(i - Gaussian_radius)) * (double(i - Gaussian_radius)) / (2.0 * sigma * sigma))
+			/ (sigma * sqrt(PI * 2.0));
+	}
+	size_t num_edges = edges.size();
+#pragma omp parallel for schedule(guided)
+	for (long long i = 0; i < num_edges; i++)
+	{
+		Mat time_series = Mat::zeros(n_images, 1, CV_64F); Mat temp;
+		for (size_t j = 0; j < n_images; j++)
+		{
+			time_series.at<double>(j, 0) = edges_vec[j][i].phase_diff;
+		}
+		cv::copyMakeBorder(time_series, time_series, Gaussian_radius, Gaussian_radius, 0, 0, cv::BORDER_REPLICATE);
+		for (size_t j = Gaussian_radius; j < n_images + Gaussian_radius; j++)
+		{
+			time_series.at<double>(j, 0) = cv::sum(time_series(cv::Range(j - Gaussian_radius, j + Gaussian_radius + 1),
+				cv::Range(0, 1)).mul(Gaussian_template))[0];
+		}
+		time_series(cv::Range(Gaussian_radius, n_images + Gaussian_radius), cv::Range(0, 1)).copyTo(temp);
+
+		/*
+		* 时间维解缠
+		*/
+		Mat temp2; temp.copyTo(temp2);
+		for (size_t j = 1; j < n_images; j++)
+		{
+			double tmp = temp.at<double>(j, 0) - temp.at<double>(j - 1, 0);
+			tmp = atan2(sin(tmp), cos(tmp));
+			temp2.at<double>(j, 0) = temp2.at<double>(j - 1, 0) + tmp;
+		}
+
+		for (size_t j = 0; j < n_images; j++)
+		{
+			edges_vec[j][i].phase_diff = temp2.at<double>(j, 0);
+		}
+	}
+
+	/*----------------------------------*/
+	/*            空间维解缠            */
+	/*----------------------------------*/
+	
+	/*
+	* 确定解缠起始点
+	*/
+	double mean_quality, max_quality = -1.0;
+	size_t ix_max;
+	for (size_t i = 0; i < num_edges; i++)
+	{
+		mean_quality = 0.0;
+		for (size_t j = 0; j < n_images; j++)
+		{
+			mean_quality += edges_vec[j][i].quality;
+		}
+		mean_quality /= (double)n_images;
+		if (mean_quality > max_quality)
+		{
+			max_quality = mean_quality;
+			ix_max = i;
+		}
+	}
+//#pragma omp parallel for schedule(guided)
+	for (size_t i = 0; i < n_images; i++)
+	{
+		//vector<tri_node> nodes; vector<tri_edge>edges;
+		int row, col; double phase;
+		Mat unwrapped_phase;
+		wrapped_phase_series[i].copyTo(unwrapped_phase);
+		nodes = nodes_vec[i];
+		edges = edges_vec[i];
+		ret = unwrap_region_growing(nodes, edges, ix_max, distance_thresh, quality_thresh);
+		if (return_check(ret, "unwrap_region_growing()", error_head)) return -1;
+
+
+
+		/*
+		* 从节点中取出解缠相位
+		*/
+
+		for (size_t j = 0; j < num_nodes; j++)
+		{
+			if (nodes[j].get_status())
+			{
+				nodes[j].get_pos(&row, &col);
+				nodes[j].get_phase(&phase);
+				unwrapped_phase.at<double>(row, col) = phase;
+			}
+		}
+		unwrapped_phase.copyTo(unwrapped_phase_series[i]);
+	}
+	
+	/*----------------------------------*/
+	/*          时间维再解缠            */
+	/*----------------------------------*/
+
+	
+//#pragma omp parallel for schedule(guided)
+//	for (int i = 0; i < nr; i++)
+//	{
+//		double tmp, tmp_old;
+//		for (size_t j = 0; j < nc; j++)
+//		{
+//			if (mask.at<int>(i, j) > 0)
+//			{
+//				for (size_t k = 1; k < n_images; k++)
+//				{
+//					if (k == 1) tmp_old = unwrapped_phase_series[0].at<double>(i, j);
+//					tmp = unwrapped_phase_series[k].at<double>(i, j) - tmp_old;
+//					tmp = atan2(sin(tmp), cos(tmp));
+//					tmp_old = unwrapped_phase_series[k].at<double>(i, j);
+//					unwrapped_phase_series[k].at<double>(i, j) = unwrapped_phase_series[k - 1].at<double>(i, j) + tmp;
+//				}
+//			}
+//			
+//		}
+//	}
+
+	return 0;
+}
+
+int Utils::unwrap_3D_mcf(
+	const Mat& mask, 
+	const vector<Mat>& quality_map,
+	vector<Mat>& wrapped_phase_series,
+	vector<Mat>& unwrapped_phase_series,
+	const char* delaunay_exe_path, 
+	const char* mcf_exe_path, 
+	const char* tmp_file_path,
+	double distance_thresh
+)
+{
+	if (mask.rows < 2 ||
+		mask.cols < 2 ||
+		mask.type() != CV_32S ||
+		wrapped_phase_series.size() < 2 ||
+		delaunay_exe_path == NULL ||
+		tmp_file_path == NULL ||
+		mcf_exe_path == NULL ||
+		quality_map.size() != wrapped_phase_series.size()
+		)
+	{
+		fprintf(stderr, "unwrap_3D_mcf(): input check failed!\n");
+		return -1;
+	}
+
+	distance_thresh = distance_thresh < 1.0 ? 1.0 : distance_thresh;
+
+	/*----------------------------------*/
+	/*            时间维解缠            */
+	/*----------------------------------*/
+
+	/*
+	* 利用mask生成delaunay三角网络
+	*/
+	size_t nr = mask.rows;
+	size_t nc = mask.cols;
+	long num_nodes = cv::countNonZero(mask);
+	if (num_nodes < 3)
+	{
+		fprintf(stderr, "unwrap_3D_mcf(): at least 3 nodes are needed!\n");
+		return -1;
+	}
+	int ret;
+	int n_images = wrapped_phase_series.size();
+	for (size_t i = 0; i < n_images; i++)
+	{
+		if (quality_map[i].rows != nr || quality_map[i].cols != nc)
+		{
+			fprintf(stderr, "unwrap_3D_mcf(): quality map size mismatch!\n");
+			return -1;
+		}
+		if (wrapped_phase_series[i].rows != nr || wrapped_phase_series[i].cols != nc)
+		{
+			fprintf(stderr, "unwrap_3D_mcf(): wrapped phase size mismatch!\n");
+			return -1;
+		}
+	}
+	Unwrap unwrap;
+	unwrapped_phase_series.resize(n_images);
+	vector<tri_node> nodes; 
+	vector<tri_edge> edges; 
+	vector<triangle> tri;
+	vector<int> node_neighbour;
+	Mat out_mask;
+	string tmp_folder(tmp_file_path);
+	string node_file = tmp_folder + "\\triangle.node";
+	string ele_file = tmp_folder + "\\triangle.1.ele";
+	string neigh_file = tmp_folder + "\\triangle.1.neigh";
+	string mcf_problem = tmp_folder + "\\mcf_delaunay.net";
+	string mcf_solution = tmp_folder + "\\mcf_delaunay.net.sol";
+	string edge_file = tmp_folder + "\\triangle.1.edge";
+	ret = write_node_file(node_file.c_str(), mask);
+	if (return_check(ret, "write_node_file()", error_head)) return -1;
+	ret = gen_delaunay(node_file.c_str(), delaunay_exe_path);
+	if (return_check(ret, "gen_delaunay()", error_head)) return -1;
+	ret = read_edges(edge_file.c_str(), edges, node_neighbour, num_nodes);
+	if (return_check(ret, "read_edges()", error_head)) return -1;
+	int num_triangle, positive = 0, negative = 0;
+	size_t num_edges = edges.size();
+	//先将起始点做时间维解缠
+	//int pos_row, pos_col; double tmp;
+	//ret = init_tri_node(nodes, wrapped_phase_series[0], mask, edges, node_neighbour, num_nodes);
+	//if (return_check(ret, "init_tri_node()", error_head)) return -1;
+	//nodes[199].get_pos(&pos_row, &pos_col);
+	//Mat time_series(n_images, 1, CV_64F);
+	//for (int i = 0; i < n_images; i++)
+	//{
+	//	time_series.at<double>(i, 0) = wrapped_phase_series[i].at<double>(pos_row, pos_col);
+	//}
+	//for (int i = 1; i < n_images; i++)
+	//{
+	//	tmp = time_series.at<double>(i, 0) - time_series.at<double>(i - 1, 0);
+	//	wrapped_phase_series[i].at<double>(pos_row, pos_col) = time_series.at<double>(i - 1, 0) +
+	//		atan2(sin(tmp), cos(tmp));
+	//}
+
+	for (int i = 0; i < n_images; i++)
+	{
+		//将edges的gain清零
+		for (size_t ii = 0; ii < num_edges; ii++)
+		{
+			edges[ii].gain = 0.0;
+		}
+		positive = 0, negative = 0;
+		ret = init_tri_node(nodes, wrapped_phase_series[i], mask, edges, node_neighbour, num_nodes);
+		if (return_check(ret, "init_tri_node()", error_head)) return -1;
+		if (i == 0)
+		{
+			ret = read_triangle(ele_file.c_str(), neigh_file.c_str(), tri, nodes, edges);
+			if (return_check(ret, "read_triangle()", error_head)) return -1;
+			num_triangle = tri.size();
+		}
+		ret = residue(tri, nodes, edges);
+		if (return_check(ret, "residue()", error_head)) return -1;
+		/*
+		* 检查残差点数，若无残差点则不使用mcf.exe求解
+		*/
+		for (int ii = 0; ii < num_triangle; ii++)
+		{
+			if (tri[ii].residue > 0.7)
+			{
+				positive++;
+			}
+			if (tri[ii].residue < -0.7)
+			{
+				negative++;
+			}
+		}
+		if (positive == 0 && negative == 0)
+		{
+			
+			ret = unwrap.MCF(wrapped_phase_series[i], unwrapped_phase_series[i], out_mask, mask, nodes, edges, 200, false, distance_thresh);
+			if (return_check(ret, "unwrap.MCF()", error_head)) return -1;
+		}
+		else
+		{
+			ret = write_DIMACS(mcf_problem.c_str(), tri, nodes, edges, quality_map[i]);
+			if (return_check(ret, "write_DIMACS()", error_head)) return -1;
+			ret = unwrap.mcf_delaunay(mcf_problem.c_str(), mcf_exe_path);
+			if (return_check(ret, "unwrap.mcf_delaunay()", error_head)) return -1;
+			ret = read_DIMACS(mcf_solution.c_str(), edges, nodes, tri);
+			if (return_check(ret, "read_DIMACS()", error_head)) return -1;
+			ret = unwrap.MCF(wrapped_phase_series[i], unwrapped_phase_series[i], out_mask, mask, nodes, edges, 200, false, distance_thresh);
+			if (return_check(ret, "unwrap.MCF()", error_head)) return -1;
+		}
+
+	}
+	return 0;
+}
+
+int Utils::unwrap_3D_adaptive_tiling(
+	const Mat& mask,
+	const vector<Mat>& quality_map,
+	vector<Mat>& wrapped_phase_series,
+	vector<Mat>& unwrapped_phase_series,
+	const char* delaunay_exe_path,
+	const char* mcf_exe_path,
+	const char* tmp_file_path,
+	double distance_thresh,
+	double quality_thresh
+)
+{
+	if (mask.rows < 2 ||
+		mask.cols < 2 ||
+		mask.type() != CV_32S ||
+		wrapped_phase_series.size() < 2 ||
+		delaunay_exe_path == NULL ||
+		tmp_file_path == NULL ||
+		mcf_exe_path == NULL ||
+		quality_map.size() != wrapped_phase_series.size() ||
+		distance_thresh < 1.0 ||
+		quality_thresh > 1.0
+		)
+	{
+		fprintf(stderr, "unwrap_3D_adaptive_tiling(): input check failed!\n");
+		return -1;
+	}
+
+	/*----------------------------------*/
+	/*           自适应分块             */
+	/*----------------------------------*/
+
+	/*
+	* 确定搜索范围半径
+	*/
+	int r = (int)floor(distance_thresh), c, ret;
+	Mat c_mat = Mat::zeros(2 * r + 1, 1, CV_32S);
+	for (int i = 0; i < 2 * r + 1; i++)
+	{
+		c_mat.at<int>(i, 0) = (int)floor(sqrt(distance_thresh * distance_thresh - double(r - i) * double(r - i)));
+	}
+
+	Mat mask1, mask2; mask.copyTo(mask1);
+	int nr = mask.rows; int nc = mask.cols;
+	int n_images = wrapped_phase_series.size();
+	size_t num_nodes = cv::countNonZero(mask);
+	if (num_nodes < 3)
+	{
+		fprintf(stderr, "unwrap_3D_adaptive_tiling(): at least 3 nodes are needed!\n");
+		return -1;
+	}
+	size_t node_count = 0;
+	int block_count = 1, row, col, mask2_start_row = nr, mask2_end_row = -1, mask2_start_col = nc, mask2_end_col = -1;
+	bool b_break;
+	char str[4096];
+	node_index node_ix, node_ix2;
+	queue<node_index> que;
+	vector<Mat> wrapped_phase, unwrapped_phase, qualitymap;
+	wrapped_phase.resize(n_images);
+	qualitymap.resize(n_images);
+	unwrapped_phase_series.resize(n_images);
+	for (int i = 0; i < n_images; i++)
+	{
+		wrapped_phase_series[i].copyTo(unwrapped_phase_series[i]);
+	}
+	while (node_count != num_nodes)
+	{
+		mask2_start_row = nr, mask2_end_row = -1, mask2_start_col = nc, mask2_end_col = -1;
+		b_break = false;
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				if (mask1.at<int>(i, j) == 1)
+				{
+					mask2_start_row = mask2_start_row > i ? i : mask2_start_row;
+					mask2_end_row = mask2_end_row < i ? i : mask2_end_row;
+					mask2_start_col = mask2_start_col > j ? j : mask2_start_col;
+					mask2_end_col = mask2_end_col < j ? j : mask2_end_col;
+
+					mask1.at<int>(i, j) += block_count; //标注已选点并将其加入到待处理队列中
+					node_ix.row = i; node_ix.col = j;
+					que.push(node_ix);
+					b_break = true;
+					break;
+				}
+			}
+			if (b_break) break;
+		}
+		
+		/*
+		* 搜索满足条件的点，并加入队列
+		*/
+
+		while (!que.empty())
+		{
+			node_ix = que.front();
+			que.pop();
+			node_count++;
+
+			for (int i = 0; i <= 2 * r; i++)
+			{
+				c = c_mat.at<int>(i, 0);
+				for (int j = 0; j <= 2 * c; j++)
+				{
+					row = node_ix.row + (i - r);
+					row = row < 0 ? 0 : row; row = row > nr - 1 ? nr - 1 : row;
+					col = node_ix.col + (j - c);
+					col = col < 0 ? 0 : col; col = col > nc - 1 ? nc - 1 : col;
+					if (mask1.at<int>(row, col) == 1)
+					{
+						mask2_start_row = mask2_start_row > row ? row : mask2_start_row;
+						mask2_end_row = mask2_end_row < row ? row : mask2_end_row;
+						mask2_start_col = mask2_start_col > col ? col : mask2_start_col;
+						mask2_end_col = mask2_end_col < col ? col : mask2_end_col;
+
+						mask1.at<int>(row, col) += block_count; //标注已选点
+						node_ix2.row = row; node_ix2.col = col;
+						que.push(node_ix2);
+					}
+				}
+			}
+		}
+
+		/*
+		* 确定新的掩膜矩阵mask2
+		*/
+
+		mask2 = Mat::zeros(mask2_end_row - mask2_start_row + 1, mask2_end_col - mask2_start_col + 1, CV_32S);
+
+		for (int i = mask2_start_row; i <= mask2_end_row; i++)
+		{
+			for (int j = mask2_start_col; j <= mask2_end_col; j++)
+			{
+				if (mask1.at<int>(i, j) == block_count + 1)
+				{
+					mask2.at<int>(i - mask2_start_row, j - mask2_start_col) = 1;
+				}
+			}
+		}
+		mask2.convertTo(mask2, CV_64F);
+		cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\mask2.bin", mask2);
+		mask2.convertTo(mask2, CV_32S);
+		if (3 > cv::countNonZero(mask2))
+		{
+			block_count++;
+			continue;
+		}
+
+		/*
+		* 3D相位解缠
+		*/
+		
+		for (int i = 0; i < n_images; i++)
+		{
+			wrapped_phase_series[i](cv::Range(mask2_start_row, mask2_end_row + 1), cv::Range(mask2_start_col, mask2_end_col + 1)).copyTo
+			(wrapped_phase[i]);
+			quality_map[i](cv::Range(mask2_start_row, mask2_end_row + 1), cv::Range(mask2_start_col, mask2_end_col + 1)).copyTo
+			(qualitymap[i]);
+		}
+
+		//ret = unwrap_3D(mask2, qualitymap, wrapped_phase, unwrapped_phase, delaunay_exe_path, tmp_file_path,
+		//	distance_thresh + 1.0, quality_thresh);
+		ret = unwrap_3D_mcf(mask2, qualitymap, wrapped_phase, unwrapped_phase, delaunay_exe_path,
+			mcf_exe_path, tmp_file_path, distance_thresh);
+		if (return_check(ret, "unwrap_3D_mcf()", error_head)) return -1;
+
+		for (int i = 0; i < n_images; i++)
+		{
+			unwrapped_phase[i].copyTo(unwrapped_phase_series[i](cv::Range(mask2_start_row, mask2_end_row + 1),
+				cv::Range(mask2_start_col, mask2_end_col + 1)));
+
+			memset(str, 0, 4096);
+			sprintf(str, "H:\\data\\experiment\\tsx\\Beijing\\Test\\Regis(5km)\\unwrapped_phase_%d.bin", i + 1);
+			cvmat2bin(str, unwrapped_phase[i]);
+			//savephase(str, "jet", unwrapped_phase[i]);
+		}
+		block_count++;
+
+	}
+	mask1.convertTo(mask1, CV_64F);
+	cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\mask1.bin", mask1);
 	return 0;
 }
 
@@ -8856,6 +10451,8 @@ tri_node tri_node::operator=(const tri_node& src)
 				memcpy(this->neigh_edges, src.neigh_edges, src.num_neigh_edges * sizeof(long));
 			}
 		}
+		this->b_balanced = src.b_balanced;
+		this->b_residue = src.b_residue;
 		this->b_unwrapped = src.b_unwrapped;
 		this->cols = src.cols;
 		this->rows = src.rows;

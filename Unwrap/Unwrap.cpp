@@ -354,6 +354,171 @@ int Unwrap::MCF(
 	return 0;
 }
 
+int Unwrap::MCF(
+	const Mat& wrapped_phase,
+	Mat& unwrapped_phase,
+	Mat& out_mask,
+	const Mat& mask,
+	vector<tri_node>& nodes,
+	vector<tri_edge>& edges,
+	int start,
+	bool pass,
+	double thresh
+)
+{
+	if (wrapped_phase.rows < 2 ||
+		wrapped_phase.cols < 2 ||
+		wrapped_phase.type() != CV_64F ||
+		wrapped_phase.channels() != 1 ||
+		mask.rows != wrapped_phase.rows ||
+		mask.cols != wrapped_phase.cols ||
+		mask.type() != CV_32S ||
+		mask.channels() != 1 ||
+		nodes.size() < 3 ||
+		edges.size() < 3 ||
+		start < 1 ||
+		start > nodes.size()
+		)
+	{
+		fprintf(stderr, "MCF(): input check failed!\n\n");
+		return -1;
+	}
+	wrapped_phase.copyTo(unwrapped_phase);
+	int num_nodes = nodes.size();
+	int num_neigh, number, ret, end2;
+	double distance, grad, phi1, phi2, gain, tt, min, max;
+	min = 1000000000.0;
+	max = -1000000000.0;
+	if (pass) tt = 0.5;
+	else
+	{
+		tt = 100000.0;
+	}
+	int num_edges = edges.size();
+	long* ptr_neigh = NULL;
+	queue<int> que;
+	//int start = 1;//起始点默认为第一个点，后续可以自己设定
+	ret = nodes[start - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+	if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
+	nodes[start - 1].set_status(true);
+	for (int i = 0; i < num_neigh; i++)
+	{
+		if (*(ptr_neigh + i) < 1 || *(ptr_neigh + i) > num_edges)
+		{
+			fprintf(stderr, "MCF(): edge index exceed legal range!\n");
+			return -1;
+		}
+		end2 = edges[*(ptr_neigh + i) - 1].end1 == start ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+		if (end2 < 1 || end2 > num_nodes)
+		{
+			fprintf(stderr, "MCF(): node index exceed legal range!\n");
+			return -1;
+		}
+		nodes[start - 1].get_distance(nodes[end2 - 1], &distance);
+		if (!nodes[end2 - 1].get_status() &&
+			distance <= thresh &&
+			!edges[*(ptr_neigh + i) - 1].isBoundry &&
+			fabs(edges[*(ptr_neigh + i) - 1].gain) < tt &&
+			nodes[end2 - 1].get_balance()/* &&
+			!nodes[end2 - 1].is_residue_node() && !(fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5 && edges[*(ptr_neigh + i) - 1].isBoundry)*/
+			)
+		{
+			que.push(end2);
+			//解缠
+			nodes[start - 1].get_phase(&phi1);
+			nodes[end2 - 1].get_phase(&phi2);
+			grad = phi2 - phi1;
+			grad = atan2(sin(grad), cos(grad));
+			gain = start < end2 ? 2 * PI * edges[*(ptr_neigh + i) - 1].gain : -2 * PI * edges[*(ptr_neigh + i) - 1].gain;
+			nodes[end2 - 1].set_phase(grad + phi1 + gain);
+			min = min > (grad + phi1 + gain) ? (grad + phi1 + gain) : min;
+			max = max < (grad + phi1 + gain) ? (grad + phi1 + gain) : max;
+			nodes[end2 - 1].set_status(true);
+		}
+	}
+	while (que.size() != 0)
+	{
+		number = que.front();
+		que.pop();
+		if (number < 1 || number > num_nodes)
+		{
+			fprintf(stderr, "MCF(): node index exceed legal range!\n");
+			return -1;
+		}
+		ret = nodes[number - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+		if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
+		for (int i = 0; i < num_neigh; i++)
+		{
+			int end1_row, end2_row, end1_col, end2_col;
+			if (*(ptr_neigh + i) < 1 || *(ptr_neigh + i) > num_edges)
+			{
+				fprintf(stderr, "MCF(): edge index exceed legal range!\n");
+				return -1;
+			}
+			end2 = edges[*(ptr_neigh + i) - 1].end1 == number ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+			if (end2 < 1 || end2 > num_nodes)
+			{
+				fprintf(stderr, "MCF(): node index exceed legal range!\n");
+				return -1;
+			}
+			nodes[number - 1].get_distance(nodes[end2 - 1], &distance);
+			if (!nodes[end2 - 1].get_status() &&
+				distance <= thresh &&
+				!edges[*(ptr_neigh + i) - 1].isBoundry &&
+				fabs(edges[*(ptr_neigh + i) - 1].gain) < tt &&
+				nodes[end2 - 1].get_balance() /*&&
+				!nodes[end2 - 1].is_residue_node() && !(fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5 && edges[*(ptr_neigh + i) - 1].isBoundry)*/
+				)
+			{
+				que.push(end2);
+				//解缠
+				nodes[number - 1].get_phase(&phi1);
+				nodes[end2 - 1].get_phase(&phi2);
+				grad = phi2 - phi1;
+				grad = atan2(sin(grad), cos(grad));
+				gain = number < end2 ? 2 * PI * edges[*(ptr_neigh + i) - 1].gain : -2 * PI * edges[*(ptr_neigh + i) - 1].gain;
+				min = min > (grad + phi1 + gain) ? (grad + phi1 + gain) : min;
+				max = max < (grad + phi1 + gain) ? (grad + phi1 + gain) : max;
+				nodes[end2 - 1].set_phase(grad + phi1 + gain);
+				nodes[end2 - 1].set_status(true);
+			}
+		}
+	}
+	int rows, cols;
+	int nr = unwrapped_phase.rows;
+	int nc = unwrapped_phase.cols;
+	double phi;
+	Mat _mask = Mat::zeros(nr, nc, CV_32S);
+	for (int i = 0; i < num_nodes; i++)
+	{
+		if (nodes[i].get_status())
+		{
+			ret = nodes[i].get_pos(&rows, &cols);
+			if (rows > nr - 1 || cols > nc - 1 || rows < 0 || cols < 0)
+			{
+				fprintf(stderr, "MCF(): node posistion exceed legal range!\n");
+				return -1;
+			}
+			ret = nodes[i].get_phase(&phi);
+			unwrapped_phase.at<double>(rows, cols) = phi;
+			_mask.at<int>(rows, cols) = 1;
+		}
+	}
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (_mask.at<int>(i, j) < 1)
+			{
+				unwrapped_phase.at<double>(i, j) = min - 0.01 * (max - min);
+			}
+		}
+	}
+	_mask.copyTo(out_mask);
+	return 0;
+}
+
 int Unwrap::MCF_second(Mat& unwrapped_phase, vector<tri_node>& nodes, tri_edge* edges, int num_edges, bool pass, double thresh)
 {
 	if (unwrapped_phase.rows < 2 ||

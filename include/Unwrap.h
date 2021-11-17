@@ -49,6 +49,29 @@ public:
 		bool pass = false,
 		double thresh = 10000.0
 	);
+	/** @brief 基于Delaunay三角网络的最小费用流解缠算法
+	
+	@param wrapped_phase                           待解缠相位
+	@param unwrapped_phase                         解缠相位（返回值）
+	@param out_mask                                解缠结果掩膜（返回值）
+	@param mask                                    需要解缠的像素点掩膜
+	@param nodes                                   Delaunay三角网络节点
+	@param edges                                   Delaunay三角网边
+	@param start                                   解缠起始点
+	@param pass                                    是否绕过枝切线（默认为否）
+	@param thresh                                  边长阈值（超过阈值则该边不参与解缠）
+	*/
+	int MCF(
+		const Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		Mat& out_mask,
+		const Mat& mask,
+		vector<tri_node>& nodes,
+		vector<tri_edge>& edges,
+		int start,
+		bool pass = false,
+		double thresh = 10000.0
+	);
 	/*基于不规则网络的最小费用流解缠算法（用于第二次解缠，不能单独使用）
 	* 参数1 已解缠相位（完成了第一次解缠的相位）
 	* 参数2 第二次解缠的三角网络节点数组
@@ -66,9 +89,11 @@ public:
 		bool pass = false,
 		double thresh = 1000000000.0
 	);
-	/*调用mcf.exe解Delaunay三角网络最小费用流问题
-	* 参数1：最小费用流问题描述文件
-	* 参数2：最小费用流算法可执行文件路径
+	/** @brief 调用mcf.exe解Delaunay三角网络最小费用流问题
+	
+	@param MCF_problem_file                   最小费用流问题描述文件
+	@param MCF_EXE_PATH                       最小费用流算法可执行文件路径
+	@return 成功返回0，否则返回-1
 	*/
 	int mcf_delaunay(
 		const char* MCF_problem_file,
