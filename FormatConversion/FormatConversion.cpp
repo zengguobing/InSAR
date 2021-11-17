@@ -3234,20 +3234,7 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 		DataNode->SetAttribute("data_count", "1");
 		DataNode->SetAttribute("data_processing", "cut");
 		DataNode->SetAttribute("rank", "complex-1.0");
-		if (!root)
-		{
-			doc.RootElement()->LinkEndChild(DataNode);
-		}
-		else
-		{
-			DataNode->InsertBeforeChild(root, *root->PreviousSibling()->ToElement());
-			while (!root)
-			{
-				index_str = int2str(++index);
-				root->SetAttribute("index", index_str.c_str());
-				root = root->NextSiblingElement();
-			}
-		}
+		
 		
 		TiXmlElement* Data = new TiXmlElement("Data");
 		DataNode->LinkEndChild(Data);
@@ -3298,6 +3285,21 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 		sprintf_s(tmp2, "%.2f", height);
 		Height->LinkEndChild(new TiXmlText(tmp2));
 		Data_Processing_Parameters->LinkEndChild(Height);
+		if (!root)
+		{
+			doc.RootElement()->LinkEndChild(DataNode);
+		}
+		else
+		{
+			doc.RootElement()->InsertBeforeChild(root, *DataNode);
+			while (root)
+			{
+				index_str = int2str(++index);
+				root->SetAttribute("index", index_str.c_str());
+				root = root->NextSiblingElement();
+			}
+
+		}
 	}
 	else
 	{
@@ -3377,21 +3379,7 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 		DataNode->SetAttribute("data_count", "1");
 		DataNode->SetAttribute("data_processing", "coregistration");
 		DataNode->SetAttribute("rank", "complex-2.0");
-		if (!root)
-		{
-			doc.RootElement()->LinkEndChild(DataNode);
-		}
-		else
-		{
-			DataNode->InsertBeforeChild(root, *root->PreviousSibling()->ToElement());
-			
-			while (!root)
-			{
-				index_str = int2str(++index);
-				root->SetAttribute("index", index_str.c_str());
-				root = root->NextSiblingElement();
-			}
-		}
+		
 		TiXmlElement* Data = new TiXmlElement("Data");
 		DataNode->LinkEndChild(Data);
 		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
@@ -3444,6 +3432,21 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 		H_baseline->SetAttribute("unit", "m");
 		H_baseline->LinkEndChild(new TiXmlText(B_parallel));
 		Data_Processing_Parameters->LinkEndChild(H_baseline);
+		if (!root)
+		{
+			doc.RootElement()->LinkEndChild(DataNode);
+		}
+		else
+		{
+			doc.RootElement()->InsertBeforeChild(root, *DataNode);
+			while (root)
+			{
+				index_str = int2str(++index);
+				root->SetAttribute("index", index_str.c_str());
+				root = root->NextSiblingElement();
+			}
+
+		}
 	}
 	else
 	{
