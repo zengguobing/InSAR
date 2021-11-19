@@ -1980,15 +1980,15 @@ int Utils::read_DIMACS(
 				else target_edges = triangle[to - 1].edge3;
 
 
-				if (edges[target_edges - 1].end1 > edges[target_edges].end2)
+				if (edges[target_edges - 1].end1 > edges[target_edges - 1].end2)
 				{
-					end1 = edges[target_edges].end2;
-					end2 = edges[target_edges].end1;
+					end1 = edges[target_edges - 1].end2;
+					end2 = edges[target_edges - 1].end1;
 				}
 				else
 				{
-					end1 = edges[target_edges].end1;
-					end2 = edges[target_edges].end2;
+					end1 = edges[target_edges - 1].end1;
+					end2 = edges[target_edges - 1].end2;
 				}
 
 				if (triangle[to - 1].p1 != end1 && triangle[to - 1].p1 != end2) end3 = triangle[to - 1].p1;
@@ -2019,15 +2019,15 @@ int Utils::read_DIMACS(
 				else target_edges = triangle[from - 1].edge3;
 
 
-				if (edges[target_edges - 1].end1 > edges[target_edges].end2)
+				if (edges[target_edges - 1].end1 > edges[target_edges - 1].end2)
 				{
-					end1 = edges[target_edges].end2;
-					end2 = edges[target_edges].end1;
+					end1 = edges[target_edges - 1].end2;
+					end2 = edges[target_edges - 1].end1;
 				}
 				else
 				{
-					end1 = edges[target_edges].end1;
-					end2 = edges[target_edges].end2;
+					end1 = edges[target_edges - 1].end1;
+					end2 = edges[target_edges - 1].end2;
 				}
 
 				if (triangle[from - 1].p1 != end1 && triangle[from - 1].p1 != end2) end3 = triangle[from - 1].p1;
@@ -10073,21 +10073,21 @@ int Utils::unwrap_3D_mcf(
 	int num_triangle, positive = 0, negative = 0;
 	size_t num_edges = edges.size();
 	//先将起始点做时间维解缠
-	//int pos_row, pos_col; double tmp;
-	//ret = init_tri_node(nodes, wrapped_phase_series[0], mask, edges, node_neighbour, num_nodes);
-	//if (return_check(ret, "init_tri_node()", error_head)) return -1;
-	//nodes[199].get_pos(&pos_row, &pos_col);
-	//Mat time_series(n_images, 1, CV_64F);
-	//for (int i = 0; i < n_images; i++)
-	//{
-	//	time_series.at<double>(i, 0) = wrapped_phase_series[i].at<double>(pos_row, pos_col);
-	//}
-	//for (int i = 1; i < n_images; i++)
-	//{
-	//	tmp = time_series.at<double>(i, 0) - time_series.at<double>(i - 1, 0);
-	//	wrapped_phase_series[i].at<double>(pos_row, pos_col) = time_series.at<double>(i - 1, 0) +
-	//		atan2(sin(tmp), cos(tmp));
-	//}
+	int pos_row, pos_col; double tmp;
+	ret = init_tri_node(nodes, wrapped_phase_series[0], mask, edges, node_neighbour, num_nodes);
+	if (return_check(ret, "init_tri_node()", error_head)) return -1;
+	nodes[199].get_pos(&pos_row, &pos_col);
+	Mat time_series(n_images, 1, CV_64F);
+	for (int i = 0; i < n_images; i++)
+	{
+		time_series.at<double>(i, 0) = wrapped_phase_series[i].at<double>(pos_row, pos_col);
+	}
+	for (int i = 1; i < n_images; i++)
+	{
+		tmp = time_series.at<double>(i, 0) - time_series.at<double>(i - 1, 0);
+		wrapped_phase_series[i].at<double>(pos_row, pos_col) = time_series.at<double>(i - 1, 0) +
+			atan2(sin(tmp), cos(tmp));
+	}
 
 	for (int i = 0; i < n_images; i++)
 	{
@@ -10316,9 +10316,9 @@ int Utils::unwrap_3D_adaptive_tiling(
 				cv::Range(mask2_start_col, mask2_end_col + 1)));
 
 			memset(str, 0, 4096);
-			sprintf(str, "H:\\data\\experiment\\tsx\\Beijing\\Test\\Regis(5km)\\unwrapped_phase_%d.bin", i + 1);
-			cvmat2bin(str, unwrapped_phase[i]);
-			//savephase(str, "jet", unwrapped_phase[i]);
+			sprintf(str, "H:\\data\\experiment\\test\\Regis2\\unwrapped_phase_%d.jpg", i + 1);
+			//cvmat2bin(str, unwrapped_phase[i]);
+			savephase(str, "jet", unwrapped_phase[i]);
 		}
 		block_count++;
 

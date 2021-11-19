@@ -256,8 +256,8 @@ int Unwrap::MCF(
 		if (!nodes[end2 - 1].get_status() &&
 			distance <= thresh &&
 			fabs((edges + *(ptr_neigh + i) - 1)->gain) < tt &&
-			nodes[end2 - 1].get_balance() /*&&
-			!nodes[end2 - 1].is_residue_node()*/
+			nodes[end2 - 1].get_balance() &&
+			!((edges + *(ptr_neigh + i) - 1)->isBoundry && fabs((edges + *(ptr_neigh + i) - 1)->gain) > 0.5)
 			)
 		{
 			que.push(end2);
@@ -301,8 +301,8 @@ int Unwrap::MCF(
 			if (!nodes[end2 - 1].get_status() &&
 				distance <= thresh &&
 				fabs((edges + *(ptr_neigh + i) - 1)->gain) < tt &&
-				nodes[end2 - 1].get_balance()/*&&
-				!nodes[end2 - 1].is_residue_node()*/
+				nodes[end2 - 1].get_balance()&&
+				!((edges + *(ptr_neigh + i) - 1)->isBoundry && fabs((edges + *(ptr_neigh + i) - 1)->gain) > 0.5)
 				)
 			{
 				que.push(end2);
@@ -397,7 +397,6 @@ int Unwrap::MCF(
 	int num_edges = edges.size();
 	long* ptr_neigh = NULL;
 	queue<int> que;
-	//int start = 1;//起始点默认为第一个点，后续可以自己设定
 	ret = nodes[start - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
 	if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
 	nodes[start - 1].set_status(true);
@@ -418,9 +417,9 @@ int Unwrap::MCF(
 		if (!nodes[end2 - 1].get_status() &&
 			distance <= thresh &&
 			!edges[*(ptr_neigh + i) - 1].isBoundry &&
+			/*!(edges[*(ptr_neigh + i) - 1].isBoundry && fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5) &&*/
 			fabs(edges[*(ptr_neigh + i) - 1].gain) < tt &&
-			nodes[end2 - 1].get_balance()/* &&
-			!nodes[end2 - 1].is_residue_node() && !(fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5 && edges[*(ptr_neigh + i) - 1].isBoundry)*/
+			nodes[end2 - 1].get_balance()
 			)
 		{
 			que.push(end2);
@@ -465,9 +464,9 @@ int Unwrap::MCF(
 			if (!nodes[end2 - 1].get_status() &&
 				distance <= thresh &&
 				!edges[*(ptr_neigh + i) - 1].isBoundry &&
+				/*!(edges[*(ptr_neigh + i) - 1].isBoundry && fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5) &&*/
 				fabs(edges[*(ptr_neigh + i) - 1].gain) < tt &&
-				nodes[end2 - 1].get_balance() /*&&
-				!nodes[end2 - 1].is_residue_node() && !(fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5 && edges[*(ptr_neigh + i) - 1].isBoundry)*/
+				nodes[end2 - 1].get_balance() 
 				)
 			{
 				que.push(end2);

@@ -35,16 +35,18 @@ public:
 	 参数4 均值滤波窗口大小（必须是奇数）
 	*/
 	int slope_adaptive_filter(Mat& phase, Mat& phase_filtered, int wndsize_filter, int wndsize_prefilter);
-	/*深度学习滤波（路径不要有中文）
-	 参数1 滤波程序路径
-	 参数2 模型路径
-	 参数3 待滤波相位
-	 参数4 滤波后相位（返回值）
+	/** @brief 深度学习滤波（路径不要有中文）
+	 
+	 @param filter_dl_path              滤波程序路径
+	 @param tmp_path                    中间文件保存路径
+	 @param dl_model_file               深度学习模型文件
+	 @param phase                       待滤波相位
+	 @param phase_filtered              滤波后相位（返回值）
 	*/
 	int filter_dl(
 		const char* filter_dl_path,
 		const char* tmp_path,
-		const char* dl_model_path,
+		const char* dl_model_file,
 		Mat& phase,
 		Mat& phase_filtered
 	);

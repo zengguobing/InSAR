@@ -328,12 +328,13 @@ public:
 	* 参数2：复数据矩阵（输出值）
 	*/
 	int read_slc_from_TSXcos(const char* filename, ComplexMat& slc);
-	/*
-	* 将TerraSAR-X卫星数据格式转换为自定义的h5格式
-	* 参数1：TerraSAR-X .cos文件名
-	* 参数2：TerraSAR-X 主xml文件名
-	* 参数3：TerraSAR-X GEOREF.xml文件名
-	* 参数4：目标h5文件（若文件已经存在则报错返回）
+	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式
+	
+	@param cosar_filename                     TerraSAR-X .cos文件名
+	@param xml_filename                       TerraSAR-X 主xml文件名
+	@param GEOREF_filename                    TerraSAR-X GEOREF.xml文件名
+	@param dst_h5_filename                    目标h5文件（若文件已经存在则覆盖）
+	@return 成功返回0，否则返回-1
 	*/
 	int TSX2h5(
 		const char* cosar_filename,
@@ -341,6 +342,17 @@ public:
 		const char* GEOREF_filename,
 		const char* dst_h5_filename
 	);
+	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式
+	
+	@param xml_filename                       TerraSAR-X 主xml文件名
+	@param dst_h5_filename                    目标h5文件
+	@return 成功返回0，否则返回-1
+	*/
+	int TSX2h5(
+		const char* xml_filename,
+		const char* dst_h5_filename
+	);
+
 
 
 

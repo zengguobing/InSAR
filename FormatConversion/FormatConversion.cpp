@@ -1414,6 +1414,32 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	return 0;
 }
 
+int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filename)
+{
+	if (xml_filename == NULL ||
+		dst_h5_filename == NULL)
+	{
+		fprintf(stderr, "TSX2h5(): input check failed!\n");
+		return -1;
+	}
+	string main_xml(xml_filename);
+	string folder = main_xml.substr(0, main_xml.rfind("\\"));
+	string GEOREF = folder + "\\ANNOTATION\\GEOREF.xml";
+	string COSAR = folder + "\\IMAGEDATA\\";
+	XMLFile xmldoc;
+	int ret = xmldoc.XMLFile_load(xml_filename);
+	if (return_check(ret, "XMLFile_load()", error_head)) return -1;
+	TiXmlElement* pRoot = NULL, * pnode = NULL;
+	ret = xmldoc.find_node("imageData", pRoot);
+	if (return_check(ret, "find_node()", error_head)) return -1;
+	ret = xmldoc._find_node(pRoot, "filename", pnode);
+	if (return_check(ret, "_find_node()", error_head)) return -1;
+	COSAR = COSAR + pnode->GetText();
+	ret = TSX2h5(COSAR.c_str(), xml_filename, GEOREF.c_str(), dst_h5_filename);
+	if (return_check(ret, "TSX2h5()", error_head)) return -1;
+	return 0;
+}
+
 int FormatConversion::read_POD(const char* POD_filename, double start_time, double stop_time, const char* dst_h5_filename)
 {
 	if (POD_filename == NULL ||

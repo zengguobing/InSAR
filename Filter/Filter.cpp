@@ -427,10 +427,10 @@ int Filter::slope_adaptive_filter(Mat& phase, Mat& phase_filter, int wndsize_fil
 	return 0;
 }
 
-int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const char* dl_model_path, Mat& phase, Mat& phase_filtered)
+int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const char* dl_model_file, Mat& phase, Mat& phase_filtered)
 {
 	if (filter_dl_path == NULL ||
-		dl_model_path == NULL ||
+		dl_model_file == NULL ||
 		tmp_path == NULL||
 		phase.rows < 1 ||
 		phase.cols < 1 ||
@@ -469,7 +469,7 @@ int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const ch
 	LPWSTR szCommandLine = new TCHAR[512];
 	wcscpy(szCommandLine, A2W(filter_dl_path));
 	wcscat(szCommandLine, L"\\filter_dl.exe ");
-	wcscat(szCommandLine, A2W(dl_model_path));
+	wcscat(szCommandLine, A2W(dl_model_file));
 	wcscat(szCommandLine, L" ");
 	wcscat(szCommandLine, A2W(cos_file.c_str()));
 	wcscat(szCommandLine, L" ");
