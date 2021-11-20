@@ -4448,7 +4448,9 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*脉冲重复频率*/
 	if (!read_array_from_h5(Input_file, "prf", tmp_mat))
 		write_array_to_h5(Output_file, "prf", tmp_mat);
-
+	/*gcps数据*/
+	if (!read_array_from_h5(Input_file, "gcps", tmp_mat))
+		write_array_to_h5(Output_file, "gcps", tmp_mat);
 	/*方位向分辨率*/
 	if (!read_array_from_h5(Input_file, "azimuth_resolution", tmp_mat))
 		write_array_to_h5(Output_file, "azimuth_resolution", tmp_mat);
