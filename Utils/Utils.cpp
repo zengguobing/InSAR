@@ -1355,6 +1355,67 @@ int Utils::real_coherence(ComplexMat& Mast, ComplexMat& Slave, Mat& coherence)
 	return 0;
 }
 
+int Utils::real_coherence(const ComplexMat& master_image, const ComplexMat& slave_image, int est_wndsize_rg, int est_wndsize_az, Mat& coherence)
+{
+
+
+	int na = master_image.GetRows();
+	int nr = master_image.GetCols();
+	if ((na < est_wndsize_az) ||
+		(nr < est_wndsize_rg) ||
+		master_image.type() != CV_64F ||
+		slave_image.type() != CV_64F ||
+		master_image.GetCols() != slave_image.GetCols() ||
+		master_image.GetRows() != slave_image.GetRows() ||
+		est_wndsize_rg % 2 == 0||
+		est_wndsize_az % 2 == 0 ||
+		est_wndsize_rg < 3 ||
+		est_wndsize_az < 3
+		)
+	{
+		fprintf(stderr, "real_coherence(): input check failed!\n\n");
+		return -1;
+	}
+
+	int win_a = (est_wndsize_az - 1) / 2; //·½Î»´°°ë¾¶
+	int win_r = (est_wndsize_rg - 1) / 2; //¾àÀë´°°ë¾¶
+
+	int na_new = na - 2 * win_a;
+	int nr_new = nr - 2 * win_r;
+
+	Mat Coherence(na_new, nr_new, CV_64F, Scalar::all(0));
+
+
+#pragma omp parallel for schedule(guided)
+	for (int i = win_a + 1; i <= na - win_a; i++)
+	{
+		for (int j = win_r + 1; j <= nr - win_r; j++)
+		{
+			Mat s1, s2, sum1, sum2;
+
+			double up, down;
+			magnitude(master_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)), master_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)), s1);
+			magnitude(slave_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)), slave_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)), s2);
+			up = sum((s1.mul(s1)).mul(s2.mul(s2)))[0];
+			pow(s1, 4, s1);
+			pow(s2, 4, s2);
+			down = sqrt(sum(s1)[0] * sum(s2)[0]);
+			if (up / (down + 1e-12) > 1.0)
+			{
+				Coherence.at<double>(i - 1 - win_a, j - 1 - win_r) = 1;
+			}
+			else
+			{
+				Coherence.at<double>(i - 1 - win_a, j - 1 - win_r) = up / (down + 1e-12);
+			}
+
+		}
+	}
+	copyMakeBorder(Coherence, Coherence, win_a, win_a, win_r, win_r, BORDER_REFLECT);
+	Coherence.copyTo(coherence);
+	return 0;
+}
+
 int Utils::complex_coherence(ComplexMat& Mast, ComplexMat& Slave, Mat& coherence)
 {
 	int wa = 3;  //´°¿Ú·½Î»Ïò³ß´ç
@@ -1417,6 +1478,76 @@ int Utils::complex_coherence(ComplexMat& Mast, ComplexMat& Slave, Mat& coherence
 	return 0;
 }
 
+int Utils::complex_coherence(
+	const ComplexMat& master_image, 
+	const ComplexMat& slave_image,
+	int est_wndsize_rg, 
+	int est_wndsize_az,
+	Mat& coherence
+)
+{
+	int na = master_image.GetRows();
+	int nr = master_image.GetCols();
+
+	if ((na < est_wndsize_az) ||
+		(nr < est_wndsize_rg) ||
+		master_image.type() != CV_64F ||
+		slave_image.type() != CV_64F ||
+		master_image.GetCols() != slave_image.GetCols() ||
+		master_image.GetRows() != slave_image.GetRows() ||
+		est_wndsize_az % 2 == 0||
+		est_wndsize_rg % 2 == 0||
+		est_wndsize_rg < 3||
+		est_wndsize_az < 3
+		)
+	{
+		fprintf(stderr, "complex_coherence(): input check failed!\n\n");
+		return -1;
+	}
+
+	int win_a = (est_wndsize_az - 1) / 2; //·½Î»´°°ë¾¶
+	int win_r = (est_wndsize_rg - 1) / 2; //¾àÀë´°°ë¾¶
+
+	int na_new = na - 2 * win_a;
+	int nr_new = nr - 2 * win_r;
+
+	Mat Coherence(na_new, nr_new, CV_64F, Scalar::all(0));
+#pragma omp parallel for schedule(guided)
+	for (int i = win_a + 1; i <= na - win_a; i++)
+	{
+		for (int j = win_r + 1; j <= nr - win_r; j++)
+		{
+			Mat planes_master[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
+			Mat planes_slave[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
+			Mat planes[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
+			Mat s1, s2;
+			double up, down, sum1, sum2;
+			master_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[0]);
+			master_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[1]);
+
+			slave_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[0]);
+			slave_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[1]);
+
+			merge(planes_master, 2, s1);
+			merge(planes_slave, 2, s2);
+			mulSpectrums(s1, s2, s1, 0, true);
+			split(s1, planes);
+			sum1 = sum(planes[0])[0];
+			sum2 = sum(planes[1])[0];
+			up = sqrt(sum1 * sum1 + sum2 * sum2);
+			magnitude(planes_master[0], planes_master[1], planes_master[0]);
+			magnitude(planes_slave[0], planes_slave[1], planes_slave[0]);
+			sum1 = sum(planes_master[0].mul(planes_master[0]))[0];
+			sum2 = sum(planes_slave[0].mul(planes_slave[0]))[0];
+			down = sqrt(sum1 * sum2);
+			Coherence.at<double>(i - 1 - win_a, j - 1 - win_r) = up / (down + 0.0000001);
+		}
+	}
+	copyMakeBorder(Coherence, Coherence, win_a, win_a, win_r, win_r, BORDER_REFLECT);
+	Coherence.copyTo(coherence);
+	return 0;
+}
+
 int Utils::phase_coherence(Mat& phase, Mat& coherence)
 {
 	if (phase.rows < 3 ||
@@ -1438,6 +1569,34 @@ int Utils::phase_coherence(Mat& phase, Mat& coherence)
 	sin = -sin;
 	slave.SetIm(sin);
 	ret = this->complex_coherence(master, slave, coherence);
+	if (return_check(ret, "complex_coherence(*, *, *)", error_head)) return -1;
+	return 0;
+}
+
+int Utils::phase_coherence(const Mat& phase, int est_wndsize_rg, int est_wndsize_az, Mat& coherence)
+{
+	if (phase.rows < 3 ||
+		phase.cols < 3 ||
+		phase.type() != CV_64F ||
+		phase.channels() != 1 ||
+		est_wndsize_rg % 2 == 0||
+		est_wndsize_az % 2 == 0
+		)
+	{
+		fprintf(stderr, "phase_coherence(): input check failed!\n\n");
+		return -1;
+	}
+	ComplexMat master, slave;
+	Mat cos, sin;
+	int ret;
+	ret = phase2cos(phase, cos, sin);
+	if (return_check(ret, "phase2cos(*, *, *)", error_head)) return -1;
+	master.SetRe(cos);
+	slave.SetRe(cos);
+	master.SetIm(sin);
+	sin = -sin;
+	slave.SetIm(sin);
+	ret = complex_coherence(master, slave, est_wndsize_rg, est_wndsize_az, coherence);
 	if (return_check(ret, "complex_coherence(*, *, *)", error_head)) return -1;
 	return 0;
 }
@@ -2221,7 +2380,7 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 	return 0;
 }
 
-int Utils::phase2cos(Mat& phase, Mat& cos, Mat& sin)
+int Utils::phase2cos(const Mat& phase, Mat& cos, Mat& sin)
 {
 	if (phase.rows < 1 ||
 		phase.cols < 1 ||
