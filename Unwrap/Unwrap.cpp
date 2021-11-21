@@ -188,6 +188,7 @@ int Unwrap::MCF(
 	ret = util.cumsum(diff_2, 2);*/
 	if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
 	unwrapped_phase = (diff_1)* 2 * pi;
+	unwrapped_phase = unwrapped_phase + wrapped_phase.at<double>(0, 0);
 	return 0;
 }
 
