@@ -1423,7 +1423,20 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 		return -1;
 	}
 	string main_xml(xml_filename);
-	string folder = main_xml.substr(0, main_xml.rfind("\\"));
+	string folder;
+	if (0 < main_xml.rfind("\\"))
+	{
+		folder = main_xml.substr(0, main_xml.rfind("\\"));
+	}
+	else if(0 < main_xml.rfind("/"))
+	{
+		folder = main_xml.substr(0, main_xml.rfind("/"));
+	}
+	else
+	{
+		fprintf(stderr, "TSX2h5(): invalide file %s!\n", main_xml.c_str());
+		return -1;
+	}
 	string GEOREF = folder + "\\ANNOTATION\\GEOREF.xml";
 	string COSAR = folder + "\\IMAGEDATA\\";
 	XMLFile xmldoc;
