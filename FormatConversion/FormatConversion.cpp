@@ -1424,11 +1424,11 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 	}
 	string main_xml(xml_filename);
 	string folder;
-	if (0 < main_xml.rfind("\\"))
+	if (main_xml.length() > main_xml.rfind("\\") && main_xml.rfind("\\") >= 0)
 	{
 		folder = main_xml.substr(0, main_xml.rfind("\\"));
 	}
-	else if(0 < main_xml.rfind("/"))
+	else if(main_xml.length() > main_xml.rfind("/") && main_xml.rfind("/") >= 0)
 	{
 		folder = main_xml.substr(0, main_xml.rfind("/"));
 	}
