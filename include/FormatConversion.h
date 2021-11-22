@@ -87,6 +87,7 @@ public:
 	@param node_name      干涉相位图像名
 	@param node_path      干涉相位图像路径
 	@param master_name    干涉相位主图像
+	@param rank			  节点等级
 	@param offset_row     主图像行偏移量
 	@param offset_col     主图像列偏移量
 	@param isdeflat       是否去平地
@@ -102,6 +103,7 @@ public:
 		const char* node_name,
 		const char* node_path,
 		const char* master_name,
+		const char* rank,
 		int offset_row, int offset_col,
 		int isdeflat, int istopo_removal, int iscoherence,
 		int win_w, int win_h, int multilook_rg, int multilook_az

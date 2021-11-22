@@ -3530,14 +3530,14 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 }
 
 int XMLFile::XMLFile_add_interferometric_phase(const char* datanode_name, const char* node_name, const char* node_path,
-	const char* master_name, int offset_row, int offset_col, int isdeflat, int istopo_removal, int iscoherence,
+	const char* master_name, const char* rank, int offset_row, int offset_col, int isdeflat, int istopo_removal, int iscoherence,
 	int win_w, int win_h, int multilook_rg, int multilook_az)
 {
 	if (datanode_name == NULL ||
 		node_name == NULL ||
 		node_path == NULL ||
-		master_name == NULL
-		)
+		master_name == NULL ||
+		rank == NULL)
 	{
 		fprintf(stderr, "XMLFile_add_interferometric_phase(): input check failed!\n");
 		return -1;
@@ -3574,7 +3574,7 @@ int XMLFile::XMLFile_add_interferometric_phase(const char* datanode_name, const 
 		Data_Name->LinkEndChild(new TiXmlText(node_name));
 		Data->LinkEndChild(Data_Name);
 		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
-		Data_Rank->LinkEndChild(new TiXmlText("phase-1.0"));
+		Data_Rank->LinkEndChild(new TiXmlText(rank));
 		Data->LinkEndChild(Data_Rank);
 		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
 		Data_Index->LinkEndChild(new TiXmlText("1"));
@@ -3663,7 +3663,7 @@ int XMLFile::XMLFile_add_interferometric_phase(const char* datanode_name, const 
 		Data_Name->LinkEndChild(new TiXmlText(node_name));
 		Data->LinkEndChild(Data_Name);
 		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
-		Data_Rank->LinkEndChild(new TiXmlText("phase-1.0"));
+		Data_Rank->LinkEndChild(new TiXmlText(rank));
 		Data->LinkEndChild(Data_Rank);
 		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
 		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));
