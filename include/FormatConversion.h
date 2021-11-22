@@ -81,6 +81,31 @@ public:
 		int master_index, int interp_times, int block_size,
 		const char* temporal_baseline, const char* B_effect, const char* B_parallel
 	);
+	/** @brief 添加干涉相位生成节点
+
+	@param datanode_node  干涉相位图像节点名
+	@param node_name      干涉相位图像名
+	@param node_path      干涉相位图像路径
+	@param master_name    干涉相位主图像
+	@param offset_row     主图像行偏移量
+	@param offset_col     主图像列偏移量
+	@param isdeflat       是否去平地
+	@param istopo_removal 是否去地形
+	@param iscoherence    是否估计相干系数
+	@param win_w          相干系数估计窗口宽度
+	@param win_h          相干系数估计窗口高度
+	@param multilook_rg   多视倍数（距离向）
+	@param multilook_az   多视倍数（方位向）
+	*/
+	int XMLFile_add_interferometric_phase(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		const char* master_name,
+		int offset_row, int offset_col,
+		int isdeflat, int istopo_removal, int iscoherence,
+		int win_w, int win_h, int multilook_rg, int multilook_az
+	);
 	/** @brief 返回字符串
 
 	@param n			输入整数值
