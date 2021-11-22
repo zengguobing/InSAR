@@ -530,7 +530,7 @@ int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const ch
 	cos = cos - cos1;
 	sin = sin - sin1;
 	ComplexMat tmp(cos, sin);
-	phase_filtered = tmp.GetPhase();
+	tmp.GetPhase().copyTo(phase_filtered);
 	return 0;
 }
 
