@@ -2370,13 +2370,13 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 			right = left + multilook_rg; right = right > nc - 1 ? nc - 1 : right;
 			top = i - radius_az; top = top < 0 ? 0 : top;
 			bottom = top + multilook_az; bottom = bottom > nr - 1 ? nr - 1 : bottom;
-			real.at<double>(i, j) = cv::mean(tmp.re(Range(left, right + 1),Range(top, bottom + 1)))[0];
-			imag.at<double>(i, j) = cv::mean(tmp.im(Range(left, right + 1), Range(top, bottom + 1)))[0];
+			real.at<double>(i, j) = cv::mean(tmp.re(Range(top, bottom + 1),Range(left, right + 1)))[0];
+			imag.at<double>(i, j) = cv::mean(tmp.im(Range(top, bottom + 1), Range(left, right + 1)))[0];
 		}
 	}
 	tmp.SetRe(real);
 	tmp.SetIm(imag);
-	phase = tmp.GetPhase();
+	tmp.GetPhase().copyTo(phase);
 	return 0;
 }
 
