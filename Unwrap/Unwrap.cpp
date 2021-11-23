@@ -14,8 +14,8 @@
 	   return -1; \
 }
 #ifdef _DEBUG
-#pragma comment(lib, "ComplexMat.lib")
-#pragma comment(lib, "Utils.lib")
+#pragma comment(lib, "ComplexMat_d.lib")
+#pragma comment(lib, "Utils_d.lib")
 #else
 #pragma comment(lib, "ComplexMat.lib")
 #pragma comment(lib, "Utils.lib")
@@ -916,5 +916,397 @@ int Unwrap::QualityMap_MCF(Mat& wrapped_phase, Mat& unwrapped_phase, Mat& mask, 
 		}
 	}
 	_mask.copyTo(mask);
+	return 0;
+}
+
+int Unwrap::_QualityGuided_MCF_1(
+	const Mat& wrapped_phase, 
+	Mat& unwrapped_phase,
+	Mat& out_mask,
+	vector<tri_node>& nodes,
+	vector<tri_edge>& edges,
+	double distance_thresh, 
+	bool pass
+)
+{
+	if (wrapped_phase.empty() ||
+		wrapped_phase.type() != CV_64F ||
+		nodes.size() < 3 ||
+		edges.size() < 3 ||
+		distance_thresh < 1.0
+		)
+	{
+		fprintf(stderr, "_Quality_MCF_1(): input check failed!\n");
+		return -1;
+	}
+
+	wrapped_phase.copyTo(unwrapped_phase);
+	int num_nodes = nodes.size();
+	int num_neigh, number, ret, end2, start;
+	double distance, grad, phi1, phi2, gain, tt, min, max;
+	min = 1000000000.0;
+	max = -1000000000.0;
+	long* ptr_neigh = NULL;
+	priority_queue<edge_index> neighbour_que;
+	edge_index tmp_edge_index;
+	bool early_break = false;
+	size_t num_edges = edges.size();
+	//////////寻找相关系数最大的边为起始边(对应quality最小的边)////////////
+	int ix = 0;
+	double qua = 100000.0;
+	for (int i = 0; i < num_edges; i++)
+	{
+		if (edges[i].quality < qua)
+		{
+			ix = i;
+			qua = edges[i].quality;
+		}
+	}
+	start = edges[ix].end1;
+
+	ret = nodes[start - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+	if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
+	nodes[start - 1].set_status(true);
+	for (int i = 0; i < num_neigh; i++)
+	{
+		end2 = edges[*(ptr_neigh + i) - 1].end1 == start ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+		nodes[start - 1].get_distance(nodes[end2 - 1], &distance);
+		if (!nodes[end2 - 1].get_status() &&
+			distance <= distance_thresh &&
+			!edges[*(ptr_neigh + i) - 1].isBoundry &&
+			nodes[end2 - 1].get_balance() &&
+			!edges[*(ptr_neigh + i) - 1].isResidueEdge
+			)
+		{
+			tmp_edge_index.num = *(ptr_neigh + i);
+			tmp_edge_index.quality = edges[*(ptr_neigh + i) - 1].quality;
+			neighbour_que.push(tmp_edge_index);
+		}
+	}
+
+
+	while (neighbour_que.size() != 0)
+	{
+		tmp_edge_index = neighbour_que.top();
+		neighbour_que.pop();
+		if (nodes[edges[tmp_edge_index.num - 1].end1 - 1].get_status())
+		{
+			number = edges[tmp_edge_index.num - 1].end1;
+			end2 = edges[tmp_edge_index.num - 1].end2;
+		}
+		else
+		{
+			number = edges[tmp_edge_index.num - 1].end2;
+			end2 = edges[tmp_edge_index.num - 1].end1;
+		}
+		if (!nodes[end2 - 1].get_status() &&
+			!edges[tmp_edge_index.num - 1].isBoundry &&
+			nodes[end2 - 1].get_balance() && 
+			!edges[tmp_edge_index.num - 1].isResidueEdge
+			)
+		{
+			nodes[number - 1].get_phase(&phi1);
+			nodes[end2 - 1].get_phase(&phi2);
+			grad = phi2 - phi1;
+			grad = atan2(sin(grad), cos(grad));
+			gain = 0.0;
+			//min = min > (grad + phi1 + gain) ? (grad + phi1 + gain) : min;
+			//max = max < (grad + phi1 + gain) ? (grad + phi1 + gain) : max;
+			nodes[end2 - 1].set_phase(grad + phi1 + gain);
+			nodes[end2 - 1].set_status(true);
+
+
+			ret = nodes[end2 - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+			if (return_check(ret, "tri_node::get_neigh_ptr(*, *)", error_head)) return -1;
+			number = end2;
+			for (int i = 0; i < num_neigh; i++)
+			{
+
+				end2 = edges[*(ptr_neigh + i) - 1].end1 == number ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+				nodes[number - 1].get_distance(nodes[end2 - 1], &distance);
+				if (!nodes[end2 - 1].get_status() &&
+					distance <= distance_thresh &&
+					!edges[*(ptr_neigh + i) - 1].isBoundry &&
+					nodes[end2 - 1].get_balance()&&
+					!edges[*(ptr_neigh + i) - 1].isResidueEdge
+					)
+				{
+					tmp_edge_index.num = *(ptr_neigh + i);
+					tmp_edge_index.quality = edges[*(ptr_neigh + i) - 1].quality;
+					neighbour_que.push(tmp_edge_index);
+				}
+			}
+		}
+
+
+	}
+
+	
+	int nr = unwrapped_phase.rows;
+	int nc = unwrapped_phase.cols;
+	double phi;
+	Mat _mask = Mat::zeros(nr, nc, CV_32S);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < num_nodes; i++)
+	{
+		int rows, cols; double phi3;
+		if (nodes[i].get_status())
+		{
+			nodes[i].get_pos(&rows, &cols);
+			nodes[i].get_phase(&phi3);
+			unwrapped_phase.at<double>(rows, cols) = phi3;
+			_mask.at<int>(rows, cols) = 1;
+		}
+	}
+//#pragma omp parallel for schedule(guided)
+//	for (int i = 0; i < nr; i++)
+//	{
+//		for (int j = 0; j < nc; j++)
+//		{
+//			if (_mask.at<int>(i, j) < 1)
+//			{
+//				unwrapped_phase.at<double>(i, j) = min - 0.1 * (max - min);
+//			}
+//		}
+//	}
+	_mask.copyTo(out_mask);
+
+	return 0;
+}
+
+int Unwrap::_QualityGuided_MCF_2(
+	Mat& unwrapped_phase,
+	vector<tri_node>& nodes, 
+	vector<tri_edge>& edges,
+	double distance_thresh
+)
+{
+	if (unwrapped_phase.rows < 2 ||
+		unwrapped_phase.cols < 2 ||
+		unwrapped_phase.type() != CV_64F ||
+		unwrapped_phase.channels() != 1 ||
+		nodes.size() < 3 ||
+		edges.size() < 3 
+		)
+	{
+		fprintf(stderr, "_QualityGuided_MCF_2(): input check failed!\n\n");
+		return -1;
+	}
+	int num_nodes = nodes.size();
+	int num_neigh, number, ret, end2, row_start, col_start;
+	double distance, grad, phi1, phi2, gain, tt;
+	long* ptr_neigh = NULL;
+	queue<int> que;
+	//queue<int> start_que;
+	int nr = unwrapped_phase.rows;
+	int nc = unwrapped_phase.cols;
+
+	//找到已解缠邻接节点，并以已解缠邻接节点为起始点开始解缠
+
+	for (int i = 0; i < num_nodes; i++)
+	{
+		if (nodes[i].get_status())
+		{
+			que.push(i + 1);
+		}
+	}
+	while (que.size() != 0)
+	{
+		number = que.front();
+		que.pop();
+		nodes[number - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+		for (int i = 0; i < num_neigh; i++)
+		{
+			end2 = edges[*(ptr_neigh + i) - 1].end1 == number ?
+				edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+			nodes[number - 1].get_distance(nodes[end2 - 1], &distance);
+			if (!nodes[end2 - 1].get_status() &&
+				distance <= distance_thresh &&
+				!edges[*(ptr_neigh + i) - 1].isBoundry
+				)
+			{
+				que.push(end2);
+				nodes[number - 1].get_phase(&phi1);
+				nodes[end2 - 1].get_phase(&phi2);
+				grad = phi2 - phi1;
+				grad = atan2(sin(grad), cos(grad));
+				gain = number < end2 ? 2 * PI * edges[*(ptr_neigh + i) - 1].gain : -2 * PI * edges[*(ptr_neigh + i) - 1].gain;
+				nodes[end2 - 1].set_phase(grad + phi1 + gain);
+				nodes[end2 - 1].set_status(true);
+			}
+		}
+	}
+
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < num_nodes; i++)
+	{
+		int row, col; double phi3;
+		if (nodes[i].get_status())
+		{
+			ret = nodes[i].get_pos(&row, &col);
+			ret = nodes[i].get_phase(&phi3);
+			unwrapped_phase.at<double>(row, col) = phi3;
+		}
+	}
+
+	return 0;
+}
+
+int Unwrap::QualityGuided_MCF(
+	const Mat& wrapped_phase,
+	Mat& unwrapped_phase, 
+	double coherence_thresh,
+	double distance_thresh,
+	const char* tmp_path, 
+	const char* EXE_path
+)
+{
+	if (wrapped_phase.empty() ||
+		tmp_path == NULL ||
+		EXE_path == NULL ||
+		coherence_thresh < 0.0 ||
+		coherence_thresh > 1.0
+		)
+	{
+		fprintf(stderr, "QualityGuided_MCF(): input check failed!\n");
+		return -1;
+	}
+	distance_thresh = distance_thresh < 2.0 ? 2.0 : distance_thresh;
+	Mat coherence, phase, mask, quality_index;
+	Utils util;
+	int ret, nr, nc, count = 0;
+	nr = wrapped_phase.rows; nc = wrapped_phase.cols;
+	wrapped_phase.copyTo(phase);
+	ret = util.phase_coherence(phase, 3, 3, coherence);
+	if (return_check(ret, "phase_coherence()", error_head)) return -1;
+	quality_index = 1 - coherence;
+	mask = Mat::zeros(nr, nc, CV_32S);
+
+
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (coherence.at<double>(i, j) > coherence_thresh)
+			{
+				mask.at<int>(i, j) = 1; count++;
+			}
+		}
+	}
+	if (count < 100)
+	{
+		Mat residue;
+		ret = util.residue(phase, residue);
+		if (return_check(ret, "residue()", error_head)) return -1;
+		string mcf_problem_file(tmp_path);
+		mcf_problem_file.append("\\mcf_problem.net");
+		ret = MCF(phase, unwrapped_phase, coherence, residue, mcf_problem_file.c_str(), EXE_path);
+		if (return_check(ret, "MCF()", error_head)) return -1;
+		return 0;
+	}
+
+	string folder(tmp_path);
+	string node_file = folder + "\\triangle.node";
+	string edge_file = folder + "\\triangle.1.edge";
+	string ele_file = folder + "\\triangle.1.ele";
+	string neigh_file = folder + "\\triangle.1.neigh";
+	string mcf_problem = folder + "\\mcf_delaunay.net";
+	string mcf_solution = folder + "\\mcf_delaunay.net.sol";
+	vector<tri_node> nodes; vector<tri_edge> edges; vector<triangle> tri;
+	vector<int> node_neighbour;
+	long num_nodes = count;
+	ret = util.write_node_file(node_file.c_str(), mask);
+	if (return_check(ret, "write_node_file()", error_head)) return -1;
+	ret = util.gen_delaunay(node_file.c_str(), EXE_path);
+	if (return_check(ret, "gen_delaunay()", error_head)) return -1;
+	ret = util.read_edges(edge_file.c_str(), edges, node_neighbour, num_nodes);
+	if (return_check(ret, "read_edges()", error_head)) return -1;
+	ret = util.init_tri_node(nodes, phase, mask, edges, node_neighbour, num_nodes);
+	if (return_check(ret, "init_tri_node()", error_head)) return -1;
+	ret = util.init_edges_quality(quality_index, edges, nodes);
+	if (return_check(ret, "init_edges_quality()", error_head)) return -1;
+	ret = util.read_triangle(ele_file.c_str(), neigh_file.c_str(), tri, nodes, edges);
+	if (return_check(ret, "read_triangle()", error_head)) return -1;
+	ret = util.residue(tri, nodes, edges, distance_thresh);
+	if (return_check(ret, "residue()", error_head)) return -1;
+
+	Mat out_mask;
+	ret = _QualityGuided_MCF_1(phase, unwrapped_phase, out_mask, nodes, edges, distance_thresh);
+	if (return_check(ret, "residue()", error_head)) return -1;
+
+	out_mask.convertTo(out_mask, CV_64F);
+	util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\out_mask.bin", out_mask);
+	out_mask.convertTo(out_mask, CV_32S);
+	util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\unwrapped_phase1.bin", unwrapped_phase);
+
+	Mat mask_2 = Mat::zeros(nr, nc, CV_32S);
+	count = 0;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (out_mask.at<int>(i, j) == 0)
+			{
+				mask_2.at<int>(i, j) = 1; count++;
+			}
+		}
+	}
+
+	//找出邻接已解缠节点
+	Mat grad_updown, grad_leftright;
+	grad_updown = mask_2(cv::Range(1, nr), cv::Range(0, nc)) - mask_2(cv::Range(0, nr - 1), cv::Range(0, nc));
+	grad_leftright = mask_2(cv::Range(0, nr), cv::Range(1, nc)) - mask_2(cv::Range(0, nr), cv::Range(0, nc - 1));
+	for (int i = 0; i < grad_updown.rows; i++)
+	{
+		for (int j = 0; j < grad_updown.cols; j++)
+		{
+			if (grad_updown.at<int>(i, j) > 0)
+			{
+				mask_2.at<int>(i, j) = 2;//2代表邻接已解缠节点
+			}
+			if (grad_updown.at<int>(i, j) < 0)
+			{
+				mask_2.at<int>(i + 1, j) = 2;
+			}
+		}
+	}
+	for (int i = 0; i < grad_leftright.rows; i++)
+	{
+		for (int j = 0; j < grad_leftright.cols; j++)
+		{
+			if (grad_leftright.at<int>(i, j) > 0)
+			{
+				mask_2.at<int>(i, j) = 2;
+			}
+			if (grad_leftright.at<int>(i, j) < 0)
+			{
+				mask_2.at<int>(i, j + 1) = 2;
+			}
+		}
+	}
+
+	num_nodes = cv::countNonZero(mask_2);
+	ret = util.write_node_file(node_file.c_str(), mask_2);
+	if (return_check(ret, "write_node_file()", error_head)) return -1;
+	ret = util.gen_delaunay(node_file.c_str(), EXE_path);
+	if(return_check(ret, "gen_delaunay()", error_head)) return -1;
+	ret = util.read_edges(edge_file.c_str(), edges, node_neighbour, num_nodes);
+	if (return_check(ret, "read_edges()", error_head)) return -1;
+	ret = util.init_tri_node(nodes, unwrapped_phase, mask_2, edges, node_neighbour, num_nodes);
+	if (return_check(ret, "init_tri_node()", error_head)) return -1;
+	ret = util.read_triangle(ele_file.c_str(), neigh_file.c_str(), tri, nodes, edges);
+	if (return_check(ret, "read_triangle()", error_head)) return -1;
+	ret = util.residue(tri, nodes, edges, distance_thresh);
+	if (return_check(ret, "residue()", error_head)) return -1;
+	ret = util.write_DIMACS(mcf_problem.c_str(), tri, nodes, edges, coherence);
+	if (return_check(ret, "write_DIMACS()", error_head)) return -1;
+	ret = mcf_delaunay(mcf_problem.c_str(), EXE_path);
+	if (return_check(ret, "mcf_delaunay()", error_head)) return -1;
+	ret = util.read_DIMACS(mcf_solution.c_str(), edges, nodes, tri);
+	if (return_check(ret, "read_DIMACS()", error_head)) return -1;
+	ret = _QualityGuided_MCF_2(unwrapped_phase, nodes, edges, distance_thresh);
+	if (return_check(ret, "_QualityGuided_MCF_2()", error_head)) return -1;
+
+
 	return 0;
 }

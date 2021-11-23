@@ -1184,18 +1184,19 @@ int Utils::residue(triangle* tri, int num_triangle, vector<tri_node>& nodes, tri
 	return 0;
 }
 
-int Utils::residue(vector<triangle>& triangle, vector<tri_node>& nodes, vector<tri_edge>& edges)
+int Utils::residue(vector<triangle>& triangle, vector<tri_node>& nodes, vector<tri_edge>& edges, double distance_thresh)
 {
 	if (triangle.size() < 1 ||
 		nodes.size() < 1 ||
-		edges.size() < 3 
+		edges.size() < 3
 		)
 	{
 		fprintf(stderr, "residue(): input check failed!\n\n");
 		return -1;
 	}
 	int num_triangle = triangle.size();
-	double thresh = 500;
+	double thresh;
+	thresh = distance_thresh < 2.0 ? 2.0 : distance_thresh;
 	int num_nodes = nodes.size();
 	int end1, end2, end3, tmp;
 	double x1, y1, x2, y2, x3, y3, direction, delta12, delta23, delta31, residue, phi1, phi2, phi3, distance1,
@@ -5508,6 +5509,7 @@ int Utils::read_triangle(
 		return -1;
 	}
 	fgets(str, INPUTMAXSIZE, fp_neigh);
+	triangle.clear();
 	triangle.resize(num_triangle);
 
 	int p1, p2, p3, neigh1, neigh2, neigh3, num1, num2;
@@ -10264,7 +10266,7 @@ int Utils::unwrap_3D_mcf(
 			if (return_check(ret, "read_triangle()", error_head)) return -1;
 			num_triangle = tri.size();
 		}
-		ret = residue(tri, nodes, edges);
+		ret = residue(tri, nodes, edges, 10.0);
 		if (return_check(ret, "residue()", error_head)) return -1;
 		/*
 		* 检查残差点数，若无残差点则不使用mcf.exe求解

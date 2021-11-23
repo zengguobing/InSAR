@@ -77,9 +77,8 @@ public:
 	* 参数2 第二次解缠的三角网络节点数组
 	* 参数3 第二次解缠的三角网络边数组
 	* 参数4 第二次解缠的三角网络边数量
-	* 参数5 解缠起始节点
-	* 参数6 是否绕过枝切线（默认为否）
-	* 参数7 边长阈值（超过阈值则该边不参与解缠）
+	* 参数5 是否绕过枝切线（默认为否）
+	* 参数6 边长阈值（超过阈值则该边不参与解缠）
 	*/
 	int MCF_second(
 		Mat& unwrapped_phase,
@@ -120,6 +119,57 @@ public:
 		int start,
 		bool pass = false,
 		double thresh = 10000.0
+	);
+	/** @brief 结合质量图和最小费用流的解缠法第一步（绕过残差点的质量图法）
+	
+	@param wrapped_phase                      待解缠相位
+	@param unwrapped_phase                    解缠相位
+	@param out_mask                           已解缠像元掩膜（返回值）
+	@param nodes                              Delaunay三角网络节点
+	@param edges                              Delaunay三角网络边
+	@param distance_thresh                    边长阈值（超过阈值则该边不参与解缠）
+	@param pass                               是否绕过残差点（默认是）
+	@return 成功返回0，否则返回-1
+	*/
+	int _QualityGuided_MCF_1(
+		const Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		Mat& out_mask,
+		vector<tri_node>& nodes,
+		vector<tri_edge>& edges,
+		double distance_thresh = 1.5,
+		bool pass = true
+	);
+	/** @brief 结合质量图和最小费用流的解缠法第二步（第一步未解缠的使用最小费用流法解缠）
+	
+	@param unwrapped_phase                       已解缠相位（完成了第一次解缠的相位）
+	@param nodes                                 未解缠像素点组成的Delaunay三角网络节点
+	@param edges                                 未解缠像素点组成的Delaunay三角网络边
+	@param distance_thresh                       边长阈值（超过该值不通过该边进行解缠处理）
+	@return 成功返回0，否则返回-1
+	*/
+	int _QualityGuided_MCF_2(
+		Mat& unwrapped_phase,
+		vector<tri_node>& nodes,
+		vector<tri_edge>& edges,
+		double distance_thresh = 1.5
+	);
+	/** @brief 结合质量图和最小费用流的解缠法
+	 
+	@param wrapped_phase                       待解缠相位
+	@param unwrapped_phase                     解缠相位（返回值）
+	@param coherence_thresh                    相关系数划分阈值（0~1之间，高相关像素采用质量图法解缠，低相关像素采用最小费用流法）
+	@param distance_thresh                     边长阈值（超过此阈值不参与解缠和残差点计算）
+	@param tmp_path                            中间结果保存路径
+	@param EXE_path                            最小费用流求解器/Delaunay三角网生成器路径
+	*/
+	int QualityGuided_MCF(
+		const Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		double coherence_thresh,
+		double distance_thresh,
+		const char* tmp_path,
+		const char* EXE_path
 	);
 private:
 	char error_head[256];

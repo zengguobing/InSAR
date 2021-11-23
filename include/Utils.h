@@ -430,12 +430,14 @@ public:
 	@param triangle                              Delaunay三角网三角形结构体数组
 	@param nodes                                 Delaunay三角网节点数组
 	@param edges                                 Delaunay三角网边结构体数组
+	@param distance_thresh                       边长度阈值（超过此阈值不参与残差点计算）
 	@return 成功返回0，否则返回-1
 	*/
 	int residue(
 		vector<triangle>& triangle,
 		vector<tri_node>& nodes,
-		vector<tri_edge>& edges
+		vector<tri_edge>& edges,
+		double distance_thresh
 	);
 	/*计算mask（筛选高质量点）
 	* 参数1 相关系数矩阵
@@ -911,15 +913,15 @@ public:
 	* 参数4 Delaunay三角网节点数组
 	*/
 	int init_edges_quality(Mat& quality, tri_edge* edges, int num_edges, vector<tri_node>& nodes);
-	/** @brief 初始化Delaunay三角网边的相位质量
+	/** @brief 初始化Delaunay三角网边的相位质量指数
 	
-	@param quality_map                    相位质量图
+	@param quality_index                  相位质量图指数（与相位质量相反）
 	@param edges                          Delaunay三角网边结构体数组
 	@param nodes                          Delaunay三角网节点数组
 	@return 成功返回0， 否则返回-1
 	*/
 	int init_edges_quality(
-		const Mat& quality_map,
+		const Mat& quality_index,
 		vector<tri_edge>& edges,
 		const vector<tri_node>& nodes
 	);
