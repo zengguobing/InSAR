@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include"..\include\Unwrap.h"
+#include"..\include\FormatConversion.h"
 #include<tchar.h>
 #include <atlconv.h>
 #include<queue>
@@ -16,9 +17,11 @@
 #ifdef _DEBUG
 #pragma comment(lib, "ComplexMat_d.lib")
 #pragma comment(lib, "Utils_d.lib")
+#pragma comment(lib, "FormatConversion_d.lib")
 #else
 #pragma comment(lib, "ComplexMat.lib")
 #pragma comment(lib, "Utils.lib")
+#pragma comment(lib, "FormatConversion.lib")
 #endif // _DEBUG
 using namespace cv;
 inline bool return_check(int ret, const char* detail_info, const char* error_head)
@@ -1308,5 +1311,261 @@ int Unwrap::QualityGuided_MCF(
 	if (return_check(ret, "_QualityGuided_MCF_2()", error_head)) return -1;
 
 
+	return 0;
+}
+
+int Unwrap::snaphu(
+	const char* wrapped_phase_file,
+	Mat& unwrapped_phase,
+	const char* tmp_folder,
+	const char* exe_path
+)
+{
+	if (wrapped_phase_file == NULL ||
+		tmp_folder == NULL ||
+		exe_path == NULL)
+	{
+		fprintf(stderr, "snaphu(): input check failed!\n");
+		return -1;
+	}
+
+	FormatConversion conversion;
+	Utils util;
+	int ret, nr, nc;
+	double B_effect, B_parallel;
+	Mat wrapped_phase, coherence, amplitude1, amplitude2, lon_coef, lat_coef, state_vec1, state_vec2, prf1, prf2,
+		carrier_frequency, offset_row, offset_col;
+	ComplexMat master, slave;
+	FILE* fp = NULL;
+	string source_1, source_2;
+	string folder(tmp_folder);
+	string config_file = folder + "\\snaphu.config";
+	string ampfile1 = folder + "\\ampfile1.dat";
+	string ampfile2 = folder + "\\ampfile2.dat";
+	string coherence_file = folder + "\\coherence.dat";
+	string IN_file = folder + "\\wrapped_phase.dat";
+	string OUT_file = folder + "\\unwrapped_phase.dat";
+
+	ret = conversion.read_array_from_h5(wrapped_phase_file, "phase", wrapped_phase);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	nr = wrapped_phase.rows; nc = wrapped_phase.cols;
+	//估计基线
+	bool b_baseline = true;
+	bool b_source = true;
+	bool b_amp = true;
+	bool b_coh = true;
+	if (0 > conversion.read_str_from_h5(wrapped_phase_file, "source_1", source_1)) b_source = false;
+	if (0 > conversion.read_str_from_h5(wrapped_phase_file, "source_2", source_2)) b_source = false;
+	if (0 > conversion.read_array_from_h5(wrapped_phase_file, "coherence", coherence)) b_coh = false;
+	if (b_source)
+	{
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "lon_coefficient", lon_coef)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "lat_coefficient", lat_coef)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "offset_row", offset_row)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "offset_col", offset_col)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "carrier_frequency", carrier_frequency)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "prf", prf1)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_1.c_str(), "state_vec", state_vec1)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_2.c_str(), "prf", prf2)) b_baseline = false;
+		if (0 > conversion.read_array_from_h5(source_2.c_str(), "state_vec", state_vec2)) b_baseline = false;
+
+		if (0 > conversion.read_slc_from_h5(source_1.c_str(), master)) b_amp = false;
+		if (0 > conversion.read_slc_from_h5(source_2.c_str(), slave)) b_amp = false;
+	}
+	if (b_source && b_baseline)
+	{
+		ret = util.baseline_estimation(state_vec1, state_vec2, lon_coef, lat_coef, offset_row.at<int>(0, 0),
+			offset_col.at<int>(0, 0), nr, nc, 1.0 / prf1.at<double>(0, 0), 1.0 / prf2.at<double>(0, 0), &B_effect, &B_parallel);
+		if (ret < 0) b_baseline = false;
+	}
+	Mat phase;
+	wrapped_phase.convertTo(phase, CV_32F);
+	fopen_s(&fp, IN_file.c_str(), "wb");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", IN_file.c_str());
+		return -1;
+	}
+	fwrite(phase.data, sizeof(float), nr * nc, fp);
+	fclose(fp);
+	fp = NULL;
+	if (b_source && b_amp)//有幅度信息
+	{
+		amplitude1 = master.GetMod();
+		amplitude1.convertTo(amplitude1, CV_32F);
+		fopen_s(&fp, ampfile1.c_str(), "wb");
+		if (!fp)
+		{
+			fprintf(stderr, "snaphu(): can't open %s!\n", ampfile1.c_str());
+			return -1;
+		}
+		fwrite(amplitude1.data, sizeof(float), nr * nc, fp);
+		fclose(fp);
+		fp = NULL;
+
+
+		amplitude1 = slave.GetMod();
+		amplitude1.convertTo(amplitude1, CV_32F);
+		fopen_s(&fp, ampfile2.c_str(), "wb");
+		if (!fp)
+		{
+			fprintf(stderr, "snaphu(): can't open %s!\n", ampfile2.c_str());
+			return -1;
+		}
+		fwrite(amplitude1.data, sizeof(float), nr * nc, fp);
+		fclose(fp);
+		fp = NULL;
+	}
+	if (b_coh)//相关系数信息
+	{
+		coherence.convertTo(coherence, CV_32F);
+		fopen_s(&fp, coherence_file.c_str(), "wb");
+		if (!fp)
+		{
+			fprintf(stderr, "snaphu(): can't open %s!\n", coherence_file.c_str());
+			return -1;
+		}
+		fwrite(coherence.data, sizeof(float), nr * nc, fp);
+		fclose(fp);
+		fp = NULL;
+		b_coh = true;
+	}
+	else
+	{
+		ret = util.phase_coherence(wrapped_phase, coherence);
+		if (ret < 0) b_coh = false;
+		else
+		{
+			coherence.convertTo(coherence, CV_32F);
+			fopen_s(&fp, coherence_file.c_str(), "wb");
+			if (!fp)
+			{
+				fprintf(stderr, "snaphu(): can't open %s!\n", coherence_file.c_str());
+				return -1;
+			}
+			fwrite(coherence.data, sizeof(float), nr * nc, fp);
+			fclose(fp);
+			fp = NULL;
+			b_coh = true;
+		}
+	}
+
+
+
+	//写入配置参数
+	fopen_s(&fp, config_file.c_str(), "wt");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", coherence_file.c_str());
+		return -1;
+	}
+	fprintf(fp, "INFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "OUTFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "CORRFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "AMPFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "LINELENGTH %d\n", nc);
+	fprintf(fp, "INFILE %s\n", IN_file.c_str());
+	fprintf(fp, "OUTFILE %s\n", OUT_file.c_str());
+	if (b_coh) fprintf(fp, "CORRFILE %s\n", coherence_file.c_str());
+	if (b_source && b_amp)
+	{
+		fprintf(fp, "AMPFILE1 %s\n", ampfile1.c_str());
+		fprintf(fp, "AMPFILE2 %s\n", ampfile2.c_str());
+	}
+	if (b_source && b_baseline)
+	{
+		B_parallel = sqrt(B_effect * B_effect + B_parallel * B_parallel);
+		fprintf(fp, "BASELINE %lf\n", B_parallel);
+		fprintf(fp, "BPERP %lf\n", B_effect);
+		fprintf(fp, "LAMBDA %lf\n", 3e8 / carrier_frequency.at<double>(0, 0));
+	}
+	if (b_source)
+	{
+		Mat DR, DA;
+		if (0 == conversion.read_array_from_h5(source_1.c_str(), "range_spacing", DR))
+		{
+			fprintf(fp, "DR %lf\n", DR.at<double>(0, 0));
+		}
+		if (0 == conversion.read_array_from_h5(source_1.c_str(), "azimuth_spacing", DA))
+		{
+			fprintf(fp, "DA %lf\n", DA.at<double>(0, 0));
+		}
+		if (0 == conversion.read_array_from_h5(source_1.c_str(), "range_resolution", DR))
+		{
+			fprintf(fp, "RANGERES %lf\n", DR.at<double>(0, 0));
+		}
+		if (0 == conversion.read_array_from_h5(source_1.c_str(), "azimuth_resolution", DA))
+		{
+			fprintf(fp, "AZRES %lf\n", DA.at<double>(0, 0));
+		}
+	}
+
+	fclose(fp);
+	fp = NULL;
+
+	USES_CONVERSION;
+	//////////////////////////创建并调用snaphu.exe进程///////////////////////////////
+	LPWSTR szCommandLine = new TCHAR[256];
+	wcscpy(szCommandLine, A2W(exe_path));
+	wcscat(szCommandLine, L"\\snaphu.exe -f ");
+	wcscat(szCommandLine, A2W(config_file.c_str()));
+	STARTUPINFO si;
+	PROCESS_INFORMATION p_i;
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	ZeroMemory(&p_i, sizeof(p_i));
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = FALSE;
+	BOOL bRet = ::CreateProcess(
+		NULL,           // 不在此指定可执行文件的文件名
+		szCommandLine,      // 命令行参数
+		NULL,           // 默认进程安全性
+		NULL,           // 默认线程安全性
+		FALSE,          // 指定当前进程内的句柄不可以被子进程继承
+		CREATE_NEW_CONSOLE, // 为新进程创建一个新的控制台窗口
+		NULL,           // 使用本进程的环境变量
+		NULL,           // 使用本进程的驱动器和目录
+		&si,
+		&p_i);
+	if (bRet)
+	{
+		HANDLE hd = CreateJobObjectA(NULL, "SNAPHU");
+		if (hd)
+		{
+			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;
+			extLimitInfo.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+			BOOL retval = SetInformationJobObject(hd, JobObjectExtendedLimitInformation, &extLimitInfo, sizeof(extLimitInfo));
+			if (retval)
+			{
+				if (p_i.hProcess)
+				{
+					retval = AssignProcessToJobObject(hd, p_i.hProcess);
+				}
+			}
+		}
+		WaitForSingleObject(p_i.hProcess, INFINITE);
+		if (szCommandLine != NULL) delete[] szCommandLine;
+		::CloseHandle(p_i.hThread);
+		::CloseHandle(p_i.hProcess);
+	}
+	else
+	{
+		fprintf(stderr, "snaphu(): create snaphu.exe process failed!\n\n");
+		if (szCommandLine != NULL) delete[] szCommandLine;
+		return -1;
+	}
+
+	//读取结果
+	unwrapped_phase.create(nr, nc, CV_32F);
+	fopen_s(&fp, OUT_file.c_str(), "rb");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", OUT_file.c_str());
+		return -1;
+	}
+	fread(unwrapped_phase.data, sizeof(float), nr * nc, fp);
+	fclose(fp);
+	fp = NULL;
+	unwrapped_phase.convertTo(unwrapped_phase, CV_64F);
 	return 0;
 }
