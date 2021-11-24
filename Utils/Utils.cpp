@@ -100,6 +100,39 @@ Utils::~Utils()
 {
 }
 
+int Utils::get_mode_index(const Mat& input, int* out)
+{
+	if (input.empty() || input.type() != CV_32S || out == NULL)
+	{
+		fprintf(stderr, "get_mode_index(): input check failed!\n");
+		return -1;
+	}
+	Mat temp; input.copyTo(temp);
+	int nr = temp.rows; int nc = temp.cols;
+	temp = temp.reshape(0, 1);
+	cv::sort(temp, temp, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
+	int total = nr * nc;
+	int max_count = 0; int max_count_ix = 0; int count = 0, i = 0, j = 0;
+	while (i < total - 1)
+	{
+		count = 0;
+		for (j = i; j < total - 1; j++)
+		{
+			if (temp.at<int>(0, j) == temp.at<int>(0, j + 1)) count++;
+			else break;
+		}
+		if (max_count < count)
+		{
+			max_count = count;
+			max_count_ix = j;
+		}
+		j++;
+		i = j;
+	}
+	*out = temp.at<int>(0, max_count_ix);
+	return 0;
+}
+
 int Utils::diff(Mat& Src, Mat& diff1, Mat& diff2, bool same)
 {
 	int nr = Src.rows;
@@ -1283,7 +1316,7 @@ int Utils::gen_mask(Mat& coherence, Mat& mask, int wnd_size, double thresh)
 	Mat temp_coh;
 	coherence.copyTo(temp_coh);
 	int radius = (wnd_size + 1) / 2;
-	cv::copyMakeBorder(temp_coh, temp_coh, radius, radius, radius, radius, cv::BORDER_DEFAULT);
+	cv::copyMakeBorder(temp_coh, temp_coh, radius, radius, radius, radius, cv::BORDER_REFLECT);
 	Mat tmp = Mat::zeros(nr, nc, CV_32S);
 	tmp.copyTo(mask);
 #pragma omp parallel for schedule(guided)

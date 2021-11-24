@@ -175,6 +175,7 @@ public:
 	
 	@param wrapped_phase_file                            缠绕相位文件（h5）
 	@param unwrapped_phase                               解缠相位
+	@param project_path                                  工程路径
 	@param tmp_folder                                    中间结果保存路径
 	@param exe_path                                      snaphu.exe路径
 	@return 成功返回0，否则返回-1
@@ -182,6 +183,7 @@ public:
 	int snaphu(
 		const char* wrapped_phase_file,
 		Mat& unwrapped_phase,
+		const char* project_path,
 		const char* tmp_folder,
 		const char* exe_path
 	);

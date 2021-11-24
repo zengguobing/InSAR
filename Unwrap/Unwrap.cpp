@@ -387,7 +387,12 @@ int Unwrap::MCF(
 		fprintf(stderr, "MCF(): input check failed!\n\n");
 		return -1;
 	}
-	wrapped_phase.copyTo(unwrapped_phase);
+	if (unwrapped_phase.rows != wrapped_phase.rows ||
+		unwrapped_phase.cols != wrapped_phase.cols ||
+		unwrapped_phase.type() != CV_64F)
+	{
+		wrapped_phase.copyTo(unwrapped_phase);
+	}
 	int num_nodes = nodes.size();
 	int num_neigh, number, ret, end2;
 	double distance, grad, phi1, phi2, gain, tt, min, max;
@@ -420,10 +425,10 @@ int Unwrap::MCF(
 		nodes[start - 1].get_distance(nodes[end2 - 1], &distance);
 		if (!nodes[end2 - 1].get_status() &&
 			distance <= thresh &&
-			!edges[*(ptr_neigh + i) - 1].isBoundry &&
-			/*!(edges[*(ptr_neigh + i) - 1].isBoundry && fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5) &&*/
-			fabs(edges[*(ptr_neigh + i) - 1].gain) < tt &&
-			nodes[end2 - 1].get_balance()
+			/*!edges[*(ptr_neigh + i) - 1].isBoundry &&*/
+			!(edges[*(ptr_neigh + i) - 1].isBoundry && fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5) &&
+			fabs(edges[*(ptr_neigh + i) - 1].gain) < tt /*&&
+			nodes[end2 - 1].get_balance()*/
 			)
 		{
 			que.push(end2);
@@ -467,10 +472,10 @@ int Unwrap::MCF(
 			nodes[number - 1].get_distance(nodes[end2 - 1], &distance);
 			if (!nodes[end2 - 1].get_status() &&
 				distance <= thresh &&
-				!edges[*(ptr_neigh + i) - 1].isBoundry &&
-				/*!(edges[*(ptr_neigh + i) - 1].isBoundry && fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5) &&*/
-				fabs(edges[*(ptr_neigh + i) - 1].gain) < tt &&
-				nodes[end2 - 1].get_balance() 
+				/*!edges[*(ptr_neigh + i) - 1].isBoundry &&*/
+				!(edges[*(ptr_neigh + i) - 1].isBoundry && fabs(edges[*(ptr_neigh + i) - 1].gain) > 0.5) &&
+				fabs(edges[*(ptr_neigh + i) - 1].gain) < tt/* &&
+				nodes[end2 - 1].get_balance() */
 				)
 			{
 				que.push(end2);
@@ -497,27 +502,22 @@ int Unwrap::MCF(
 		if (nodes[i].get_status())
 		{
 			ret = nodes[i].get_pos(&rows, &cols);
-			if (rows > nr - 1 || cols > nc - 1 || rows < 0 || cols < 0)
-			{
-				fprintf(stderr, "MCF(): node posistion exceed legal range!\n");
-				return -1;
-			}
 			ret = nodes[i].get_phase(&phi);
 			unwrapped_phase.at<double>(rows, cols) = phi;
 			_mask.at<int>(rows, cols) = 1;
 		}
 	}
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr; i++)
-	{
-		for (int j = 0; j < nc; j++)
-		{
-			if (_mask.at<int>(i, j) < 1)
-			{
-				unwrapped_phase.at<double>(i, j) = min - 0.01 * (max - min);
-			}
-		}
-	}
+//#pragma omp parallel for schedule(guided)
+//	for (int i = 0; i < nr; i++)
+//	{
+//		for (int j = 0; j < nc; j++)
+//		{
+//			if (_mask.at<int>(i, j) < 1)
+//			{
+//				unwrapped_phase.at<double>(i, j) = min - 0.01 * (max - min);
+//			}
+//		}
+//	}
 	_mask.copyTo(out_mask);
 	return 0;
 }
@@ -1183,20 +1183,12 @@ int Unwrap::QualityGuided_MCF(
 	ret = util.phase_coherence(phase, 3, 3, coherence);
 	if (return_check(ret, "phase_coherence()", error_head)) return -1;
 	quality_index = 1 - coherence;
-	mask = Mat::zeros(nr, nc, CV_32S);
+	//mask = Mat::zeros(nr, nc, CV_32S);
 
-
-	for (int i = 0; i < nr; i++)
-	{
-		for (int j = 0; j < nc; j++)
-		{
-			if (coherence.at<double>(i, j) > coherence_thresh)
-			{
-				mask.at<int>(i, j) = 1; count++;
-			}
-		}
-	}
-	if (count < 100)
+	ret = util.gen_mask(coherence, mask, 7, coherence_thresh);
+	if (return_check(ret, "gen_mask()", error_head)) return -1;
+	count = cv::countNonZero(mask);
+	if (count < 100)//高质量像素小于100，直接使用规则网络的MCF
 	{
 		Mat residue;
 		ret = util.residue(phase, residue);
@@ -1215,8 +1207,8 @@ int Unwrap::QualityGuided_MCF(
 	string neigh_file = folder + "\\triangle.1.neigh";
 	string mcf_problem = folder + "\\mcf_delaunay.net";
 	string mcf_solution = folder + "\\mcf_delaunay.net.sol";
-	vector<tri_node> nodes; vector<tri_edge> edges; vector<triangle> tri;
-	vector<int> node_neighbour;
+	vector<tri_node> nodes, nodes_sub; vector<tri_edge> edges, edges_sub; vector<triangle> tri, tri_sub;
+	vector<int> node_neighbour, node_neighbour_sub;
 	long num_nodes = count;
 	ret = util.write_node_file(node_file.c_str(), mask);
 	if (return_check(ret, "write_node_file()", error_head)) return -1;
@@ -1237,9 +1229,9 @@ int Unwrap::QualityGuided_MCF(
 	ret = _QualityGuided_MCF_1(phase, unwrapped_phase, out_mask, nodes, edges, distance_thresh);
 	if (return_check(ret, "residue()", error_head)) return -1;
 
-	out_mask.convertTo(out_mask, CV_64F);
-	util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\out_mask.bin", out_mask);
-	out_mask.convertTo(out_mask, CV_32S);
+	out_mask.convertTo(mask, CV_64F);
+	util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\out_mask.bin", mask);
+	out_mask.convertTo(mask, CV_32S);
 	util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\unwrapped_phase1.bin", unwrapped_phase);
 
 	Mat mask_2 = Mat::zeros(nr, nc, CV_32S);
@@ -1254,7 +1246,8 @@ int Unwrap::QualityGuided_MCF(
 			}
 		}
 	}
-
+	Mat _mask_sentinel; mask_2.copyTo(_mask_sentinel);//质量图解缠未解出的区域掩膜
+	if (count == 0) return 0;
 	//找出邻接已解缠节点
 	Mat grad_updown, grad_leftright;
 	grad_updown = mask_2(cv::Range(1, nr), cv::Range(0, nc)) - mask_2(cv::Range(0, nr - 1), cv::Range(0, nc));
@@ -1288,6 +1281,11 @@ int Unwrap::QualityGuided_MCF(
 		}
 	}
 
+	/*
+	* 找到未解缠的点以及其相邻已解缠的点，形成三角网络
+	加入总的队列wrapped_que，已解缠的边缘点加入到unwrapped_neighbour_que
+	*/
+	queue<int> wrapped_que, unwrapped_neighbour_que, low_quality_que;
 	num_nodes = cv::countNonZero(mask_2);
 	ret = util.write_node_file(node_file.c_str(), mask_2);
 	if (return_check(ret, "write_node_file()", error_head)) return -1;
@@ -1297,18 +1295,128 @@ int Unwrap::QualityGuided_MCF(
 	if (return_check(ret, "read_edges()", error_head)) return -1;
 	ret = util.init_tri_node(nodes, unwrapped_phase, mask_2, edges, node_neighbour, num_nodes);
 	if (return_check(ret, "init_tri_node()", error_head)) return -1;
-	ret = util.read_triangle(ele_file.c_str(), neigh_file.c_str(), tri, nodes, edges);
-	if (return_check(ret, "read_triangle()", error_head)) return -1;
-	ret = util.residue(tri, nodes, edges, distance_thresh);
-	if (return_check(ret, "residue()", error_head)) return -1;
-	ret = util.write_DIMACS(mcf_problem.c_str(), tri, nodes, edges, coherence);
-	if (return_check(ret, "write_DIMACS()", error_head)) return -1;
-	ret = mcf_delaunay(mcf_problem.c_str(), EXE_path);
-	if (return_check(ret, "mcf_delaunay()", error_head)) return -1;
-	ret = util.read_DIMACS(mcf_solution.c_str(), edges, nodes, tri);
-	if (return_check(ret, "read_DIMACS()", error_head)) return -1;
-	ret = _QualityGuided_MCF_2(unwrapped_phase, nodes, edges, distance_thresh);
-	if (return_check(ret, "_QualityGuided_MCF_2()", error_head)) return -1;
+
+	int start, end1, end2, ambig, i;
+	long* ptr_neigh = NULL; int num_neigh, row, col, num_triangle, positive, negative;
+	double distance, phi, cluster_distance_thresh = 1.2;//低质量聚类距离阈值
+	Mat zeros = Mat::zeros(nr, nc, CV_32S);
+	Mat ambiguity, new_mask;
+	int  mask_sentinel_new = cv::countNonZero(_mask_sentinel);
+	while (mask_sentinel_new != 0)//只要还存在未解缠的像素就继续循环
+	{
+		for (int i = 0; i < nodes.size(); i++)
+		{
+			nodes[i].get_pos(&row, &col);
+			if (_mask_sentinel.at<int>(row, col) == 1)
+			{
+				wrapped_que.push(i + 1);
+				break;
+			}
+		}
+		//mask_sentinel_old = cv::countNonZero(_mask_sentinel);
+		zeros.copyTo(new_mask);//循环前将new_mask清零
+		while (!wrapped_que.empty())//寻找低质量点cluster
+		{
+			
+			start = wrapped_que.front();
+			wrapped_que.pop();
+			if (nodes[start - 1].get_status())
+			{
+				unwrapped_neighbour_que.push(start);
+			}
+			nodes[start - 1].get_neigh_ptr(&ptr_neigh, &num_neigh);
+			nodes[start - 1].get_pos(&row, &col);//设置新的mask
+			new_mask.at<int>(row, col) = 1;
+			_mask_sentinel.at<int>(row, col) = 0;//未解缠的像素掩膜更新
+			nodes[start - 1].set_balance(false);//已加入队列设置为不平衡，避免重复加入队列
+			for (int i = 0; i < num_neigh; i++)
+			{
+				end2 = edges[*(ptr_neigh + i) - 1].end1 == start ? edges[*(ptr_neigh + i) - 1].end2 : edges[*(ptr_neigh + i) - 1].end1;
+				nodes[start - 1].get_distance(nodes[end2 - 1], &distance);
+				if (
+					distance <= cluster_distance_thresh && //小于低质量聚类距离阈值则为同一类
+					nodes[end2 - 1].get_balance()
+					)
+				{
+					wrapped_que.push(end2);
+					nodes[end2 - 1].set_balance(false);//已加入队列设置为不平衡，避免重复加入队列
+				}
+			}
+		}
+
+		//new_mask.convertTo(new_mask, CV_64F);
+		//util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\out_mask.bin", new_mask);
+		//new_mask.convertTo(new_mask, CV_32S);
+
+		ambiguity = Mat::zeros(1, unwrapped_neighbour_que.size(), CV_32S);
+		num_nodes = cv::countNonZero(new_mask);
+		ret = util.write_node_file(node_file.c_str(), new_mask);
+		ret = util.gen_delaunay(node_file.c_str(), EXE_path);
+		ret = util.read_edges(edge_file.c_str(), edges_sub, node_neighbour_sub, num_nodes);
+		ret = util.init_tri_node(nodes_sub, wrapped_phase, new_mask, edges_sub, node_neighbour_sub, num_nodes);
+		ret = util.read_triangle(ele_file.c_str(), neigh_file.c_str(), tri_sub, nodes_sub, edges_sub);
+		ret = util.residue(tri_sub, nodes_sub, edges_sub, 1000.0);
+		if (return_check(ret, "residue()", error_head)) return -1;
+		/*
+		* 检查残差点数，若无残差点则不使用mcf.exe求解
+		*/
+		num_triangle = tri_sub.size(); positive = 0; negative = 0;
+		for (int ii = 0; ii < num_triangle; ii++)
+		{
+			if (tri_sub[ii].residue > 0.7)
+			{
+				positive++;
+			}
+			if (tri_sub[ii].residue < -0.7)
+			{
+				negative++;
+			}
+		}
+		if (positive == 0 && negative == 0)
+		{
+
+			ret = MCF(wrapped_phase, unwrapped_phase, out_mask, new_mask, nodes_sub, edges_sub, 1, false, distance_thresh);
+			if (return_check(ret, "MCF()", error_head)) return -1;
+		}
+		else
+		{
+			ret = util.write_DIMACS(mcf_problem.c_str(), tri_sub, nodes_sub, edges_sub, coherence);
+			if (return_check(ret, "write_DIMACS()", error_head)) return -1;
+			ret = mcf_delaunay(mcf_problem.c_str(), EXE_path);
+			if (return_check(ret, "mcf_delaunay()", error_head)) return -1;
+			ret = util.read_DIMACS(mcf_solution.c_str(), edges_sub, nodes_sub, tri_sub);
+			if (return_check(ret, "read_DIMACS()", error_head)) return -1;
+			ret = MCF(wrapped_phase, unwrapped_phase, out_mask, new_mask, nodes_sub, edges_sub, 1, false, distance_thresh);
+			if (return_check(ret, "MCF()", error_head)) return -1;
+		}
+
+		//校正模糊数
+		i = 0;
+		while (!unwrapped_neighbour_que.empty())
+		{
+			end2 = unwrapped_neighbour_que.front();
+			unwrapped_neighbour_que.pop();
+			nodes[end2 - 1].get_pos(&row, &col);
+			nodes[end2 - 1].get_phase(&phi);
+			ambig = (int)round((phi - unwrapped_phase.at<double>(row, col)) / (2 * 3.141592653589793238));
+			ambiguity.at<int>(0, i++) = ambig;
+		}
+		ret = util.get_mode_index(ambiguity, &ambig);
+		//校正相位
+		for (int i = 0; i < nodes_sub.size(); i++)
+		{
+			if (nodes_sub[i].get_status())
+			{
+				nodes_sub[i].get_phase(&phi);
+				nodes_sub[i].get_pos(&row, &col);
+				phi += (double)ambig * 2 * 3.141592653589793238;
+				nodes_sub[i].set_phase(phi);
+				unwrapped_phase.at<double>(row, col) = phi;
+			}
+		}
+		mask_sentinel_new = cv::countNonZero(_mask_sentinel);
+	}
+	
 
 
 	return 0;
@@ -1317,11 +1425,13 @@ int Unwrap::QualityGuided_MCF(
 int Unwrap::snaphu(
 	const char* wrapped_phase_file,
 	Mat& unwrapped_phase,
+	const char* project_path,
 	const char* tmp_folder,
 	const char* exe_path
 )
 {
-	if (wrapped_phase_file == NULL ||
+	if (wrapped_phase_file == NULL || 
+		project_path == NULL ||
 		tmp_folder == NULL ||
 		exe_path == NULL)
 	{
@@ -1337,6 +1447,7 @@ int Unwrap::snaphu(
 		carrier_frequency, offset_row, offset_col;
 	ComplexMat master, slave;
 	FILE* fp = NULL;
+	string project(project_path);
 	string source_1, source_2;
 	string folder(tmp_folder);
 	string config_file = folder + "\\snaphu.config";
@@ -1355,7 +1466,10 @@ int Unwrap::snaphu(
 	bool b_amp = true;
 	bool b_coh = true;
 	if (0 > conversion.read_str_from_h5(wrapped_phase_file, "source_1", source_1)) b_source = false;
+	else source_1 = project + source_1;
 	if (0 > conversion.read_str_from_h5(wrapped_phase_file, "source_2", source_2)) b_source = false;
+	else source_2 = project + source_2;
+
 	if (0 > conversion.read_array_from_h5(wrapped_phase_file, "coherence", coherence)) b_coh = false;
 	if (b_source)
 	{

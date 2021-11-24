@@ -74,7 +74,7 @@ public:
 	*/
 	bool get_status() const;
 	/*获取平衡状态
-	* 返回值（是否平衡）
+	* 返回值（是否平衡，默认是）
 	*/
 	bool get_balance() const;
 	/*返回是否节点属于残差三角形
@@ -314,6 +314,13 @@ class InSAR_API Utils
 public:
 	Utils();
 	~Utils();
+	/** @brief 求int型矩阵的众数
+	
+	@param input                  输入矩阵（int型）
+	@param out                    输出结果
+	@return 成功返回0，否则返回-1
+	*/
+	int get_mode_index(const Mat& input, int* out);
 	/*计算矩阵梯度
 	 参数1 源矩阵
 	 参数2 行方向梯度（返回值）
