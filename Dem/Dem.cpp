@@ -38,6 +38,20 @@ inline bool parallel_check(volatile bool parallel_flag, const char* detail_info,
 		return false;
 	}
 }
+
+Dem::Dem()
+{
+	memset(this->error_head, 0, 256);
+	memset(this->parallel_error_head, 0, 256);
+	strcpy(this->error_head, "DEM_DLL_ERROR: error happens when using ");
+	strcpy(this->parallel_error_head, "DEM_DLL_ERROR: error happens when using parallel computing in function: ");
+}
+
+Dem::~Dem()
+{
+}
+
+
 int Dem::phase2dem_newton_iter(
 	Mat unwrapped_phase,
 	Mat flat_phase,

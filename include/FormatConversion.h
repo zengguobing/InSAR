@@ -1,5 +1,6 @@
 #pragma once
 #ifndef __FORMATCONVERSION__H__
+#define __FORMATCONVERSION__H__
 #include<string>
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
