@@ -137,6 +137,25 @@ public:
 		int Goldstein_win, int Goldstein_filled_win, double alpha,
 		const char* filter_dl_path, const char* dl_model_file, const char* tmp_path
 	);
+	/** @brief 添加解缠图像节点
+
+	@param datanode_node  解缠图像节点名
+	@param node_name      解缠图像名
+	@param node_path      解缠图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param threshold	  综合法阈值
+	*/
+	int XMLFile_add_unwrap(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		double threshold
+	);
 	/** @brief 返回字符串
 
 	@param n			输入整数值
