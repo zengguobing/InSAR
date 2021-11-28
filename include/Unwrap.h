@@ -188,6 +188,41 @@ public:
 		const char* exe_path
 	);
 
+	/** @brief 求相位图SPD
+	* 
+	@param src			待解缠相位
+	@param SPD			SPD图（返回值）
+	*/
+	int GetSPD(Mat& src,
+		Mat& SPD);
+	/** @brief 两点间解缠
+	 @param	src			待解缠相位图
+	 @param dst			解缠相位图（返回值）
+	 @param x0			已解缠相位列坐标
+	 @param y0			已解缠相位行坐标
+	 @param x1			解缠相位列坐标
+	 @param y1			解缠相位行坐标
+	 @param flag		解缠标志图（已解缠存0，未解除存1）
+	 @param adjoin		邻接点标志图（位于序列中存1，不在序列中存0）
+	 @param SPD			SPD图（值越小代表相位质量越高）
+	 @param Q			小顶堆（用于储存邻接点序列）
+	*/
+	int unwrap(Mat& src,
+		Mat& dst,
+		int x0, int y0,
+		int x1, int y1,
+		Mat& flag,
+		Mat& adjoin,
+		Mat& SPD,
+		Heap& Q);
+	/** @brief 基于SPD的质量图相位解缠算法
+
+	@param wrapped_phase		待解缠相位
+	@param unwrapped_phase		解缠相位（返回值）
+	*/
+	int SPD_Guided_Unwrap(Mat& wrapped_phase,
+		Mat& unwrapped_phase);
+
 private:
 	char error_head[256];
 	char parallel_error_head[256];

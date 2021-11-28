@@ -1683,3 +1683,255 @@ int Unwrap::snaphu(
 	unwrapped_phase.convertTo(unwrapped_phase, CV_64F);
 	return 0;
 }
+
+int Unwrap::GetSPD(Mat& wrapped_phase, Mat& SPD)
+{
+	if (wrapped_phase.rows < 1 ||
+		wrapped_phase.cols < 1 ||
+		wrapped_phase.type() != CV_64F ||
+		wrapped_phase.channels() != 1)
+	{
+		fprintf(stderr, "GetSPD(): input check failed!\n\n");
+		return -1;
+	}
+	int win_w = 3;
+	int win_h = 3;
+	int armw = win_w / 2;
+	int armh = win_h / 2;
+	Mat padded;
+	copyMakeBorder(wrapped_phase, padded, armh, armh, armw, armw, BORDER_REFLECT_101);//镜像翻转边缘
+	int width = padded.cols;
+	int height = padded.rows;
+	int i, j;
+	volatile bool parallel_flag = true;
+	int ret = 0;
+#pragma omp parallel for schedule(guided) \
+	private(ret)
+	for (i = armh; i < height - armh; i++)
+	{
+		if (!parallel_flag) continue;
+		for (j = armw; j < width - armw; j++)
+		{
+			if (!parallel_flag) continue;
+			int m, n;
+			double sum = 0;
+			double delta = 0;
+			/*在3*3的窗口内计算与中心像素的梯度绝对值和*/
+			for (m = i - 1; m < i + 2; m++)
+				for (n = j - 1; n < j + 2; n++)
+				{
+					delta = padded.ptr<double>(i)[j] - padded.ptr<double>(m)[n];
+					/*梯度取主值*/
+					if (delta <= -PI)
+						sum += abs(delta + 2 * PI);
+					else if (delta > -PI && delta < PI)
+						sum += abs(delta);
+					else
+						sum += abs(delta - 2 * PI);
+				}
+			///*PSD*/
+			//double k = mean(padded(Range(i - 1, i + 2), Range(i - 1, i + 2)))[0];
+			//for (m = i - 1; m < i + 2; m++)
+			//	for (n = j - 1; n < j + 2; n++)
+			//	{
+			//		sum += pow((padded.ptr<double>(i)[j] - k), 2);
+			//		/*梯度取主值*/
+			//		/*if (delta <= -PI)
+			//			sum += abs(delta + 2 * PI);
+			//		else if (delta > -PI && delta < PI)
+			//			sum += abs(delta);
+			//		else
+			//			sum += abs(delta - 2 * PI);*/
+			//	}
+			SPD.ptr<double>(i - armh)[j - armw] = sqrt(sum / 8);
+		}
+	}
+	if (parallel_check(parallel_flag, "GetSPD()", parallel_error_head)) return -1;
+	return 0;
+}
+
+int Unwrap::unwrap(Mat& src, Mat& dst, int x0, int y0, int x1, int y1, Mat& flag, Mat& adjoin, Mat& SPD, Heap& Q)
+{
+	if (src.rows < 1 ||
+		src.cols < 1 ||
+		src.type() != CV_64F ||
+		src.channels() != 1 ||
+		x0 < 0 || x0 >= src.cols || y0 < 0 || y0 >= src.rows ||
+		x1 < 0 || x1 >= src.cols || y1 < 0 || y1 >= src.rows ||
+		flag.size() != src.size() ||
+		flag.type() != CV_64F ||
+		flag.channels() != 1 ||
+		adjoin.size() != src.size() ||
+		adjoin.type() != CV_64F ||
+		adjoin.channels() != 1 ||
+		SPD.size() != src.size() ||
+		SPD.type() != CV_64F ||
+		SPD.channels() != 1
+		)
+	{
+		fprintf(stderr, "unwrap(): input check failed!\n\n");
+		return -1;
+	}
+	int width = src.cols;
+	int height = src.rows;
+	double delta = atan2(sin(src.ptr<double>(y0)[x0] - src.ptr<double>(y1)[x1]), cos(src.ptr<double>(y0)[x0] - src.ptr<double>(y1)[x1]));
+	dst.ptr<double>(y1)[x1] = dst.ptr<double>(y0)[x0] - delta;
+	flag.ptr<double>(y1)[x1] = 0;
+	adjoin.ptr<double>(y1)[x1] = 0;
+	int ret;
+	if (x1 > 0)
+		if ((flag.ptr<double>(y1)[x1 - 1] == 1) && (adjoin.ptr<double>(y1)[x1 - 1] == 0))
+		{
+			adjoin.ptr<double>(y1)[x1 - 1] = 1;
+			ret = Q.push(SPD.ptr<double>(y1)[x1 - 1], x1 - 1, y1);
+			if (ret < 0)
+				return -1;
+		}
+
+	if (x1 < width - 1)
+		if ((flag.ptr<double>(y1)[x1 + 1] == 1) && (adjoin.ptr<double>(y1)[x1 + 1] == 0))
+		{
+			adjoin.ptr<double>(y1)[x1 + 1] = 1;
+			ret = Q.push(SPD.ptr<double>(y1)[x1 + 1], x1 + 1, y1);
+			if (ret < 0)
+				return -1;
+		}
+	if (y1 > 0)
+		if ((flag.ptr<double>(y1 - 1)[x1] == 1) && (adjoin.ptr<double>(y1 - 1)[x1] == 0))
+		{
+			adjoin.ptr<double>(y1 - 1)[x1] = 1;
+			ret = Q.push(SPD.ptr<double>(y1 - 1)[x1], x1, y1 - 1);
+			if (ret < 0)
+				return -1;
+		}
+
+	if (y1 < height - 1)
+		if ((flag.ptr<double>(y1 + 1)[x1] == 1) && (adjoin.ptr<double>(y1 + 1)[x1] == 0))
+		{
+			adjoin.ptr<double>(y1 + 1)[x1] = 1;
+			ret = Q.push(SPD.ptr<double>(y1 + 1)[x1], x1, y1 + 1);
+			if (ret < 0)
+				return -1;
+		}
+	return 0;
+}
+
+int Unwrap::SPD_Guided_Unwrap(Mat& wrapped_phase, Mat& unwrapped_phase)
+{
+	if (wrapped_phase.rows < 1 ||
+		wrapped_phase.cols < 1 ||
+		wrapped_phase.type() != CV_64F ||
+		wrapped_phase.channels() != 1)
+	{
+		fprintf(stderr, "SPD_Guided_Unwrap(): input check failed!\n\n");
+		return -1;
+	}
+	Heap Heap;
+	Mat tmp = Mat::zeros(wrapped_phase.size(), CV_64FC1);
+	Mat SPD = Mat::zeros(wrapped_phase.size(), CV_64FC1);
+	int ret = GetSPD(wrapped_phase, SPD);
+	if (ret < 0)
+		return -1;
+	int count = 0;
+	int width = wrapped_phase.cols;
+	int height = wrapped_phase.rows;
+	Mat flag = Mat::ones(wrapped_phase.size(), CV_64FC1);
+	Mat adjoin = Mat::zeros(wrapped_phase.size(), CV_64FC1);
+	Point Min;
+	minMaxLoc(SPD, NULL, NULL, &Min, NULL);
+	int x = Min.x;
+	int y = Min.y;
+	int mark = 0;
+	tmp.ptr<double>(y)[x] = tmp.ptr<double>(y)[x];
+	count++;
+	flag.ptr<double>(y)[x] = 0;
+	if (x > 0)
+	{
+		ret = unwrap(wrapped_phase, tmp, x, y, x - 1, y, flag, adjoin, SPD, Heap);
+		if (ret < 0)
+			return -1;
+		count++;
+	}
+
+	if (x < width - 1)
+	{
+		ret = unwrap(wrapped_phase, tmp, x, y, x + 1, y, flag, adjoin, SPD, Heap);
+		if (ret < 0)
+			return -1;
+		count++;
+	}
+	if (y > 0)
+	{
+		ret = unwrap(wrapped_phase, tmp, x, y, x, y - 1, flag, adjoin, SPD, Heap);
+		if (ret < 0)
+			return -1;
+		count++;
+	}
+
+	if (y < height - 1)
+	{
+		ret = unwrap(wrapped_phase, tmp, x, y, x, y + 1, flag, adjoin, SPD, Heap);
+		if (ret < 0)
+			return -1;
+		count++;
+	}
+	int top = height * width;
+	while (count < top)
+	{
+		mark = 0;
+		if (Heap.size != 0)
+		{
+			ret = Heap.top(&x, &y);
+			if (ret < 0)
+				return -1;
+			Heap.pop();
+		}
+		if (y > 0)
+		{
+			if (flag.ptr<double>(y - 1)[x] == 0)
+			{
+				ret = unwrap(wrapped_phase, tmp, x, y - 1, x, y, flag, adjoin, SPD, Heap);
+				if (ret < 0)
+					return -1;
+				mark = 1;
+			}
+		}
+		if (y < height - 1 && mark == 0)
+		{
+			if (flag.ptr<double>(y + 1)[x] == 0)
+			{
+				ret = unwrap(wrapped_phase, tmp, x, y + 1, x, y, flag, adjoin, SPD, Heap);
+				if (ret < 0)
+					return -1;
+				mark = 1;
+			}
+		}
+		if (x > 0 && mark == 0)
+		{
+			if (flag.ptr<double>(y)[x - 1] == 0)
+			{
+				ret = unwrap(wrapped_phase, tmp, x - 1, y, x, y, flag, adjoin, SPD, Heap);
+				if (ret < 0)
+					return -1;
+				mark = 1;
+			}
+		}
+		if (x < width - 1 && mark == 0)
+		{
+			if (flag.ptr<double>(y)[x + 1] == 0)
+			{
+				ret = unwrap(wrapped_phase, tmp, x + 1, y, x, y, flag, adjoin, SPD, Heap);
+				if (ret < 0)
+					return -1;
+				mark = 1;
+			}
+		}
+		if (mark == 1)
+			count++;
+	}
+	tmp.copyTo(unwrapped_phase);
+	free(Heap.x);
+	free(Heap.y);
+	free(Heap.queue);
+	return 0;
+}
