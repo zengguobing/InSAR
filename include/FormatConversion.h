@@ -156,6 +156,25 @@ public:
 		const char* method,
 		double threshold
 	);
+	/** @brief 添加Dem图像节点
+
+	@param datanode_node  Dem图像节点名
+	@param node_name      Dem图像名
+	@param node_path      Dem图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param threshold	  迭代次数
+	*/
+	int XMLFile_add_dem(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		int times
+	);
 	/** @brief 返回字符串
 
 	@param n			输入整数值
