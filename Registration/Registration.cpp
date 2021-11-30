@@ -762,7 +762,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	if (master.isempty() ||
 		slave.GetCols() != master.GetCols() ||
 		slave.GetRows() != slave.GetRows() ||
-		blocksize * 5 > (slave.GetCols() < slave.GetRows() ? slave.GetCols() : slave.GetRows()) ||
+		//blocksize * 5 > (slave.GetCols() < slave.GetRows() ? slave.GetCols() : slave.GetRows()) ||
 		blocksize < 8||interp_times < 1
 		)
 	{
@@ -777,6 +777,11 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	Utils util;
 	int m = (master.GetRows()) / blocksize;
 	int n = (master.GetCols()) / blocksize;
+	if (m * n < 10)
+	{
+		fprintf(stderr, "coregistration_pixel(): try smaller blocksize!\n");
+		return -1;
+	}
 	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
 	Mat offset_coord_row = Mat::zeros(m, n, CV_64F); 
 	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
