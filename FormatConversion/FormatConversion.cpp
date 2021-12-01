@@ -2497,6 +2497,99 @@ int FormatConversion::sentinel2h5(const char* tiff_filename, const char* xml_fil
 	return 0;
 }
 
+int FormatConversion::import_sentinel(
+	const char* manifest,
+	const char* subswath_name,
+	const char* polarization,
+	const char* dest_h5_file
+)
+{
+	if (manifest == NULL ||
+		subswath_name == NULL ||
+		polarization == NULL ||
+		dest_h5_file == NULL)
+	{
+		fprintf(stderr, "import_sentinel(): input check failed!\n");
+		return -1;
+	}
+	int ret;
+	string xmlhead, tiffhead, subswath, polar;
+	if (0 == strcmp("iw2", subswath_name))subswath = "iw2";
+	else if (0 == strcmp("iw3", subswath_name))subswath = "iw3";
+	else subswath = "iw1";
+
+	if (0 == strcmp("vh", polarization)) polar = "vh";
+	else polar = "vv";
+
+	XMLFile xmldoc;
+	ret = xmldoc.XMLFile_load(manifest);
+	if (return_check(ret, "XMLFile_load()", error_head)) return -1;
+	TiXmlElement* root = NULL, * pnode = NULL;
+	ret = xmldoc.find_node("dataObjectSection", root);
+	if (return_check(ret, "find_node()", error_head)) return -1;
+
+	ret = xmldoc._find_node(root, "dataObject", pnode);
+	if (return_check(ret, "_find_node()", error_head)) return -1;
+	string tmp(pnode->FirstAttribute()->Value());
+	if (0 == strcmp(tmp.substr(0, 10).c_str(), "products1a"))//sentinel-1A
+	{
+		xmlhead = "products1a" + subswath + "slc" + polar;
+		tiffhead = "s1a" + subswath + "slc" + polar;
+	}
+	else//sentinel-1B
+	{
+		xmlhead = "products1b" + subswath + "slc" + polar;
+		tiffhead = "s1b" + subswath + "slc" + polar;
+	}
+
+	string tiff_filename, xml_filename;
+	string main_xml(manifest);
+	string folder;
+	if (main_xml.length() > main_xml.rfind("\\") && main_xml.rfind("\\") >= 0)
+	{
+		folder = main_xml.substr(0, main_xml.rfind("\\"));
+	}
+	else if (main_xml.length() > main_xml.rfind("/") && main_xml.rfind("/") >= 0)
+	{
+		folder = main_xml.substr(0, main_xml.rfind("/"));
+	}
+	else
+	{
+		fprintf(stderr, "import_sentinel(): invalid manifest file %s !\n", manifest);
+		return -1;
+	}
+	TiXmlElement* pchild = NULL;
+
+	while (pnode)
+	{
+		tmp = pnode->FirstAttribute()->Value();
+		if (tmp.length() > 18)
+		{
+			if (0 == strcmp(tmp.substr(0, 18).c_str(), xmlhead.c_str()))
+			{
+				ret = xmldoc._find_node(pnode, "fileLocation", pchild);
+				if (return_check(ret, "_find_node()", error_head)) return -1;
+				xml_filename = pchild->Attribute("href");
+				xml_filename = folder + xml_filename.substr(1, xml_filename.length() - 1);
+			}
+		}
+		if (tmp.length() > 11)
+		{
+			if (0 == strcmp(tmp.substr(0, 11).c_str(), tiffhead.c_str()))
+			{
+				ret = xmldoc._find_node(pnode, "fileLocation", pchild);
+				if (return_check(ret, "_find_node()", error_head)) return -1;
+				tiff_filename = pchild->Attribute("href");
+				tiff_filename = folder + tiff_filename.substr(1, tiff_filename.length() - 1);
+			}
+		}
+		pnode = pnode->NextSiblingElement();
+	}
+	ret = sentinel2h5(tiff_filename.c_str(), xml_filename.c_str(), dest_h5_file);
+	if (return_check(ret, "sentinel2h5()", error_head)) return -1;
+	return 0;
+}
+
 int FormatConversion::read_slc_from_ALOS(const char* img_file, ComplexMat& slc)
 {
 	if (img_file == NULL)
@@ -3139,10 +3232,11 @@ int XMLFile::XMLFile_creat_new_project(const char* project_path, const char* pro
 	return 0;
 }
 
-int XMLFile::XMLFile_add_origin(const char* node_name, const char* node_path)
+int XMLFile::XMLFile_add_origin(const char* node_name, const char* node_path, const char* sensor)
 {
 	if (node_name == NULL ||
-		node_path == NULL
+		node_path == NULL ||
+		sensor == NULL
 		)
 	{
 		fprintf(stderr, "XMLFile_add_origin(): input check failed!\n");
@@ -3187,7 +3281,7 @@ int XMLFile::XMLFile_add_origin(const char* node_name, const char* node_path)
 		TiXmlElement* Data_Processing_Parameters = new TiXmlElement("Data_Processing_Parameters");
 		DataNode->LinkEndChild(Data_Processing_Parameters);
 		TiXmlElement* Sensor = new TiXmlElement("Sensor");
-		Sensor->LinkEndChild(new TiXmlText("TerraSAR-X"));
+		Sensor->LinkEndChild(new TiXmlText(sensor));
 		Data_Processing_Parameters->LinkEndChild(Sensor);
 	}
 	else

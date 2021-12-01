@@ -29,14 +29,16 @@ public:
 		const char* project_name,
 		const char* project_version
 	);
-	/** @brief 添加导入TSX节点
+	/** @brief 添加导入原始数据节点
 
 	@param node_name      图像名
 	@param node_path      图像路径
+	@param sensor         卫星
 	*/
 	int XMLFile_add_origin(
 		const char* node_name,
-		const char* node_path
+		const char* node_path,
+		const char* sensor = "unknown"
 	);
 	/** @brief 添加裁剪图像节点
 
@@ -489,6 +491,20 @@ public:
 		const char* xml_filename,
 		const char* dst_h5_filename,
 		const char* POD_file = NULL
+	);
+	/** 导入sentinel卫星数据至h5文件中
+	* 
+	* @param manifest文件                        sentinel卫星数据manifest文件
+	* @param subswath_name                       sentinel卫星IW模式中为（iw1/iw2/iw3）
+	* @param polarization                        极化方式（vv/vh）
+	* @param dest_h5_file                        目标h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int import_sentinel(
+		const char* manifest,
+		const char* subswath_name,
+		const char* polarization,
+		const char* dest_h5_file
 	);
 
 
