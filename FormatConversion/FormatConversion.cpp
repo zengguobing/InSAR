@@ -1,10 +1,17 @@
 #include"pch.h"
-#include"..\include\FormatConversion.h"
 #include"gdal_priv.h"
+#include"..\include\FormatConversion.h"
+#include"..\include\Registration.h"
+
 #ifdef _DEBUG
 #pragma comment(lib,"ComplexMat_d.lib")
+#pragma comment(lib,"Registration_d.lib")
+#pragma comment(lib,"Utils_d.lib")
 #else
 #pragma comment(lib,"ComplexMat.lib")
+#pragma comment(lib,"Registration.lib")
+#pragma comment(lib,"Utils.lib")
+
 #endif // _DEBUG
 
 inline bool return_check(int ret, const char* detail_info, const char* error_head)
@@ -1611,7 +1618,12 @@ int FormatConversion::read_POD(const char* POD_filename, double start_time, doub
 	return 0;
 }
 
-int FormatConversion::read_slc_from_Sentinel(const char* filename, const char* xml_filename, ComplexMat& slc)
+int FormatConversion::read_slc_from_Sentinel(
+	const char* filename, 
+	const char* xml_filename,
+	ComplexMat& slc,
+	Mat& gcps_line
+)
 {
 	if (filename == NULL ||
 		xml_filename == NULL
@@ -1633,7 +1645,7 @@ int FormatConversion::read_slc_from_Sentinel(const char* filename, const char* x
 	if (return_check(ret, "get_int_para()", error_head)) return -1;
 	ret = xmldoc.get_int_para("samplesPerBurst", &samplesPerBurst);
 	if (return_check(ret, "get_int_para()", error_head)) return -1;
-	
+
 	ret = xmldoc.find_node("burstList", pnode);
 	if (return_check(ret, "find_node()", error_head)) return -1;
 	ret = sscanf(pnode->FirstAttribute()->Value(), "%d", &burst_count);
@@ -1643,26 +1655,14 @@ int FormatConversion::read_slc_from_Sentinel(const char* filename, const char* x
 		return -1;
 	}
 
-	/*
-	* 为读取slc预分配内存
-	*/
-	slc.re.create(linesPerBurst * burst_count, samplesPerBurst, CV_16S);
-	slc.im.create(linesPerBurst * burst_count, samplesPerBurst, CV_16S);
 
-	INT16* buf = NULL;
-	buf = (INT16*)malloc(linesPerBurst * samplesPerBurst * 2 * sizeof(INT16));
-	if (!buf)
-	{
-		fprintf(stderr, "read_slc_from_Sentinel(): out of memory!\n");
-		return -1;
-	}
+
 	//逐个burst读取内容
 	TiXmlElement* pchild = NULL;
 	ret = xmldoc._find_node(pnode, "burst", pchild);
 	if (ret < 0)
 	{
 		fprintf(stderr, "read_slc_from_Sentinel(): node 'burst' not found!\n");
-		if (buf) free(buf);
 		return -1;
 	}
 	int64 bytesoffset;
@@ -1671,45 +1671,29 @@ int FormatConversion::read_slc_from_Sentinel(const char* filename, const char* x
 	if (!fp)
 	{
 		fprintf(stderr, "read_slc_from_Sentinel(): failed to open %s!\n", filename);
-		if (buf) free(buf);
 		return -1;
 	}
-	for (int i = 0; i < burst_count; i++)
+	Mat gcps_merged_line_num = Mat::zeros(1, burst_count + 1, CV_32S);
+	ComplexMat last_burst, this_burst;
+	ret = get_a_burst(pchild, xmldoc, fp, linesPerBurst, samplesPerBurst, slc);
+	if (return_check(ret, "get_a_burst()", error_head)) return -1;
+	gcps_merged_line_num.at<int>(0, 1) = slc.GetRows();
+	pchild = pchild->NextSiblingElement();
+	int overlapSize;
+	for (int i = 1; i < burst_count; i++)
 	{
 		if (!pchild) break;
-		ret = xmldoc._find_node(pchild, "byteOffset", pnode);
-		if (ret < 0)
-		{
-			fprintf(stderr, "read_slc_from_Sentinel(): node 'byteOffset' not found!\n");
-			if (buf) free(buf);
-			if (fp) fclose(fp);
-			return -1;
-		}
-		ret = sscanf(pnode->GetText(), "%lld", &bytesoffset);
-		if (ret != 1)
-		{
-			fprintf(stderr, "read_slc_from_Sentinel(): %s: unknown data format!\n", xml_filename);
-			if (buf) free(buf);
-			if (fp) fclose(fp);
-			return -1;
-		}
-		fseek(fp, bytesoffset, SEEK_SET);
-		fread(buf, sizeof(INT16), linesPerBurst * samplesPerBurst * 2, fp);
-		size_t offset = 0;
-		for (int j = 0; j < linesPerBurst; j++)
-		{
-			for (int k = 0; k < samplesPerBurst; k++)
-			{
-				slc.re.at<short>(i * linesPerBurst + j, k) = buf[offset];
-				offset++;
-				slc.im.at<short>(i * linesPerBurst + j, k) = buf[offset];
-				offset++;
-			}
-		}
+		ret = get_a_burst(pchild, xmldoc, fp, linesPerBurst, samplesPerBurst, this_burst);
+		if (return_check(ret, "get_a_burst()", error_head)) return -1;
+		ret = deburst_overlapSize(slc, this_burst, &overlapSize);
+		if (return_check(ret, "deburst_overlapSize()", error_head)) return -1;
+		ret = burst_stitch(this_burst, slc, overlapSize);
+		if (return_check(ret, "burst_stitch()", error_head)) return -1;
+		gcps_merged_line_num.at<int>(0, i + 1) = slc.GetRows();
 		pchild = pchild->NextSiblingElement();
 	}
-	if (buf)free(buf);
 	if (fp)fclose(fp);
+	gcps_merged_line_num.copyTo(gcps_line);
 	return 0;
 }
 
@@ -1857,12 +1841,12 @@ int FormatConversion::sentinel2h5(const char* tiff_filename, const char* xml_fil
 	* 写入slc数据
 	*/
 
-	ComplexMat slc;Mat sentinel;
+	ComplexMat slc;Mat gcps_line_index;
 	int rows, cols;
-	ret = read_slc_from_Sentinel(tiff_filename, xml_filename, slc);//需要deburst
+	ret = read_slc_from_Sentinel(tiff_filename, xml_filename, slc, gcps_line_index);//需要deburst
 	if (return_check(ret, "read_slc_from_Sentinel()", error_head)) return -1;
-	ret = sentinel_deburst(xml_filename, slc, sentinel);
-	if (return_check(ret, "sentinel_deburst()", error_head)) return -1;
+	//ret = sentinel_deburst(xml_filename, slc, sentinel);
+	//if (return_check(ret, "sentinel_deburst()", error_head)) return -1;
 	rows = slc.GetRows(); cols = slc.GetCols();
 	ret = write_array_to_h5(dst_h5_filename, "s_re", slc.re);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
@@ -1889,9 +1873,9 @@ int FormatConversion::sentinel2h5(const char* tiff_filename, const char* xml_fil
 		int temp_r, xx;
 		temp_r = (int)gcps.at<double>(i, 3);
 		xx = temp_r / linesPerburst;
-		if (xx > 0)
+		if (xx > 0 && xx < gcps_line_index.cols)
 		{
-			gcps.at<double>(i, 3) = gcps.at<double>(i, 3) - (double)sentinel.at<int>(xx - 1, 0);
+			gcps.at<double>(i, 3) = (double)gcps_line_index.at<int>(0, xx);
 		}
 	}
 	ret = write_array_to_h5(dst_h5_filename, "gcps", gcps);
@@ -2587,6 +2571,221 @@ int FormatConversion::import_sentinel(
 	}
 	ret = sentinel2h5(tiff_filename.c_str(), xml_filename.c_str(), dest_h5_file);
 	if (return_check(ret, "sentinel2h5()", error_head)) return -1;
+	return 0;
+}
+
+int FormatConversion::get_a_burst(
+	TiXmlElement* pnode,
+	XMLFile& xmldoc,
+	FILE*& fp,
+	int linesPerBurst,
+	int samplesPerBurst, 
+	ComplexMat& burst
+)
+{
+	if (pnode == NULL ||
+		linesPerBurst < 1 ||
+		samplesPerBurst < 1 ||
+		fp == NULL
+		)
+	{
+		fprintf(stderr, "get_a_burst(): input check failed!\n");
+		if (fp) {
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	int ret;
+	TiXmlElement* pchild = NULL;
+	size_t bytesoffset;
+	INT16* buf = NULL;
+	buf = (INT16*)malloc(linesPerBurst * samplesPerBurst * 2 * sizeof(INT16));
+	ret = xmldoc._find_node(pnode, "byteOffset", pchild);
+	if (ret < 0)
+	{
+		fprintf(stderr, "get_a_burst(): node 'byteOffset' not found!\n");
+		if (buf) free(buf);
+		if (fp)
+		{
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	ret = sscanf(pchild->GetText(), "%lld", &bytesoffset);
+	if (ret != 1)
+	{
+		fprintf(stderr, "get_a_burst(): unknown data format!\n");
+		if (buf) free(buf);
+		if (fp)
+		{
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	fseek(fp, bytesoffset, SEEK_SET);
+	fread(buf, sizeof(INT16), linesPerBurst * samplesPerBurst * 2, fp);
+	size_t offset = 0;
+	burst.re.create(linesPerBurst, samplesPerBurst, CV_16S);
+	burst.im.create(linesPerBurst, samplesPerBurst, CV_16S);
+	for (int j = 0; j < linesPerBurst; j++)
+	{
+		for (int k = 0; k < samplesPerBurst; k++)
+		{
+			burst.re.at<short>(j, k) = buf[offset];
+			offset++;
+			burst.im.at<short>(j, k) = buf[offset];
+			offset++;
+		}
+	}
+	if (buf) free(buf);
+
+	//剔除无效数据
+	ret = xmldoc._find_node(pnode, "firstValidSample", pchild);
+	if (ret < 0)
+	{
+		fprintf(stderr, "get_a_burst(): node 'firstValidSample' not found!\n");
+		if (fp)
+		{
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	long firstValidSample;
+	char* ptr;
+	const char* p;
+	int invalideLines = 0;
+	int count = 0;
+	Mat sentinel = Mat::ones(1, linesPerBurst, CV_64F);
+	p = pchild->GetText();
+	firstValidSample = strtol(p, &ptr, 0);
+	if (firstValidSample < 0)
+	{
+		invalideLines++;
+		sentinel.at<double>(0, count) = -1;
+	}
+	count++;
+	for (int j = 0; j < linesPerBurst - 1; j++)
+	{
+		firstValidSample = strtol(ptr, &ptr, 0);
+		if (firstValidSample < 0)
+		{
+			invalideLines++;
+			sentinel.at<double>(0, count) = -1;
+		}
+		count++;
+	}
+	int start, end;
+	if (sentinel.at<double>(0, 0) > 0.0)
+	{
+		start = 0;
+	}
+	else
+	{
+		for (int i = 1; i < linesPerBurst; i++)
+		{
+			if (sentinel.at<double>(0, i - 1) * sentinel.at<double>(0, i) < 0.0)
+			{
+				start = i; break;
+			}
+		}
+	}
+	end = linesPerBurst - (invalideLines - start);
+	burst = burst(cv::Range(start, end), cv::Range(0, samplesPerBurst));
+	return 0;
+}
+
+int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& this_burst, int* overlapSize)
+{
+	if (last_burst.isempty() ||
+		this_burst.isempty() ||
+		last_burst.GetCols() != this_burst.GetCols() ||
+		overlapSize == NULL
+		)
+	{
+		fprintf(stderr, "deburst_overlapSize(): input check failed!\n");
+		return -1;
+	}
+
+	int nr, nc, nr2, nc2, match_wnd_rows, match_wnd_cols, col_start, col_end, offset_row, offset_col, ret;
+	ComplexMat match_wnd, match_wnd2;
+	nr = last_burst.GetRows(); nc = last_burst.GetCols(); nr2 = this_burst.GetRows(); nc2 = this_burst.GetCols();
+	match_wnd_cols = 1000;
+	match_wnd_rows = (nr < nr2 ? nr : nr2) / 3;
+	col_start = nc / 2 - match_wnd_cols; 
+	col_start = col_start < 0 ? 0 : col_start;
+	col_end = col_start + match_wnd_cols;
+	col_end = col_end > nc ? nc : col_end;
+	match_wnd_cols = col_end - col_start;
+
+	match_wnd = last_burst(cv::Range(nr - match_wnd_rows, nr), cv::Range(0, nc));
+	match_wnd2 = this_burst(cv::Range(0, match_wnd_rows), cv::Range(0, nc));
+	match_wnd.convertTo(match_wnd, CV_64F);
+	match_wnd2.convertTo(match_wnd2, CV_64F);
+
+	//求取偏移量
+	Registration regis;
+	//Utils util;
+	//util.saveSLC("E:/working_dir/projects/software/InSAR/bin/match_wnd.jpg", 65, last_burst);
+	//util.saveSLC("E:/working_dir/projects/software/InSAR/bin/match_wnd2.jpg", 65, this_burst);
+	ret = regis.real_coherent(match_wnd, match_wnd2, &offset_row, &offset_col);
+	if (return_check(ret, "real_coherent()", error_head)) return -1;
+
+	*overlapSize = /*match_wnd_rows - */(offset_row > 0 ? offset_row : -offset_row);
+
+	return 0;
+}
+
+int FormatConversion::burst_stitch(
+	ComplexMat& src_burst,
+	ComplexMat& dst_burst,
+	int overlapSize
+)
+{
+	if (src_burst.isempty() ||
+		dst_burst.isempty() ||
+		src_burst.GetCols() != dst_burst.GetCols() ||
+		overlapSize < 0||
+		overlapSize > dst_burst.GetRows()||
+		overlapSize > src_burst.GetRows() ||
+		src_burst.type() != CV_16S||
+		dst_burst.type() != CV_16S
+		)
+	{
+		fprintf(stderr, "burst_stitch(): input check failed!\n");
+		return -1;
+	}
+
+	//stitch
+	
+	int nr, nc, nr2, nc2;
+	nr = dst_burst.GetRows(); nc = dst_burst.GetCols(); nr2 = src_burst.GetRows(); nc2 = nc;
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < overlapSize; i++)
+	{
+		short a, b; double re, im;
+		for (int j = 0; j < nc; j++)
+		{
+			a = dst_burst.re.at<short>(nr - overlapSize + i, j);
+			b = src_burst.re.at<short>(i, j);
+			re = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
+			a = dst_burst.im.at<short>(nr - overlapSize + i, j);
+			b = src_burst.im.at<short>(i, j);
+			im = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
+			a = (int)round(re);
+			b = (int)round(im);
+			dst_burst.re.at<short>(nr - overlapSize + i, j) = a;
+			dst_burst.im.at<short>(nr - overlapSize + i, j) = b;
+		}
+	}
+	Mat src_lowerpart_real, src_lowerpart_imag;
+	if (overlapSize < nr2)
+	{
+		src_burst.re(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_real);
+		src_burst.im(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_imag);
+		cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);
+		cv::vconcat(dst_burst.im, src_lowerpart_imag, dst_burst.im);
+	}
+
 	return 0;
 }
 

@@ -4,7 +4,7 @@
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
 #include"..\include\Utils.h"
-
+#include"globalparam.h"
 
 
 class InSAR_API Unwrap

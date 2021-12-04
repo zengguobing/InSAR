@@ -465,13 +465,15 @@ public:
 	* 参数4：目标h5文件
 	*/
 	int read_POD(const char* POD_filename, double start_time, double stop_time, const char* dst_h5_filename);
-	/*
-	* 功能：从sentinel1卫星数据中读出slc数据（读出数据类型为16位整型）
-	* 参数1：sentinel1卫星数据文件名
-	* 参数2：xml参数文件
-	* 参数3：复矩阵（读出的slc数据）
+	/** @brief 从sentinel1卫星数据中读出slc数据（读出数据类型为16位整型）
+	* 
+	* @param filename                    sentinel1卫星数据文件名
+	* @param xml_filename                xml参数文件
+	* @param slc                         复矩阵（读出的slc数据）
+	* @param gcps_line                   deburst之后控制点行坐标（int型，1×n）
+	* @return 成功返回0，否则返回-1
 	*/
-	int read_slc_from_Sentinel(const char* filename, const char* xml_filename, ComplexMat& slc);
+	int read_slc_from_Sentinel(const char* filename, const char* xml_filename, ComplexMat& slc, Mat& gcps_line);
 	/*
 	* 功能：sentinel1数据deburst(数据类型为16位整型)
 	* 参数1：用于deburst的xml参数文件
@@ -505,6 +507,48 @@ public:
 		const char* subswath_name,
 		const char* polarization,
 		const char* dest_h5_file
+	);
+	/** @brief 读出一个burst数据
+	* 
+	* @param pnode                         burst节点信息
+	* @param xmldoc                        xml结构体
+	* @param fp                            图像文件指针
+	* @param linesPerBurst                 每个burst数据行数
+	* @param samplesPerBurst               每行数据点数
+	* @param burst                         读出的burst数据
+	* @return 成功返回0，否则返回-1（返回-1会自动关闭文件指针）
+	*/
+	int get_a_burst(
+		TiXmlElement* pnode,
+		XMLFile& xmldoc,
+		FILE*& fp,
+		int linesPerBurst,
+		int samplesPerBurst,
+		ComplexMat& burst
+	);
+	/** @brief 计算burst之间的重叠区域尺寸
+	* 
+	* @param last_burst                      上一个burst
+	* @param this_burst                      待计算重叠区域尺寸的burst
+	* @param overlapSize                     重叠区域尺寸
+	* @return 成功返回0，否则返回-1
+	*/
+	int deburst_overlapSize(
+		ComplexMat& last_burst,
+		ComplexMat& this_burst,
+		int* overlapSize
+	);
+	/** @brief burst之间进行拼接（将src_burst拼接到dst_burst上）
+	* 
+	* @param src_burst                 被拼接burst
+	* @param dst_burst                 拼接burst
+	* @param overlapSize               重叠区域尺寸
+	* @return 成功返回0，否则返回-1
+	*/
+	int burst_stitch(
+		ComplexMat& src_burst,
+		ComplexMat& dst_burst,
+		int overlapSize
 	);
 
 
