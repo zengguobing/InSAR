@@ -2716,21 +2716,46 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 	col_end = col_start + match_wnd_cols;
 	col_end = col_end > nc ? nc : col_end;
 	match_wnd_cols = col_end - col_start;
-
-	match_wnd = last_burst(cv::Range(nr - match_wnd_rows, nr), cv::Range(0, nc));
-	match_wnd2 = this_burst(cv::Range(0, match_wnd_rows), cv::Range(0, nc));
+	//match_wnd_rows = 600;
+	match_wnd = last_burst(cv::Range(nr - match_wnd_rows, nr), cv::Range(col_start, col_end));
+	match_wnd2 = this_burst(cv::Range(0, match_wnd_rows), cv::Range(col_start, col_end));
 	match_wnd.convertTo(match_wnd, CV_64F);
 	match_wnd2.convertTo(match_wnd2, CV_64F);
+	
 
 	//求取偏移量
 	Registration regis;
+	//ComplexMat t1, t2;
+	//regis.interp_paddingzero(match_wnd, t1, 8);
+	//regis.interp_paddingzero(match_wnd2, t2, 8);
 	//Utils util;
 	//util.saveSLC("E:/working_dir/projects/software/InSAR/bin/match_wnd.jpg", 65, last_burst);
 	//util.saveSLC("E:/working_dir/projects/software/InSAR/bin/match_wnd2.jpg", 65, this_burst);
 	ret = regis.real_coherent(match_wnd, match_wnd2, &offset_row, &offset_col);
 	if (return_check(ret, "real_coherent()", error_head)) return -1;
 
-	*overlapSize = /*match_wnd_rows - */(offset_row > 0 ? offset_row : -offset_row);
+	//水平搬移this_burst
+	
+	//if (offset_col > 0)
+	//{
+	//	ComplexMat tmp_burst, tmp_burst2;
+	//	tmp_burst.re = Mat::zeros(this_burst.GetRows(), this_burst.GetCols(), CV_16S);
+	//	tmp_burst.im = Mat::zeros(this_burst.GetRows(), this_burst.GetCols(), CV_16S);
+	//	tmp_burst2 = this_burst(cv::Range(0, nr2), cv::Range(0, nc - offset_col));
+	//	tmp_burst.SetValue(cv::Range(0, nr2), cv::Range(offset_col, nc), tmp_burst2);
+	//	this_burst = tmp_burst;
+	//}
+	//if (offset_col < 0)
+	//{
+	//	ComplexMat tmp_burst, tmp_burst2;
+	//	tmp_burst.re = Mat::zeros(this_burst.GetRows(), this_burst.GetCols(), CV_16S);
+	//	tmp_burst.im = Mat::zeros(this_burst.GetRows(), this_burst.GetCols(), CV_16S);
+	//	tmp_burst2 = this_burst(cv::Range(0, nr2), cv::Range(-offset_col, nc));
+	//	tmp_burst.SetValue(cv::Range(0, nr2), cv::Range(0, nc + offset_col), tmp_burst2);
+	//	this_burst = tmp_burst;
+	//}
+
+	*overlapSize = (offset_row > 0 ? offset_row : -offset_row);
 
 	return 0;
 }
