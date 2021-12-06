@@ -31,11 +31,13 @@ public:
 	);
 	/** @brief 添加导入原始数据节点
 
+	@param datanode_node  节点名
 	@param node_name      图像名
 	@param node_path      图像路径
 	@param sensor         卫星
 	*/
 	int XMLFile_add_origin(
+		const char* datanode_node,
 		const char* node_name,
 		const char* node_path,
 		const char* sensor = "unknown"

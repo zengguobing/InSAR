@@ -2717,8 +2717,8 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 	col_end = col_end > nc ? nc : col_end;
 	match_wnd_cols = col_end - col_start;
 	//match_wnd_rows = 600;
-	match_wnd = last_burst(cv::Range(nr - match_wnd_rows, nr), cv::Range(col_start, col_end));
-	match_wnd2 = this_burst(cv::Range(0, match_wnd_rows), cv::Range(col_start, col_end));
+	match_wnd = last_burst(cv::Range(nr - match_wnd_rows, nr), cv::Range(0, nc));
+	match_wnd2 = this_burst(cv::Range(0, match_wnd_rows), cv::Range(0, nc));
 	match_wnd.convertTo(match_wnd, CV_64F);
 	match_wnd2.convertTo(match_wnd2, CV_64F);
 	
@@ -2790,18 +2790,23 @@ int FormatConversion::burst_stitch(
 		short a, b; double re, im;
 		for (int j = 0; j < nc; j++)
 		{
-			a = dst_burst.re.at<short>(nr - overlapSize + i, j);
-			b = src_burst.re.at<short>(i, j);
-			re = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
-			a = dst_burst.im.at<short>(nr - overlapSize + i, j);
-			b = src_burst.im.at<short>(i, j);
-			im = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
-			a = (int)round(re);
-			b = (int)round(im);
-			dst_burst.re.at<short>(nr - overlapSize + i, j) = a;
-			dst_burst.im.at<short>(nr - overlapSize + i, j) = b;
+			//a = dst_burst.re.at<short>(nr - overlapSize + i, j);
+			//b = src_burst.re.at<short>(i, j);
+			//re = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
+			//a = dst_burst.im.at<short>(nr - overlapSize + i, j);
+			//b = src_burst.im.at<short>(i, j);
+			//im = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
+			//a = (int)round(re);
+			//b = (int)round(im);
+
+			dst_burst.re.at<short>(nr - overlapSize + i, j) = src_burst.re.at<short>(i, j);
+			dst_burst.im.at<short>(nr - overlapSize + i, j) = src_burst.im.at<short>(i, j);
+
+			//dst_burst.re.at<short>(nr - overlapSize + i, j) = a;
+			//dst_burst.im.at<short>(nr - overlapSize + i, j) = b;
 		}
 	}
+
 	Mat src_lowerpart_real, src_lowerpart_imag;
 	if (overlapSize < nr2)
 	{
@@ -3456,11 +3461,17 @@ int XMLFile::XMLFile_creat_new_project(const char* project_path, const char* pro
 	return 0;
 }
 
-int XMLFile::XMLFile_add_origin(const char* node_name, const char* node_path, const char* sensor)
+int XMLFile::XMLFile_add_origin(
+	const char* datanode_node,
+	const char* node_name,
+	const char* node_path,
+	const char* sensor
+)
 {
 	if (node_name == NULL ||
 		node_path == NULL ||
-		sensor == NULL
+		sensor == NULL ||
+		datanode_node == NULL
 		)
 	{
 		fprintf(stderr, "XMLFile_add_origin(): input check failed!\n");
@@ -3468,12 +3479,12 @@ int XMLFile::XMLFile_add_origin(const char* node_name, const char* node_path, co
 	}
 	TiXmlElement* DataNode = NULL;
 	TiXmlElement* p = doc.RootElement();
-	int ret = find_node_with_attribute(p, "DataNode", "name", "Origin_Images", DataNode);
+	int ret = find_node_with_attribute(p, "DataNode", "name", datanode_node, DataNode);
 	if (!DataNode)
 	{
 		DataNode = new TiXmlElement("DataNode");
 		doc.RootElement()->LinkEndChild(DataNode);
-		DataNode->SetAttribute("name", "Origin_Images");
+		DataNode->SetAttribute("name", datanode_node);
 		DataNode->SetAttribute("index", "1");
 		DataNode->SetAttribute("data_count", "1");
 		DataNode->SetAttribute("data_processing", "import");
