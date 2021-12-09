@@ -763,7 +763,9 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 		slave.GetCols() != master.GetCols() ||
 		slave.GetRows() != slave.GetRows() ||
 		//blocksize * 5 > (slave.GetCols() < slave.GetRows() ? slave.GetCols() : slave.GetRows()) ||
-		blocksize < 8||interp_times < 1
+		blocksize < 8||interp_times < 1 ||
+		master.type() != slave.type() ||
+		(master.type() != CV_64F && master.type() != CV_16S)
 		)
 	{
 		fprintf(stderr, "coregistration_pixel(): input check failed!\n");
@@ -773,7 +775,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	/*---------------------------------------*/
 	/*              求取偏移量矩阵           */
 	/*---------------------------------------*/
-
+	interp_times = interp_times > 32 ? 32 : interp_times;//限定最多32倍插值
 	Utils util;
 	int m = (master.GetRows()) / blocksize;
 	int n = (master.GetCols()) / blocksize;
@@ -804,10 +806,12 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			//主图像子块插值
 			master.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master_sub.re);
 			master.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master_sub.im);
+			if (master_sub.type() != CV_64F) master_sub.convertTo(master_sub, CV_64F);
 			interp_paddingzero(master_sub, master_sub_interp, interp_times);
 			//辅图像子块插值
 			slave.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave_sub.re);
 			slave.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave_sub.im);
+			if (slave_sub.type() != CV_64F) slave_sub.convertTo(slave_sub, CV_64F);
 			interp_paddingzero(slave_sub, slave_sub_interp, interp_times);
 			//求取偏移量
 			real_coherent(master_sub_interp, slave_sub_interp, &offset_row, &offset_col);
@@ -822,10 +826,8 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	/*---------------------------------------*/
 
 	/*
-	* 拟合公式为 offser_row/offser_col = a0 + a1*x + a2*y + a3*x*y + a4*x*x + a5*y*y + a6*x*x*y + a7*x*y*y + a8*x*x*x + a9*y*y*y
+	* 拟合公式为 offser_row/offser_col = a0 + a1*x + a2*y
 	*/
-	//util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\offset_r.bin", offset_r);
-	//util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\offset_c.bin", offset_c);
 	
 	//剔除outliers
 	Mat sentinel = Mat::zeros(m, n, CV_64F);
@@ -903,38 +905,15 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	offset_coord_col -= offset_x;
 	offset_coord_row /= scale_y;
 	offset_coord_col /= scale_x;
-	Mat A = Mat::ones(m * n, 10, CV_64F);
+	Mat A = Mat::ones(m * n, 3, CV_64F);
 	Mat temp, A_t;
 	offset_coord_col.copyTo(A(Range(0, m * n), Range(1, 2)));
 
 	offset_coord_row.copyTo(A(Range(0, m * n), Range(2, 3)));
 
-	temp = offset_coord_col.mul(offset_coord_row);
-	temp.copyTo(A(Range(0, m * n), Range(3, 4)));
 
-	temp = offset_coord_col.mul(offset_coord_col);
-	temp.copyTo(A(Range(0, m * n), Range(4, 5)));
 
-	temp = offset_coord_row.mul(offset_coord_row);
-	temp.copyTo(A(Range(0, m * n), Range(5, 6)));
-
-	temp = offset_coord_col.mul(offset_coord_col);
-	temp = temp.mul(offset_coord_row);
-	temp.copyTo(A(Range(0, m * n), Range(6, 7)));
-
-	temp = offset_coord_row.mul(offset_coord_row);
-	temp = temp.mul(offset_coord_col);
-	temp.copyTo(A(Range(0, m * n), Range(7, 8)));
-
-	temp = offset_coord_col.mul(offset_coord_col);
-	temp = temp.mul(offset_coord_col);
-	temp.copyTo(A(Range(0, m * n), Range(8, 9)));
-
-	temp = offset_coord_row.mul(offset_coord_row);
-	temp = temp.mul(offset_coord_row);
-	temp.copyTo(A(Range(0, m * n), Range(9, 10)));
-
-	transpose(A, A_t);
+	cv::transpose(A, A_t);
 
 	Mat b_r, b_c, coef_r, coef_c, error_r, error_c, b_t, a, a_t;
 	
@@ -982,11 +961,12 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	/*---------------------------------------*/
 	int rows = master.GetRows(); int cols = master.GetCols();
 	ComplexMat slave_tmp;
+	int master_type = master.type();
 	slave_tmp = master;
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < rows; i++)
 	{
-		double x, y, ii, jj; Mat tmp(1, 10, CV_64F); Mat result;
+		double x, y, ii, jj; Mat tmp(1, 3, CV_64F); Mat result;
 		int mm, nn, mm1, nn1;
 		double offset_rows, offset_cols, upper, lower;
 		for (int j = 0; j < cols; j++)
@@ -998,13 +978,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			tmp.at<double>(0, 0) = 1.0;
 			tmp.at<double>(0, 1) = x;
 			tmp.at<double>(0, 2) = y;
-			tmp.at<double>(0, 3) = x * y;
-			tmp.at<double>(0, 4) = x * x;
-			tmp.at<double>(0, 5) = y * y;
-			tmp.at<double>(0, 6) = x * x * y;
-			tmp.at<double>(0, 7) = x * y * y;
-			tmp.at<double>(0, 8) = x * x * x;
-			tmp.at<double>(0, 9) = y * y * y;
+
 			result = tmp * coef_r;
 			offset_rows = result.at<double>(0, 0);
 			result = tmp * coef_c;
@@ -1016,22 +990,44 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			mm = (int)floor(ii); nn = (int)floor(jj);
 			if (mm < 0 || nn < 0 || mm > rows - 1 || nn > cols - 1)
 			{
-				slave_tmp.re.at<double>(i, j) = 0.0;
-				slave_tmp.im.at<double>(i, j) = 0.0;
+				if (master_type == CV_64F)
+				{
+					slave_tmp.re.at<double>(i, j) = 0.0;
+					slave_tmp.im.at<double>(i, j) = 0.0;
+				}
+				else
+				{
+					slave_tmp.re.at<short>(i, j) = 0.0;
+					slave_tmp.im.at<short>(i, j) = 0.0;
+				}
 			}
 			else
 			{
 				mm1 = mm + 1; nn1 = nn + 1;
 				mm1 = mm1 >= rows - 1 ? rows - 1 : mm1;
 				nn1 = nn1 >= cols - 1 ? cols - 1 : nn1;
-				//实部插值
-				upper = slave.re.at<double>(mm, nn) + (slave.re.at<double>(mm, nn1) - slave.re.at<double>(mm, nn)) * (jj - (double)nn);
-				lower = slave.re.at<double>(mm1, nn) + (slave.re.at<double>(mm1, nn1) - slave.re.at<double>(mm1, nn)) * (jj - (double)nn);
-				slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
-				//虚部插值
-				upper = slave.im.at<double>(mm, nn) + (slave.im.at<double>(mm, nn1) - slave.im.at<double>(mm, nn)) * (jj - (double)nn);
-				lower = slave.im.at<double>(mm1, nn) + (slave.im.at<double>(mm1, nn1) - slave.im.at<double>(mm1, nn)) * (jj - (double)nn);
-				slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				if (master_type == CV_64F)
+				{
+					//实部插值
+					upper = slave.re.at<double>(mm, nn) + (slave.re.at<double>(mm, nn1) - slave.re.at<double>(mm, nn)) * (jj - (double)nn);
+					lower = slave.re.at<double>(mm1, nn) + (slave.re.at<double>(mm1, nn1) - slave.re.at<double>(mm1, nn)) * (jj - (double)nn);
+					slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+					//虚部插值
+					upper = slave.im.at<double>(mm, nn) + (slave.im.at<double>(mm, nn1) - slave.im.at<double>(mm, nn)) * (jj - (double)nn);
+					lower = slave.im.at<double>(mm1, nn) + (slave.im.at<double>(mm1, nn1) - slave.im.at<double>(mm1, nn)) * (jj - (double)nn);
+					slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				}
+				else
+				{
+					//实部插值
+					upper = (double)slave.re.at<short>(mm, nn) + double(slave.re.at<short>(mm, nn1) - slave.re.at<short>(mm, nn)) * (jj - (double)nn);
+					lower = (double)slave.re.at<short>(mm1, nn) + double(slave.re.at<short>(mm1, nn1) - slave.re.at<short>(mm1, nn)) * (jj - (double)nn);
+					slave_tmp.re.at<short>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+					//虚部插值
+					upper = (double)slave.im.at<short>(mm, nn) + double(slave.im.at<short>(mm, nn1) - slave.im.at<short>(mm, nn)) * (jj - (double)nn);
+					lower = (double)slave.im.at<short>(mm1, nn) + double(slave.im.at<short>(mm1, nn1) - slave.im.at<short>(mm1, nn)) * (jj - (double)nn);
+					slave_tmp.im.at<short>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				}
 			}
 
 		}

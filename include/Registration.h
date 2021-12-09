@@ -69,7 +69,7 @@ public:
 	 参数4 插值倍数（大于1）
 	*/
 	int registration_subpixel(ComplexMat& Master, ComplexMat& Slave, int blocksize, int interp_times);
-	/** @brief 精配准
+	/** @brief 精配准（支持16位整型和64位浮点型输入）
 	
 	@param master              主图像
 	@param slave               辅图像

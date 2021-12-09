@@ -930,6 +930,22 @@ public:
 		int interp_times,
 		int blocksize
 	);
+	/** @brief 时序SAR图像联合配准（串行、分块配准，支持16位整型和64位浮点型输入）
+	* 
+	* @param SAR_images                     时序SAR图像文件
+	* @param SAR_images_out                 配准结果文件
+	* @param Master_index                   主图像序号（从1开始）
+	* @param interp_times                   插值倍数（2的n次幂）
+	* @param blocksize                      子块大小（2的n次幂）
+	* @return 成功返回0，否则返回-1
+	*/
+	int stack_coregistration(
+		vector<string>& SAR_images,
+		vector<string>& SAR_images_out,
+		int Master_index,
+		int interp_times,
+		int blocksize
+	);
 	/*生成干涉图组合
 	* 参数1 SAR图像序列
 	* 参数2 干涉相位序列（返回值）

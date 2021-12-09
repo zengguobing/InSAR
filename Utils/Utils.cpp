@@ -4303,7 +4303,14 @@ int Utils::stack_coregistration(
 	return 0;
 }
 
-int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_images_out, Mat& offset, int Master_index, int interp_times, int blocksize)
+int Utils::stack_coregistration(
+	vector<string>& SAR_images,
+	vector<string>& SAR_images_out,
+	Mat& offset,
+	int Master_index,
+	int interp_times,
+	int blocksize
+)
 {
 	if (SAR_images.size() < 2 ||
 		Master_index < 1 ||
@@ -4529,6 +4536,389 @@ int Utils::stack_coregistration(vector<string>& SAR_images, vector<string>& SAR_
 	offset_topleft.copyTo(offset);
 
 
+	return 0;
+}
+
+int Utils::stack_coregistration(
+	vector<string>& SAR_images, 
+	vector<string>& SAR_images_out,
+	int Master_index,
+	int interp_times,
+	int blocksize
+)
+{
+	if (SAR_images.size() < 2 ||
+		Master_index < 1 ||
+		Master_index > SAR_images.size() ||
+		SAR_images_out.size() != SAR_images.size() ||
+		interp_times < 1 ||
+		blocksize < 16
+		)
+	{
+		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
+		return -1;
+	}
+	//获取各图像的尺寸，并创建输出h5文件
+	FormatConversion conversion;
+	int ret, type;
+	int n_images = SAR_images.size();
+	Mat images_rows, images_cols, tmp;
+	images_rows = Mat::zeros(n_images, 1, CV_32S); images_cols = Mat::zeros(n_images, 1, CV_32S);
+	for (int i = 0; i < n_images; i++)
+	{
+		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", tmp);
+		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+		images_cols.at<int>(i, 0) = tmp.at<int>(0, 0);
+
+		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", tmp);
+		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+		images_rows.at<int>(i, 0) = tmp.at<int>(0, 0);
+	}
+	//分块读取数据并求取偏移量
+	Utils util; Registration regis;
+	int rows = images_rows.at<int>(Master_index - 1, 0); int cols = images_cols.at<int>(Master_index - 1, 0);
+	int m = rows / blocksize;
+	int n = cols / blocksize;
+	if (m * n < 10)
+	{
+		fprintf(stderr, "stack_coregistration(): try smaller blocksize!\n");
+		return -1;
+	}
+	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
+	Mat offset_coord_row = Mat::zeros(m, n, CV_64F);
+	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
+	//子块中心坐标
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n; j++)
+		{
+			offset_coord_row.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * i + 1);
+			offset_coord_col.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * j + 1);
+		}
+	}
+	//根据输入图像尺寸大小判断是否分块读取（超过20000×20000则分块读取，否则一次性读取）
+	ComplexMat master_w, slave_w;
+	bool b_block = true; bool master_read = false;
+	if (rows * cols < 20000 * 20000) b_block = false;
+	for (int ii = 0; ii < n_images; ii++)
+	{
+		if (ii == Master_index - 1) continue;
+		if (!b_block)//不分块读取
+		{
+			if (!master_read)
+			{
+				ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master_w);
+				if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+				master_read = true;
+				type = master_w.type();
+			}
+			
+			ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave_w);
+			if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+			if (type != slave_w.type())
+			{
+				fprintf(stderr, "stack_coregistration(): images type mismatch!\n");
+				return -1;
+			}
+			if (type != CV_16S && type != CV_64F)
+			{
+				fprintf(stderr, "stack_coregistration(): data type not supported!\n");
+				return -1;
+			}
+		}
+		//分块读取并计算偏移量
+		int mm, nn;
+		mm = images_rows.at<int>(ii, 0) / blocksize;
+		nn = images_cols.at<int>(ii, 0) / blocksize;
+		if (!b_block)
+		{
+# pragma omp parallel for schedule(guided)
+			
+			for (int j = 0; j < m; j++)
+			{
+				int offset_row, offset_col, move_r, move_c;
+				ComplexMat master, slave, master_interp, slave_interp;
+				for (int k = 0; k < n; k++)
+				{
+					offset_row = j * blocksize; offset_col = k * blocksize;
+					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
+					{
+						master = master_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
+						slave = slave_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
+
+
+
+						//计算偏移量
+						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
+						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+						move_r = 0; move_c = 0;
+						ret = regis.interp_paddingzero(master, master_interp, interp_times);
+						//if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
+						//if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
+						//if (return_check(ret, "real_coherent()", error_head)) return -1;
+						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
+						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
+					}
+
+				}
+			}
+			
+		}
+		else
+		{
+			int offset_row, offset_col, move_r, move_c;
+			ComplexMat master, slave, master_interp, slave_interp;
+			for (int j = 0; j < m; j++)
+			{
+				for (int k = 0; k < n; k++)
+				{
+					offset_row = j * blocksize; offset_col = k * blocksize;
+					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
+					{
+						//mm = j + 1; nn = k + 1;//记录实际的子块行列数
+						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, master.im);
+						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, master.re);
+						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, slave.im);
+						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, slave.re);
+						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+
+						//计算偏移量
+						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
+						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+
+						ret = regis.interp_paddingzero(master, master_interp, interp_times);
+						if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
+						if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
+						if (return_check(ret, "real_coherent()", error_head)) return -1;
+						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
+						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
+					}
+
+				}
+			}
+		}
+		
+
+		//剔除outliers
+		m = mm; n = nn;//更新实际子块行列数
+		Mat sentinel = Mat::zeros(m, n, CV_64F);
+		int ix, iy, count = 0, c = 0; double delta, thresh = 2.0;
+		for (int i = 0; i < m; i++)
+		{
+			for (int j = 0; j < n; j++)
+			{
+				count = 0;
+				//上
+				ix = j;
+				iy = i - 1; iy = iy < 0 ? 0 : iy;
+				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+				if (fabs(delta) >= thresh) count++;
+				//下
+				ix = j;
+				iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
+				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+				if (fabs(delta) >= thresh) count++;
+				//左
+				ix = j - 1; ix = ix < 0 ? 0 : ix;
+				iy = i;
+				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+				if (fabs(delta) >= thresh) count++;
+				//右
+				ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
+				iy = i;
+				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+				if (fabs(delta) >= thresh) count++;
+
+				if (count > 2) { sentinel.at<double>(i, j) = 1.0; c++; }
+			}
+		}
+		Mat offset_c_0, offset_r_0, offset_coord_row_0, offset_coord_col_0;
+		offset_c_0 = Mat::zeros(m * n - c, 1, CV_64F);
+		offset_r_0 = Mat::zeros(m * n - c, 1, CV_64F);
+		offset_coord_row_0 = Mat::zeros(m * n - c, 1, CV_64F);
+		offset_coord_col_0 = Mat::zeros(m * n - c, 1, CV_64F);
+		count = 0;
+		for (int i = 0; i < m; i++)
+		{
+			for (int j = 0; j < n; j++)
+			{
+				if (sentinel.at<double>(i, j) < 0.5)
+				{
+					offset_r_0.at<double>(count, 0) = offset_r.at<double>(i, j);
+					offset_c_0.at<double>(count, 0) = offset_c.at<double>(i, j);
+					offset_coord_row_0.at<double>(count, 0) = offset_coord_row.at<double>(i, j);
+					offset_coord_col_0.at<double>(count, 0) = offset_coord_col.at<double>(i, j);
+					count++;
+				}
+			}
+		}
+
+
+		m = 1; n = count;
+		if (count < 10)
+		{
+			fprintf(stderr, "stack_coregistration(): insufficient valide sub blocks!\n");
+			return -1;
+		}
+		//偏移量拟合（坐标做归一化处理）
+		//拟合公式为 offser_row / offser_col = a0 + a1 * x + a2 * y;
+		double offset_x = (double)cols / 2;
+		double offset_y = (double)rows / 2;
+		double scale_x = (double)cols;
+		double scale_y = (double)rows;
+		offset_coord_row_0 -= offset_y;
+		offset_coord_col_0 -= offset_x;
+		offset_coord_row_0 /= scale_y;
+		offset_coord_col_0 /= scale_x;
+		Mat A = Mat::ones(m * n, 3, CV_64F);
+		Mat temp, A_t;
+		offset_coord_col_0.copyTo(A(Range(0, m * n), Range(1, 2)));
+
+		offset_coord_row_0.copyTo(A(Range(0, m * n), Range(2, 3)));
+
+	
+		cv::transpose(A, A_t);
+
+		Mat b_r, b_c, coef_r, coef_c, error_r, error_c, b_t, a, a_t;
+
+		A.copyTo(a);
+		cv::transpose(a, a_t);
+		offset_r_0.copyTo(b_r);
+		b_r = A_t * b_r;
+
+		offset_c_0.copyTo(b_c);
+		b_c = A_t * b_c;
+
+		A = A_t * A;
+
+		double rms1 = -1.0; double rms2 = -1.0;
+		Mat eye = Mat::zeros(m * n, m * n, CV_64F);
+		for (int i = 0; i < m * n; i++)
+		{
+			eye.at<double>(i, i) = 1.0;
+		}
+		if (cv::invert(A, error_r, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(offset_r_0, b_t);
+			error_r = b_t * (eye - a * error_r * a_t) * offset_r_0;
+			rms1 = sqrt(error_r.at<double>(0, 0) / double(m * n));
+		}
+		if (cv::invert(A, error_c, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(offset_c_0, b_t);
+			error_c = b_t * (eye - a * error_c * a_t) * offset_c_0;
+			rms2 = sqrt(error_c.at<double>(0, 0) / double(m * n));
+		}
+		if (!cv::solve(A, b_r, coef_r, cv::DECOMP_NORMAL))
+		{
+			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
+			return -1;
+		}
+		if (!cv::solve(A, b_c, coef_c, cv::DECOMP_NORMAL))
+		{
+			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
+			return -1;
+		}
+
+		/*---------------------------------------*/
+	    /*    双线性插值获取重采样后的辅图像     */
+	    /*---------------------------------------*/
+		ComplexMat slave1;
+		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		//if (slave1.type() != CV_16S) slave1.convertTo(slave1, CV_16S);
+		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			double x, y, iiii, jjjj; Mat tmp(1, 3, CV_64F); Mat result;
+			int mm0, nn0, mm1, nn1;
+			double offset_rows, offset_cols, upper, lower;
+			for (int j = 0; j < cols; j++)
+			{
+				jjjj = (double)j;
+				iiii = (double)i;
+				x = (jjjj - offset_x) / scale_x;
+				y = (iiii - offset_y) / scale_y;
+				tmp.at<double>(0, 0) = 1.0;
+				tmp.at<double>(0, 1) = x;
+				tmp.at<double>(0, 2) = y;
+				//tmp.at<double>(0, 3) = x * y;
+				//tmp.at<double>(0, 4) = x * x;
+				//tmp.at<double>(0, 5) = y * y;
+				result = tmp * coef_r;
+				offset_rows = result.at<double>(0, 0);
+				result = tmp * coef_c;
+				offset_cols = result.at<double>(0, 0);
+
+				iiii += offset_rows;
+				jjjj += offset_cols;
+
+				mm0 = (int)floor(iiii); nn0 = (int)floor(jjjj);
+				if (mm0 < 0 || nn0 < 0 || mm0 > rows - 1 || nn0 > cols - 1)
+				{
+					if (type == CV_64F)
+					{
+						slave_tmp.re.at<double>(i, j) = 0;
+						slave_tmp.im.at<double>(i, j) = 0;
+					}
+					else
+					{
+						slave_tmp.re.at<short>(i, j) = 0;
+						slave_tmp.im.at<short>(i, j) = 0;
+					}
+				}
+				else
+				{
+					mm1 = mm0 + 1; nn1 = nn0 + 1;
+					mm1 = mm1 >= rows - 1 ? rows - 1 : mm1;
+					nn1 = nn1 >= cols - 1 ? cols - 1 : nn1;
+					if (type == CV_16S)
+					{
+						//实部插值
+						upper = (double)slave1.re.at<short>(mm0, nn0) + double(slave1.re.at<short>(mm0, nn1) - slave1.re.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
+						lower = (double)slave1.re.at<short>(mm1, nn0) + double(slave1.re.at<short>(mm1, nn1) - slave1.re.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
+						slave_tmp.re.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
+						//虚部插值
+						upper = (double)slave1.im.at<short>(mm0, nn0) + double(slave1.im.at<short>(mm0, nn1) - slave1.im.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
+						lower = (double)slave1.im.at<short>(mm1, nn0) + double(slave1.im.at<short>(mm1, nn1) - slave1.im.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
+						slave_tmp.im.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
+					}
+					else
+					{
+						//实部插值
+						upper = slave1.re.at<double>(mm0, nn0) + (slave1.re.at<double>(mm0, nn1) - slave1.re.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
+						lower = slave1.re.at<double>(mm1, nn0) + (slave1.re.at<double>(mm1, nn1) - slave1.re.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
+						slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
+						//虚部插值
+						upper = slave1.im.at<double>(mm0, nn0) + (slave1.im.at<double>(mm0, nn1) - slave1.im.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
+						lower = slave1.im.at<double>(mm1, nn0) + (slave1.im.at<double>(mm1, nn1) - slave1.im.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
+						slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
+					}
+					
+				}
+
+			}
+		}
+
+		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
+
+
+	}
 	return 0;
 }
 
