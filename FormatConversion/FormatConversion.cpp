@@ -2694,6 +2694,223 @@ int FormatConversion::get_a_burst(
 	return 0;
 }
 
+int FormatConversion::get_burst_sentinel(
+	int burst_num,
+	const char* xml_file,
+	const char* tiff_file,
+	ComplexMat& burst,
+	int* overlapSize
+)
+{
+	if (burst_num < 1 ||
+		xml_file == NULL ||
+		tiff_file == NULL ||
+		overlapSize == NULL)
+	{
+		fprintf(stderr, "get_burst_sentinel():  input check failed!\n");
+		return -1;
+	}
+
+
+	XMLFile xmldoc;
+	int ret;
+	ret = xmldoc.XMLFile_load(xml_file);
+	if (return_check(ret, "XMLFile_load()", error_head)) return -1;
+	TiXmlElement* pnode = NULL;
+	int linesPerBurst, samplesPerBurst, burst_count;
+	double azimuthTimeInterval;
+	/*
+	* 读取xml文件里的burst参数
+	*/
+	ret = xmldoc.get_int_para("linesPerBurst", &linesPerBurst);
+	if (return_check(ret, "get_int_para()", error_head)) return -1;
+	ret = xmldoc.get_int_para("samplesPerBurst", &samplesPerBurst);
+	if (return_check(ret, "get_int_para()", error_head)) return -1;
+	ret = xmldoc.get_double_para("azimuthTimeInterval", &azimuthTimeInterval);
+	if (return_check(ret, "get_double_para()", error_head)) return -1;
+
+	ret = xmldoc.find_node("burstList", pnode);
+	if (return_check(ret, "find_node()", error_head)) return -1;
+	ret = sscanf(pnode->FirstAttribute()->Value(), "%d", &burst_count);
+	if (ret != 1)
+	{
+		fprintf(stderr, "get_burst_sentinel(): %s: unknown data format!\n", xml_file);
+		return -1;
+	}
+	if (burst_num > burst_count)
+	{
+		fprintf(stderr, "get_burst_sentinel(): burst_num out of range!\n");
+		return -1;
+	}
+
+
+	//读取burst内容
+	TiXmlElement* pchild = NULL, * pchild2 = NULL;
+	int count = 1;
+	ret = xmldoc._find_node(pnode, "burst", pchild);
+	if (ret < 0)
+	{
+		fprintf(stderr, "get_burst_sentinel(): node 'burst' not found!\n");
+		return -1;
+	}
+	while (pchild && count != burst_num)
+	{
+		pchild = pchild->NextSiblingElement();
+		count++;
+	}
+	
+
+	size_t bytesoffset;
+	double azimuthAnxTime, azimuthAnxTime2;
+	ret = xmldoc._find_node(pchild, "azimuthAnxTime", pchild2);
+	if (ret < 0)
+	{
+		fprintf(stderr, "get_burst_sentinel(): node 'azimuthAnxTime' not found!\n");
+		return -1;
+	}
+	ret = sscanf(pchild2->GetText(), "%lf", &azimuthAnxTime);
+	if (ret != 1)
+	{
+		fprintf(stderr, "get_burst_sentinel(): unknown data format!\n");
+		return -1;
+	}
+	FILE* fp = NULL;
+	fopen_s(&fp, tiff_file, "rb");
+	if (!fp)
+	{
+		fprintf(stderr, "get_burst_sentinel(): failed to open %s!\n", tiff_file);
+		return -1;
+	}
+
+	short* buf = NULL;
+	buf = (short*)malloc(linesPerBurst * samplesPerBurst * 2 * sizeof(short));
+	if (!buf)
+	{
+		fprintf(stderr, "get_burst_sentinel(): out of memory!\n");
+		if (fp)
+		{
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	ret = xmldoc._find_node(pchild, "byteOffset", pchild2);
+	if (ret < 0)
+	{
+		fprintf(stderr, "get_burst_sentinel(): node 'byteOffset' not found!\n");
+		if (buf) free(buf);
+		if (fp)
+		{
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	ret = sscanf(pchild2->GetText(), "%lld", &bytesoffset);
+	if (ret != 1)
+	{
+		fprintf(stderr, "get_burst_sentinel(): unknown data format!\n");
+		if (buf) free(buf);
+		if (fp)
+		{
+			fclose(fp); fp = NULL;
+		}
+		return -1;
+	}
+	fseek(fp, bytesoffset, SEEK_SET);
+	fread(buf, sizeof(short), linesPerBurst * samplesPerBurst * 2, fp);
+	if (fp)
+	{
+		fclose(fp); fp = NULL;
+	}
+	size_t offset = 0;
+	burst.re.create(linesPerBurst, samplesPerBurst, CV_16S);
+	burst.im.create(linesPerBurst, samplesPerBurst, CV_16S);
+	for (int j = 0; j < linesPerBurst; j++)
+	{
+		for (int k = 0; k < samplesPerBurst; k++)
+		{
+			burst.re.at<short>(j, k) = buf[offset];
+			offset++;
+			burst.im.at<short>(j, k) = buf[offset];
+			offset++;
+		}
+	}
+	if (buf)
+	{
+		free(buf); buf = NULL;
+	}
+
+	//剔除无效数据
+	ret = xmldoc._find_node(pchild, "firstValidSample", pchild2);
+	if (ret < 0)
+	{
+		fprintf(stderr, "get_burst_sentinel(): node 'firstValidSample' not found!\n");
+		return -1;
+	}
+	long firstValidSample;
+	char* ptr;
+	const char* p;
+	int invalideLines = 0;
+	count = 0;
+	Mat sentinel = Mat::ones(1, linesPerBurst, CV_64F);
+	p = pchild2->GetText();
+	firstValidSample = strtol(p, &ptr, 0);
+	if (firstValidSample < 0)
+	{
+		invalideLines++;
+		sentinel.at<double>(0, count) = -1;
+	}
+	count++;
+	for (int j = 0; j < linesPerBurst - 1; j++)
+	{
+		firstValidSample = strtol(ptr, &ptr, 0);
+		if (firstValidSample < 0)
+		{
+			invalideLines++;
+			sentinel.at<double>(0, count) = -1;
+		}
+		count++;
+	}
+	int start, end;
+	if (sentinel.at<double>(0, 0) > 0.0)
+	{
+		start = 0;
+	}
+	else
+	{
+		for (int i = 1; i < linesPerBurst; i++)
+		{
+			if (sentinel.at<double>(0, i - 1) * sentinel.at<double>(0, i) < 0.0)
+			{
+				start = i; break;
+			}
+		}
+	}
+	end = linesPerBurst - (invalideLines - start);
+	burst = burst(cv::Range(start, end), cv::Range(0, samplesPerBurst));
+
+	//求取overlapSize
+	if (!pchild->NextSiblingElement()) *overlapSize = -1;//-1表示最后一个burst
+	else
+	{
+		pchild = pchild->NextSiblingElement();
+		ret = xmldoc._find_node(pchild, "azimuthAnxTime", pchild2);
+		if (ret < 0)
+		{
+			fprintf(stderr, "get_burst_sentinel(): node 'azimuthAnxTime' not found!\n");
+			return -1;
+		}
+		ret = sscanf(pchild2->GetText(), "%lf", &azimuthAnxTime2);
+		if (ret != 1)
+		{
+			fprintf(stderr, "get_burst_sentinel(): unknown data format!\n");
+			return -1;
+		}
+		int temp = std::round((azimuthAnxTime2 - azimuthAnxTime) / azimuthTimeInterval);
+		*overlapSize = linesPerBurst - invalideLines - temp;
+	}
+	return 0;
+}
+
 int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& this_burst, int* overlapSize)
 {
 	if (last_burst.isempty() ||
@@ -2763,7 +2980,8 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 int FormatConversion::burst_stitch(
 	ComplexMat& src_burst,
 	ComplexMat& dst_burst,
-	int overlapSize
+	int overlapSize,
+	const char* stitch_type
 )
 {
 	if (src_burst.isempty() ||
@@ -2784,38 +3002,58 @@ int FormatConversion::burst_stitch(
 	
 	int nr, nc, nr2, nc2;
 	nr = dst_burst.GetRows(); nc = dst_burst.GetCols(); nr2 = src_burst.GetRows(); nc2 = nc;
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < overlapSize; i++)
+	Mat src_lowerpart_real, src_lowerpart_imag;
+	if (strcmp(stitch_type, "low") == 0)
 	{
-		short a, b; double re, im;
-		for (int j = 0; j < nc; j++)
+		if (overlapSize < nr2)
 		{
-			//a = dst_burst.re.at<short>(nr - overlapSize + i, j);
-			//b = src_burst.re.at<short>(i, j);
-			//re = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
-			//a = dst_burst.im.at<short>(nr - overlapSize + i, j);
-			//b = src_burst.im.at<short>(i, j);
-			//im = double(a) * (1.0 - double(i) / double(overlapSize)) + double(b) * (double(i) / double(overlapSize));
-			//a = (int)round(re);
-			//b = (int)round(im);
-
-			dst_burst.re.at<short>(nr - overlapSize + i, j) = src_burst.re.at<short>(i, j);
-			dst_burst.im.at<short>(nr - overlapSize + i, j) = src_burst.im.at<short>(i, j);
-
-			//dst_burst.re.at<short>(nr - overlapSize + i, j) = a;
-			//dst_burst.im.at<short>(nr - overlapSize + i, j) = b;
+			src_burst.re(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_real);
+			src_burst.im(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_imag);
+			cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);
+			cv::vconcat(dst_burst.im, src_lowerpart_imag, dst_burst.im);
 		}
 	}
-
-	Mat src_lowerpart_real, src_lowerpart_imag;
-	if (overlapSize < nr2)
+	else if (strcmp(stitch_type, "mid") == 0)
 	{
-		src_burst.re(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_real);
-		src_burst.im(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_imag);
-		cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);
-		cv::vconcat(dst_burst.im, src_lowerpart_imag, dst_burst.im);
-	}
+		int mid = overlapSize / 2;
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < mid; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				dst_burst.re.at<short>(nr - mid + i, j) = src_burst.re.at<short>(i + overlapSize - mid, j);
+				dst_burst.im.at<short>(nr - mid + i, j) = src_burst.im.at<short>(i + overlapSize - mid, j);
+			}
+		}
+		if (mid < nr2)
+		{
+			src_burst.re(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_real);
+			src_burst.im(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_imag);
+			cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);
+			cv::vconcat(dst_burst.im, src_lowerpart_imag, dst_burst.im);
+		}
 
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < overlapSize; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				dst_burst.re.at<short>(nr - overlapSize + i, j) = src_burst.re.at<short>(i, j);
+				dst_burst.im.at<short>(nr - overlapSize + i, j) = src_burst.im.at<short>(i, j);
+			}
+		}
+		if (overlapSize < nr2)
+		{
+			src_burst.re(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_real);
+			src_burst.im(cv::Range(overlapSize, nr2), cv::Range(0, nc)).copyTo(src_lowerpart_imag);
+			cv::vconcat(dst_burst.re, src_lowerpart_real, dst_burst.re);
+			cv::vconcat(dst_burst.im, src_lowerpart_imag, dst_burst.im);
+		}
+
+	}
 	return 0;
 }
 

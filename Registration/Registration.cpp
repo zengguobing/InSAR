@@ -963,6 +963,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	ComplexMat slave_tmp;
 	int master_type = master.type();
 	slave_tmp = master;
+	int rows_slave = slave.GetRows(); int cols_slave = slave.GetCols();
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < rows; i++)
 	{
@@ -988,7 +989,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			jj += offset_cols;
 			
 			mm = (int)floor(ii); nn = (int)floor(jj);
-			if (mm < 0 || nn < 0 || mm > rows - 1 || nn > cols - 1)
+			if (mm < 0 || nn < 0 || mm > rows_slave - 1 || nn > cols_slave - 1)
 			{
 				if (master_type == CV_64F)
 				{
@@ -1004,8 +1005,8 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			else
 			{
 				mm1 = mm + 1; nn1 = nn + 1;
-				mm1 = mm1 >= rows - 1 ? rows - 1 : mm1;
-				nn1 = nn1 >= cols - 1 ? cols - 1 : nn1;
+				mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
+				nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
 				if (master_type == CV_64F)
 				{
 					// µ≤ø≤Â÷µ

@@ -528,6 +528,21 @@ public:
 		int samplesPerBurst,
 		ComplexMat& burst
 	);
+	/** @brief 读出一个burst数据（并计算与下一个burst之间的重叠区域大小）
+	*
+	* @param burst_num                         burst序号
+	* @param xml_file                          xml文件
+	* @param tiff_file                         tiff数据文件
+	* @param burst                             burst数据
+	* @param overlapSize                       重叠区域尺寸（方位向）
+	*/
+	int get_burst_sentinel(
+		int burst_num,
+		const char* xml_file,
+		const char* tiff_file,
+		ComplexMat& burst,
+		int* overlapSize
+	);
 	/** @brief 计算burst之间的重叠区域尺寸
 	* 
 	* @param last_burst                      上一个burst
@@ -544,13 +559,15 @@ public:
 	* 
 	* @param src_burst                 被拼接burst
 	* @param dst_burst                 拼接burst
+	* @param stitch_type               缝合方式（low/mid/high）
 	* @param overlapSize               重叠区域尺寸
 	* @return 成功返回0，否则返回-1
 	*/
 	int burst_stitch(
 		ComplexMat& src_burst,
 		ComplexMat& dst_burst,
-		int overlapSize
+		int overlapSize,
+		const char* stitch_type = "mid"
 	);
 
 

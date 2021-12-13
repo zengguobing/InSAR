@@ -4614,6 +4614,7 @@ int Utils::stack_coregistration(
 				if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 				master_read = true;
 				type = master_w.type();
+				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//写主图像
 			}
 			
 			ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave_w);
@@ -4841,6 +4842,8 @@ int Utils::stack_coregistration(
 		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
 		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 		//if (slave1.type() != CV_16S) slave1.convertTo(slave1, CV_16S);
+		int rows_slave, cols_slave;
+		rows_slave = slave1.GetRows(); cols_slave = slave1.GetCols();
 		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
 #pragma omp parallel for schedule(guided)
 		for (int i = 0; i < rows; i++)
@@ -4869,7 +4872,7 @@ int Utils::stack_coregistration(
 				jjjj += offset_cols;
 
 				mm0 = (int)floor(iiii); nn0 = (int)floor(jjjj);
-				if (mm0 < 0 || nn0 < 0 || mm0 > rows - 1 || nn0 > cols - 1)
+				if (mm0 < 0 || nn0 < 0 || mm0 > rows_slave - 1 || nn0 > cols_slave - 1)
 				{
 					if (type == CV_64F)
 					{
@@ -4885,8 +4888,8 @@ int Utils::stack_coregistration(
 				else
 				{
 					mm1 = mm0 + 1; nn1 = nn0 + 1;
-					mm1 = mm1 >= rows - 1 ? rows - 1 : mm1;
-					nn1 = nn1 >= cols - 1 ? cols - 1 : nn1;
+					mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
+					nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
 					if (type == CV_16S)
 					{
 						//实部插值
