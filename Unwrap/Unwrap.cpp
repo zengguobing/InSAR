@@ -1509,6 +1509,7 @@ int Unwrap::snaphu(
 	fp = NULL;
 	if (b_source && b_amp)//有幅度信息
 	{
+		if (master.type() != CV_64F) master.convertTo(master, CV_64F);
 		amplitude1 = master.GetMod();
 		amplitude1.convertTo(amplitude1, CV_32F);
 		fopen_s(&fp, ampfile1.c_str(), "wb");
@@ -1521,7 +1522,7 @@ int Unwrap::snaphu(
 		fclose(fp);
 		fp = NULL;
 
-
+		if (slave.type() != CV_64F) master.convertTo(slave, CV_64F);
 		amplitude1 = slave.GetMod();
 		amplitude1.convertTo(amplitude1, CV_32F);
 		fopen_s(&fp, ampfile2.c_str(), "wb");
