@@ -1447,9 +1447,13 @@ int Unwrap::snaphu(
 		carrier_frequency, offset_row, offset_col;
 	ComplexMat master, slave;
 	FILE* fp = NULL;
+	string EXE_path(exe_path);
+	std::replace(EXE_path.begin(), EXE_path.end(), '/', '\\');
 	string project(project_path);
+	std::replace(project.begin(), project.end(), '/', '\\');
 	string source_1, source_2;
 	string folder(tmp_folder);
+	std::replace(folder.begin(), folder.end(), '/', '\\');
 	string config_file = folder + "\\snaphu.config";
 	string ampfile1 = folder + "\\ampfile1.dat";
 	string ampfile2 = folder + "\\ampfile2.dat";
@@ -1620,7 +1624,7 @@ int Unwrap::snaphu(
 	USES_CONVERSION;
 	//////////////////////////创建并调用snaphu.exe进程///////////////////////////////
 	LPWSTR szCommandLine = new TCHAR[256];
-	wcscpy(szCommandLine, A2W(exe_path));
+	wcscpy(szCommandLine, A2W(EXE_path.c_str()));
 	wcscat(szCommandLine, L"\\snaphu.exe -f ");
 	wcscat(szCommandLine, A2W(config_file.c_str()));
 	STARTUPINFO si;

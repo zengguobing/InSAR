@@ -1430,6 +1430,7 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 		return -1;
 	}
 	string main_xml(xml_filename);
+	std::replace(main_xml.begin(), main_xml.end(), '/', '\\');
 	string folder;
 	if (main_xml.length() > main_xml.rfind("\\") && main_xml.rfind("\\") >= 0)
 	{
@@ -3695,6 +3696,7 @@ int XMLFile::XMLFile_creat_new_project(const char* project_path, const char* pro
 
 	string path(project_path); string name(project_name);
 	string filename = path + "\\" + name;
+	std::replace(filename.begin(), filename.end(), '/', '\\');
 	this->doc.SaveFile(filename.c_str());
 	return 0;
 }
@@ -5690,5 +5692,11 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*行坐标拟合系数*/
 	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
+	/*行偏移量*/
+	if (!read_array_from_h5(Input_file, "offset_row", tmp_mat))
+		write_array_to_h5(Output_file, "offset_row", tmp_mat);
+	/*列偏移量*/
+	if (!read_array_from_h5(Input_file, "offset_col", tmp_mat))
+		write_array_to_h5(Output_file, "offset_col", tmp_mat);
 	return 0;
 }

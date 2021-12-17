@@ -21,6 +21,8 @@ public:
 	Mat GetMod() const;
 	/*计算复矩阵的相位*/
 	Mat GetPhase();
+	/*释放数据占用内存*/
+	void release();
 	int type() const;
 	int GetRows() const;
 	int GetCols() const;

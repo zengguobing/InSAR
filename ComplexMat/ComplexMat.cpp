@@ -42,6 +42,12 @@ ComplexMat::~ComplexMat()
 
 }
 
+void ComplexMat::release()
+{
+	this->re.release();
+	this->im.release();
+}
+
 int ComplexMat::type() const
 {
 	if (re.type() != im.type()) return -1;

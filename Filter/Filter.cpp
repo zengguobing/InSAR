@@ -457,7 +457,9 @@ int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const ch
 		}
 	}
 	std::string cos_file(tmp_path);
+	std::replace(cos_file.begin(), cos_file.end(), '/', '\\');
 	std::string sin_file(tmp_path);
+	std::replace(sin_file.begin(), sin_file.end(), '/', '\\');
 	cos_file.append("\\cos.dat");
 	sin_file.append("\\sin.dat");
 	ret = util.cvmat2bin(cos_file.c_str(), cos);
@@ -467,7 +469,9 @@ int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const ch
 	///////////////////////////创建并调用深度学习滤波进程//////////////////////
 	USES_CONVERSION;
 	LPWSTR szCommandLine = new TCHAR[512];
-	wcscpy(szCommandLine, A2W(filter_dl_path));
+	string Filter_dl_path(filter_dl_path);
+	std::replace(Filter_dl_path.begin(), Filter_dl_path.end(), '/', '\\');
+	wcscpy(szCommandLine, A2W(Filter_dl_path.c_str()));
 	wcscat(szCommandLine, L"\\filter_dl.exe ");
 	wcscat(szCommandLine, A2W(dl_model_file));
 	wcscat(szCommandLine, L" ");
