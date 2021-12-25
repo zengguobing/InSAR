@@ -3529,7 +3529,11 @@ int Utils::gen_delaunay(const char* filename, const char* exe_path)
 		&p_i);
 	if (bRet)
 	{
-		HANDLE hd = CreateJobObjectA(NULL, "delaunay");
+		char delaunay_job_name[512]; delaunay_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(delaunay_job_name, "DELAUNAY_%lld", tt);
+		string delaunay_job_name_string(delaunay_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, delaunay_job_name_string.c_str());
 		if (hd)
 		{
 			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;

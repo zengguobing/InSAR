@@ -498,7 +498,11 @@ int Filter::filter_dl(const char* filter_dl_path, const char* tmp_path, const ch
 		&p_i);
 	if (bRet)
 	{
-		HANDLE hd = CreateJobObjectA(NULL, "Filter");
+		char filter_job_name[512]; filter_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(filter_job_name, "FILTER_%lld", tt);
+		string filter_job_name_string(filter_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, filter_job_name_string.c_str());
 		if (hd)
 		{
 			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;

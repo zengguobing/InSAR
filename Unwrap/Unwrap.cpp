@@ -127,7 +127,11 @@ int Unwrap::MCF(
 		&p_i);
 	if (bRet)
 	{
-		HANDLE hd = CreateJobObjectA(NULL, "MCF");
+		char mcf_job_name[512]; mcf_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(mcf_job_name, "MCF_%lld", tt);
+		string mcf_job_name_string(mcf_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, mcf_job_name_string.c_str());
 		if (hd)
 		{
 			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;
@@ -721,7 +725,11 @@ int Unwrap::mcf_delaunay(const char* MCF_problem_file, const char* MCF_EXE_PATH)
 		&p_i);
 	if (bRet)
 	{
-		HANDLE hd = CreateJobObjectA(NULL, "MCF");
+		char mcf_job_name[512]; mcf_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(mcf_job_name, "MCF_%lld", tt);
+		string mcf_job_name_string(mcf_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, mcf_job_name_string.c_str());
 		if (hd)
 		{
 			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;
@@ -1648,7 +1656,11 @@ int Unwrap::snaphu(
 		&p_i);
 	if (bRet)
 	{
-		HANDLE hd = CreateJobObjectA(NULL, "SNAPHU");
+		char snaphu_job_name[512]; snaphu_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(snaphu_job_name, "SNAPHU_%lld", tt);
+		string snaphu_job_name_string(snaphu_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, snaphu_job_name_string.c_str());
 		if (hd)
 		{
 			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;
