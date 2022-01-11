@@ -4,6 +4,7 @@
 #include<string>
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
+#include"Utils.h"
 #include"hdf5.h"
 #include"..\include\tinyxml.h"
 #define Big2Little32(A) ((uint32_t)(A&0xff000000)>>24|(uint32_t)(A&0x00ff0000)>>8 | (uint32_t)(A&0x0000ff00)<<8|(uint32_t)(A&0x000000ff)<<24)
@@ -254,12 +255,26 @@ public:
 	* 参数2：参数值（输出）
 	*/
 	int get_double_para(const char* node_name, double* value);
+	/* 从xml文件中读出double数组
+	* @param node_name                   数据节点名
+	* @param Array                       数组
+	* @param rootNode                    根节点（默认为NULL，若提供根节点，则在根节点下面搜索）
+	* @return 成功返回0，否则返回-1
+	*/
+	int getDoubleArray(const char* node_name, Mat& Array, TiXmlElement* rootNode = NULL);
 	/*
 	* 从XML文件中读出整型参数
 	* 参数1：参数名（节点名）
 	* 参数2：参数值（输出）
 	*/
 	int get_int_para(const char* node_name, int* value);
+	/* 从xml文件中读出int数组
+	* @param node_name                   数据节点名
+	* @param Array                       数组
+	* @param rootNode                    根节点（默认为NULL，若提供根节点，则在根节点下面搜索）
+	* @return 成功返回0，否则返回-1
+	*/
+	int getIntArray(const char* node_name, Mat& Array, TiXmlElement* rootNode = NULL);
 
 
 
@@ -342,6 +357,28 @@ public:
 	* 参数3 待写入矩阵
 	*/
 	int write_array_to_h5(const char* filename, const char* dataset_name, const Mat& input_array);
+	/*@brief 向h5文件中写入double类型数
+	* @param h5File                     h5文件
+	* @param datasetName                数据名
+	* @param data                       double型数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_double_to_h5(
+		const char* h5File,
+		const char* datasetName,
+		double data
+	);
+	/*@brief 向h5文件中写入int类型数
+	* @param h5File                     h5文件
+	* @param datasetName                数据名
+	* @param data                       double型数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_int_to_h5(
+		const char* h5File,
+		const char* datasetName,
+		int data
+	);
 	/*
 	* 功能：从h5文件中读出实数矩阵(读出类型为double型、16位整型或者32位整型)
 	* 参数1：文件名
@@ -349,6 +386,28 @@ public:
 	* 参数3：输出矩阵
 	*/
 	int read_array_from_h5(const char* filename, const char* dataset_name, Mat& out_array);
+	/*@brief 从h5文件中读出double数据
+	* @param h5File                      h5文件
+	* @param datasetName                 数据名
+	* @param data                        数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_double_from_h5(
+		const char* h5File,
+		const char* datasetName,
+		double* data
+	);
+	/*@brief 从h5文件中读出int数据
+	* @param h5File                      h5文件
+	* @param datasetName                 数据名
+	* @param data                        数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_int_from_h5(
+		const char* h5File,
+		const char* datasetName,
+		int* data
+	);
 	/*
 	* 功能：从h5文件中读取矩阵数据子集
 	* 参数1：h5文件名
@@ -623,6 +682,769 @@ private:
 
 };
 
+struct BurstIndices
+{
+	int firstBurstIndex;
+	int secondBurstIndex;
+	bool inUpperPartOfFirstBurst;
+	bool inUpperPartOfSecondBurst;
+	/*默认构造函数*/
+	BurstIndices()
+	{
+		firstBurstIndex = secondBurstIndex = -1;
+		inUpperPartOfFirstBurst = inUpperPartOfSecondBurst = false;
+	}
+	/*拷贝构造函数*/
+	BurstIndices(const BurstIndices& cp)
+	{
+		this->firstBurstIndex = cp.firstBurstIndex;
+		this->inUpperPartOfFirstBurst = cp.inUpperPartOfFirstBurst;
+		this->inUpperPartOfSecondBurst = cp.inUpperPartOfSecondBurst;
+		this->secondBurstIndex = cp.secondBurstIndex;
+	}
+	/*赋值函数*/
+	BurstIndices operator=(const BurstIndices& cp)
+	{
+		this->firstBurstIndex = cp.firstBurstIndex;
+		this->inUpperPartOfFirstBurst = cp.inUpperPartOfFirstBurst;
+		this->inUpperPartOfSecondBurst = cp.inUpperPartOfSecondBurst;
+		this->secondBurstIndex = cp.secondBurstIndex;
+		return *this;
+	}
+};
+
+/*---------------------------------------*/
+/*              数字高程模型             */
+/*---------------------------------------*/
+class InSAR_API DigitalElevationModel
+{
+public:
+	DigitalElevationModel();
+	~DigitalElevationModel();
+	/*@brief 计算SRTM高程文件名
+	* @param lonMin                       最小经度
+	* @param lonMax                       最大经度
+	* @param latMin                       最小纬度
+	* @param latMax                       最大纬度
+	* @param name                         文件名
+	* @return 成功返回0，否则返回-1
+	*/
+	int getSRTMFileName(
+		double lonMin,
+		double lonMax,
+		double latMin,
+		double latMax,
+		vector<string>& name
+	);
+	/*@brief 下载SRTM高程数据
+	* @param name                         文件名
+	* @return 成功返回0，否则返回-1
+	*/
+	int downloadSRTM(const char* name);
+	/*@brief 获取数字高程模型
+	* @param filepath                     文件路径
+	* @param lonMin                       最小经度
+	* @param lonMax                       最大经度
+	* @param latMin                       最小纬度
+	* @param latMax                       最大纬度
+	* @return 成功返回0，否则返回-1
+	*/
+	int getRawDEM(
+		const char* filepath,
+		double lonMin,
+		double lonMax,
+		double latMin,
+		double latMax
+	);
+	/*@brief 根据经纬度获取高程(平均插值法)
+	* @param lon                          经度
+	* @param lat                          纬度
+	* @param elevation                    高度
+	* @return 成功返回0，否则返回-1
+	*/
+	int getElevation(
+		double lon,
+		double lat,
+		double* elevation
+	);
+	/*@brief 读取SRTM中的geotiff高程数据
+	* @param geotiffFile                  geotiff文件
+	* @param outDEM                       读出的DEM数据
+	* @return 成功返回0，否则返回-1
+	*/
+	static int geotiffread(
+		const char* geotiffFile,
+		Mat& outDEM
+	);
+	/*@brief 解压文件到指定文件夹
+	* @param srcFile                      待解压压缩文件
+	* @param dstPath                      目标文件夹
+	* @return 成功返回0，否则返回-1
+	*/
+	static int unzip(const char* srcFile, const char* dstPath);
+
+public:
+	/*DEM数据（高程为short型数据）*/
+	Mat rawDEM;
+	/*DEM数据行数*/
+	int rows;
+	/*DEM数据列数*/
+	int cols;
+	/*左上角经度*/
+	double lonUpperLeft;
+	/*左上角纬度*/
+	double latUpperLeft;
+	/*右下角经度*/
+	double lonLowerRight;
+	/*右下角纬度*/
+	double latLowerRight;
+	/*DEM经度采样间隔*/
+	double lonSpacing;
+	/*DEM纬度采样间隔*/
+	double latSpacing;
+	/*DEM路径*/
+	string DEMPath;
+	/*SRTM全球高程url*/
+	string SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
+
+	char error_head[512];
+
+};
+
+
+
+/*--------------------------------------*/
+/*              卫星轨道数据            */
+/*--------------------------------------*/
+class InSAR_API orbitStateVectors
+{
+public:
+	orbitStateVectors(Mat& stateVectors, double startTime, double stopTime);
+	~orbitStateVectors();
+	/*@brief 设置场景拍摄起始终止时间
+	* @param startTime
+	* @param stopTime
+	* @return 成功返回0，否则返回-1
+	*/
+	int setSceneStartStopTime(double startTime, double stopTime);
+	/*@brief 获取卫星三维位置信息（拉格朗日插值）
+	* @param azimuthTime                   方位向时间
+	* @param position                      卫星三维位置
+	* @return 成功返回0，否则返回-1
+	*/
+	int getPosition(double azimuthTime, Position& position);
+	/*@brief 获取卫星三维速度信息（拉格朗日插值）
+	* @param azimuthTime                   方位向时间
+	* @param velocity                      卫星三维速度
+	* @return 成功返回0，否则返回-1
+	*/
+	int getVelocity(double azimuthTime, Velocity& velocity);
+	/*@brief 根据方位向时间获取statevector（多项式插值）
+	* @param time                          方位向时间
+	* @param osv                           轨道信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int getOrbitData(double time, OSV* osv);
+	/*@brief 更新轨道信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int applyOrbit();
+
+public:
+	Mat stateVectors;
+	Mat newStateVectors;
+private:
+	
+	int nv = 10;
+	double dt;
+	int polyDegree = 3;
+	double startTime;
+	double stopTime;
+	/*轨道信息是否已更新*/
+	bool isOrbitUpdated;
+};
+
+
+/*------------------------------------------------*/
+/*               哨兵一号数据读取工具             */
+/*------------------------------------------------*/
+class InSAR_API Sentinel1Reader
+{
+public:
+	Sentinel1Reader();
+	Sentinel1Reader(const char* xmlfile, const char* tiffFile, const char* PODFile = NULL);
+	~Sentinel1Reader();
+	/* 加载xml文件
+	* @param xmlfile            xml文件
+	* @param tiffFile           tiff文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int load(const char* xmlfile, const char* tiffFile);
+	/* 获取多普勒中心频率估计数据
+	* @param dcEstimateList               多普勒中心频率估计数据（count×5）
+	* @return 成功返回0，否则返回-1
+	*/
+	int getDcEstimateList();
+	/* 获取多普勒调频率数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int getAzimuthFmRateList();
+	/* 获取antennaPattern数据
+	* @param antennaPattern_slantRangeTime
+	* @param antennaPattern_elevationAngle
+	* @return 成功返回0，否则返回-1
+	*/
+	int getAntennaPattern();
+	/* @brief 获取burst个数
+	* @param burstCount                 burst个数
+	* @return 成功返回0，否则返回-1
+	*/
+	int getBurstCount(int* burstCount);
+	/*@brief 获取每个burst第一行方位向时间
+	* @return 成功返回0， 否则返回-1
+	*/
+	int getBurstAzimuthTime();
+	/*@brief 获取每个burst每行第一个有效像素列数
+	* @return 成功返回0，否则返回-1
+	*/
+	int getFirstValidSample();
+	/*@brief 获取每个burst每行最后一个有效像素列数
+	* @param firstValidSample                        每个burst每行最后一个有效像素列数(burstCount×1)
+	* @return 成功返回0，否则返回-1
+	*/
+	int getLastValidSample();
+	/*@brief 获取每个burst第一行有效像素行数
+	* @param firstValidLine                          每个burst第一行有效像素行数(burstCount×1)
+	* @return 成功返回0，否则返回-1
+	*/
+	int getFirstValidLine();
+	/*@brief 获取每个burst最后一行有效像素行数
+	* @param lastValidLine                           每个burst最后一行有效像素行数(burstCount×1)
+	* @return 成功返回0，否则返回-1
+	*/
+	int getLastValidLine();
+	/*@brief 获取地面控制点信息
+	* @param geolocationGridPoint                    地面控制点(n×6，经/纬/高/行/列/下视角)
+	* @return 成功返回0，否则返回-1
+	*/
+	int getGeolocationGridPoint();
+	/*@brief 获取轨道信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int getOrbitList();
+	/*@brief 获取精密轨道数据
+	* @param POD_file                                精密轨道数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int getPOD(const char* POD_file);
+	/*@brief 获取其他参数
+	* @return 成功返回0，否则返回-1
+	*/
+	int getOtherParameters();
+
+	/*@brief 准备数据
+	* @param PODFile                                  精密轨道数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int prepareData(const char* PODFile = NULL);
+	/*@brief 从TIFF文件中读出复图像数据
+	* @param slc                                     复图像数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int getSLC(ComplexMat& slc);
+	/*@brief 将数据写入h5文件
+	* @param h5File                                  目标h5文件(默认为NULL)
+	* @return 成功返回0，否则返回-1
+	*/
+	int writeToh5(
+		const char* h5File
+	);
+
+private:
+
+	/*方位向时间间隔*/
+	double azimuthTimeInterval;
+	/*方位向采样间隔*/
+	double azimuthPixelSpacing;
+	/*距离向采样率*/
+	double rangeSamplingRate;
+	/*距离向采样间隔*/
+	double rangePixelSpacing;
+	/*雷达载频*/
+	double radarFrequency;
+	/*方位向扫频率*/
+	double azimuthSteeringRate;
+	/*最近斜距时间*/
+	double slantRangeTime;
+	/*Heading*/
+	double headingAngle;
+	/*数据行数*/
+	int numberOfLines;
+	/*数据列数*/
+	int numberOfSamples;
+	/*每个burst行数*/
+	int linesPerBurst;
+	/*burst个数*/
+	int burstCount;
+
+	/*卫星（雷达）名称*/
+	string sensor;
+	/*极化方式*/
+	string polarization;
+	/*子带名称*/
+	string swath;
+	/*升降轨*/
+	string pass;
+	/*拍摄起始UTC时间*/
+	string startTime;
+	/*拍摄结束UTC时间*/
+	string stopTime;
+	
+
+
+
+	/*方位向调频率估计数据*/
+	Mat AzimuthFmRateList;
+	/*多普勒中心频率估计数据*/
+	Mat DcEstimateList;
+	/*每个burst第一行方位向时间*/
+	Mat burstAzimuthTime;
+	/*每个burst每行第一个有效像素列数*/
+	Mat firstValidSample;
+	/*每个burst每行最后一个有效像素列数*/
+	Mat lastValidSample;
+	/*每个burst第一行有效数据行数*/
+	Mat firstValidLine;
+	/*每个burst最后一行有效数据行数*/
+	Mat lastValidLine;
+	/*轨道原始数据*/
+	Mat orbitList;
+	/*精密原始轨道数据*/
+	Mat preciseOrbitList;
+	/*antennaPattern_slantRangeTime*/
+	Mat antennaPattern_slantRangeTime;
+	/*antennaPattern_elevationAngle*/
+	Mat antennaPattern_elevationAngle;
+	/*地面控制点*/
+	Mat geolocationGridPoint;
+
+
+	/*tiff文件*/
+	string tiffFile;
+	/*精密轨道数据文件*/
+	string PODFile;
+	bool isDataAvailable;
+	XMLFile xmldoc;
+	bool bXmlLoad;
+	char m_xmlFileName[2048];
+	char error_head[256];
+};
+
+
+
+
+/*------------------------------------------------*/
+/*                哨兵一号计算工具                */
+/*------------------------------------------------*/
+class InSAR_API Sentinel1Utils
+{
+public:
+	/*@brief 默认构造函数
+	*/
+	Sentinel1Utils(const char* h5File);
+	~Sentinel1Utils();
+	/*@brief 初始化
+	* @return 成功返回0，否则返回-1
+	*/
+	int init();
+	/*@brief 计算每个burst的方位向参考时间
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeReferenceTime();
+	/*@brief 计算每个burst的方位向多普勒调频率
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeRangeDependDopplerRate();
+	/*@brief 计算每个burst的方位向多普勒中心频率
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeDopplerCentroid();
+	/*@brief 计算每个burst的总多普勒率（调频率加扫频率）
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeDopplerRate();
+	/*@brief 计算burst数据的去斜相位和去模相位
+	* @param burstIndex                           burst序号
+	* @param derampDemodPhase                     去斜去模相位
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeDerampDemodPhase(
+		int burstIndex,
+		Mat& derampDemodPhase
+	);
+	/*@brief 从h5文件中读出一个burst的数据
+	* @param burstIndex                          burst序号
+	* @param burstSLC                            一个burst的复数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int getBurst(
+		int burstIndex,
+		ComplexMat& burstSLC
+	);
+
+
+
+	/*@brief 计算多普勒频率
+	* @param groundPosition                       地面点位置
+	* @param satellitePosition                    卫星位置
+	* @param satelliteVelocity                    卫星速度
+	* @param dopplerFrequency                     多普勒频率（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int getDopplerFrequency(
+		Position groundPosition,
+		Position satellitePosition,
+		Velocity satelliteVelocity,
+		double* dopplerFrequency
+	);
+	/*@brief 计算地面点对应的零多普勒方位向时刻
+	* @param groundPosition                       地面点位置
+	* @param zeroDopplerTime                      零多普勒方位向时刻
+	* @param dopplerFrequency                     多普勒频率(默认为0)
+	* @return 成功返回0，否则返回-1
+	*/
+	int getZeroDopplerTime(
+		Position groundPosition,
+		double* zeroDopplerTime,
+		double dopplerFrequency = 0.0
+	);
+	/*@brief 计算地面点投影到SAR图像坐标系下的距离向和方位向坐标
+	* @param burstIndex                           burst序号
+	* @param groundPosition                       地面点位置
+	* @param rangeIndex                           距离向坐标
+	* @param azimuthIndex                         方位向坐标
+	* @return 成功返回0，否则返回-1
+	*/
+	int getRgAzPosition(
+		int burstIndex,
+		Position groundPosition,
+		double* rangeIndex,
+		double* azimuthIndex
+	);
+	/*@brief 计算给定卫星方位向时间和地面点位置时的斜距
+	* @param azimuthTime                         方位向时间
+	* @param groundPosition                      地面点位置
+	* @param slantRange                          斜距
+	* @return 成功返回0，否则返回-1
+	*/
+	int getSlantRange(
+		double azimuthTime,
+		Position groundPosition,
+		double* slantRange
+	);
+	/*@brief 获取地面点目标所在burst信息
+	* @param groundPosition                      地面点目标
+	* @param burstIndice                         burst信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int getBurstIndice(
+		Position groundPosition,
+		BurstIndices& burstIndice
+	);
+	/*@brief 计算场景地理位置（经纬度）边界
+	* @param lonMin                           最小经度
+	* @param lonMax                           最大经度
+	* @param latMin                           最小纬度
+	* @param latMax                           最大纬度
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeImageGeoBoundry(
+		double* lonMin,
+		double* lonMax,
+		double* latMin,
+		double* latMax
+	);
+public:
+
+	/*方位向时间间隔*/
+	double azimuthTimeInterval;
+	/*方位向采样间隔*/
+	double azimuthPixelSpacing;
+	/*距离向采样率*/
+	double rangeSamplingRate;
+	/*距离向采样间隔*/
+	double rangePixelSpacing;
+	/*雷达载频*/
+	double radarFrequency;
+	/*方位向扫频率*/
+	double azimuthSteeringRate;
+	/*最近斜距时间*/
+	double slantRangeTime;
+	/*数据行数*/
+	int numberOfLines;
+	/*数据列数*/
+	int numberOfSamples;
+	/*每个burst行数*/
+	int linesPerBurst;
+	/*每行数据个数*/
+	int samplesPerBurst;
+	/*burst个数*/
+	int burstCount;
+
+	/*卫星（雷达）名称*/
+	string sensor;
+	/*极化方式*/
+	string polarization;
+	/*子带名称*/
+	string swath;
+	/*升降轨*/
+	string pass;
+	/*Heading*/
+	double headingAngle;
+
+
+
+	/*每个burst方位向参考时间（range_dependent）*/
+	Mat referenceTime;
+	bool isReferenceTimeAvailable;
+	/*每个burst多普勒中心频率（range_dependent）*/
+	Mat dopplerCentroid;
+	bool isDopplerCentroidAvailable;
+	/*每个burst多普勒调频率（range_dependent）*/
+	Mat rangeDependDopplerRate;
+	bool isRangeDependDopplerRateAvailiable;
+	/*方位向调频率估计数据*/
+	Mat AzimuthFmRateList;
+	/*多普勒中心频率估计数据*/
+	Mat DcEstimateList;
+	/*每个burst第一行方位向时间*/
+	Mat burstAzimuthTime;
+	/*每个burst每行第一个有效像素列数*/
+	Mat firstValidSample;
+	/*每个burst每行最后一个有效像素列数*/
+	Mat lastValidSample;
+	/*每个burst第一行有效数据行数*/
+	Mat firstValidLine;
+	/*每个burst最后一行有效数据行数*/
+	Mat lastValidLine;
+	/*antennaPattern_slantRangeTime*/
+	Mat antennaPattern_slantRangeTime;
+	/*antennaPattern_elevationAngle*/
+	Mat antennaPattern_elevationAngle;
+	/*地面控制点*/
+	Mat geolocationGridPoint;
+	/*每个burst的总多普勒率（调频率加扫频率）*/
+	Mat dopplerRate;
+	bool isDopplerRateAvailable;
+	/*轨道原始数据*/
+	Mat orbitList;
+	/*精密原始轨道数据*/
+	Mat preciseOrbitList;
+
+
+	/*轨道数据*/
+	orbitStateVectors* stateVectors;
+	/*h5文件*/
+	string h5File;
+
+
+	/*burst偏移量*/
+	int burstOffset;
+
+	bool bInitialized;
+	char m_xmlFileName[2048];
+	char error_head[256];
+};
+
+/*--------------------------------------------------*/
+/*              哨兵一号后向地理编码配准            */
+/*--------------------------------------------------*/
+class InSAR_API Sentinel1BackGeocoding
+{
+public:
+	Sentinel1BackGeocoding();
+	~Sentinel1BackGeocoding();
+	/*@brief 初始化后向地理编码配准
+	* @param h5Files                       哨兵一号原始数据文件
+	* @param outFiles                      处理结果保存文件
+	* @param DEMPath                       DEM文件路径
+	* @param masterIndex                   主影像序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int init(
+		vector<string>& h5Files,
+		vector<string>& outFiles,
+		const char* DEMPath,
+		int masterIndex
+	);
+	/*@brief 加载哨兵一号数据
+	* @param h5Files                       哨兵一号原始数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int loadData(vector<string>& h5Files);
+	/*@brief 设置DEM文件路径
+	* @param DEMPath                       DEM文件路径
+	* @return 成功返回0，否则返回-1
+	*/
+	int setDEMPath(const char* DEMPath);
+	/*@brief 加载数字高程模型
+	* @param filepath                      文件路径
+	* @param lonMin                        最小经度
+	* @param lonMax                        最大经度
+	* @param latMin                        最小纬度
+	* @param latMax                        最大纬度
+	* @return 成功返回0，否则返回-1
+	*/
+	int loadDEM(
+		const char* filepath,
+		double lonMin,
+		double lonMax,
+		double latMin,
+		double latMax
+	);
+	/*@brief 加载处理结果保存文件
+	* @param outFiles                     处理结果保存文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int loadOutFiles(vector<string>& outFiles);
+	/*@brief 准备结果保存文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int prepareOutFiles();
+	/*@brief 设置主影像
+	* @param masterIndex                  主影像序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int setMasterIndex(int masterIndex);
+
+
+
+	/*@brief 计算主辅图像之间的burst偏移量
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeBurstOffset();
+	/*@brief 去斜去模操作
+	* @param derampDemodPhase                 斜模相位
+	* @param slc                              复图像数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int performDerampDemod(
+		Mat& derampDemodPhase,
+		ComplexMat& slc
+	);
+	/*@brief 计算DEM点投影在SAR辅图像中的位置
+	* @param slaveImageIndex                       辅图像序号
+	* @param mBurstIndex                           主图像burst序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeSlavePosition(
+		int slaveImagesIndex,
+		int mBurstIndex
+	);
+	/*@brief 计算辅图像偏移
+	* @param slaveAzimuthOffset                    辅图像方位向偏移
+	* @param slaveRangeOffset                      辅图像距离向偏移
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeSlaveOffset(Mat& slaveAzimuthOffset, Mat& slaveRangeOffset);
+	/*@brief 拟合辅图像偏移（1阶拟合，offset = a0 + a1 * x + a2 * y）
+	* @param slaveOffset                           偏移量
+	* @param a0                                    拟合系数
+	* @param a1                                    拟合系数
+	* @param a2                                    拟合系数
+	* @return 成功返回0，否则返回-1
+	*/
+	int fitSlaveOffset(
+		Mat& slaveOffset,
+		double* a0,
+		double* a1,
+		double* a2
+	);
+	/*@brief 复图像双线性插值重采样（inplace，原地操作）
+	* @param slc                                   待重采样图像（原地操作）
+	* @param dstHeight                             重采样图像高度
+	* @param dstWidth                              重采样图像宽度
+	* @param a0Rg                                  距离向偏移拟合系数
+	* @param a1Rg                                  距离向偏移拟合系数
+	* @param a2Rg                                  距离向偏移拟合系数
+	* @param a0Az                                  方位向偏移拟合系数
+	* @param a1Az                                  方位向偏移拟合系数
+	* @param a2Az                                  方位向偏移拟合系数
+	* @return 成功返回0，否则返回-1
+	*/
+	int performBilinearResampling(
+		ComplexMat& slc,
+		int dstHeight,
+		int dstWidth,
+		double a0Rg, double a1Rg, double a2Rg,
+		double a0Az, double a1Az, double a2Az
+	);
+	/*@brief 辅图像双线性插值重采样
+	* @param mBurstIndex                           主图像burst序号
+	* @param slaveImageIndex                       辅图像序号
+	* @param slaveSLC                              重采样后的辅图像数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int slaveBilinearInterpolation(
+		int mBurstIndex,
+		int slaveImageIndex,
+		ComplexMat& slaveSLC
+	);
+	/*@brief 计算deburst信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int deBurstConfig();
+	/*@brief 后向地理编码配准
+	* @return 成功返回0，否则返回-1
+	*/
+	int backGeoCodingCoregistration();
+
+private:
+
+	/*影像数量*/
+	int numOfImages;
+	/*主影像序号*/
+	int masterIndex;
+	/*哨兵一号数据*/
+	vector<Sentinel1Utils*> su;
+	/*处理结果保存文件*/
+	vector<string> outFiles;
+	/*数字高程模型*/
+	DigitalElevationModel* dem;
+	/*数字高程模型路径*/
+	string DEMPath;
+	/*DEM投影到主图像的方位向坐标*/
+	Mat masterAzimuth;
+	/*DEM投影到主图像的距离向坐标*/
+	Mat masterRange;
+	/*DEM投影到辅图像的方位向坐标*/
+	Mat slaveAzimuth;
+	/*DEM投影到辅图像的距离向坐标*/
+	Mat slaveRange;
+	/*DEM点投影到主图像的坐标是否计算完成*/
+	bool isMasterRgAzComputed;
+
+	/*deburst参数*/
+	Mat start;
+	/*deburst参数*/
+	Mat end;
+	/*deburst参数*/
+	int deburstLines;
+	/*burst配置信息是否计算完成*/
+	bool isdeBurstConfig;
+
+	/*无效坐标（-1.0）*/
+	double invalidRgAzIndex = -1.0;
+	/*无效偏移量（-9999.0）*/
+	double invalidOffset = -9999.0;
+	bool burstOffsetComputed;
+	char error_head[256];
+
+};
+
+
+
+
 
 
 
@@ -640,3 +1462,5 @@ private:
 
 
 #endif // !__FORMATCONVERSION__H__
+
+

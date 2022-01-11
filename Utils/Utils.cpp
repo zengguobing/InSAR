@@ -100,6 +100,62 @@ Utils::~Utils()
 {
 }
 
+int Utils::createVandermondeMatrix(Mat& inArray, Mat& vandermondeMatrix, int degree)
+{
+	if (inArray.cols != 1 || inArray.rows < 1 || degree < 1)
+	{
+		fprintf(stderr, "createVandermondeMatrix(): input check failed!\n");
+		return -1;
+	}
+	vandermondeMatrix.create(inArray.rows, degree + 1, CV_64F);
+	if (inArray.type() != CV_64F) inArray.convertTo(inArray, CV_64F);
+	for (int i = 0; i < inArray.rows; i++)
+	{
+		for (int j = 0; j < degree + 1; j++)
+		{
+			vandermondeMatrix.at<double>(i, j) = pow(inArray.at<double>(i, 0), (double)j);
+		}
+	}
+	return 0;
+}
+
+int Utils::ployFit(Mat& a, Mat& B, Mat& x)
+{
+	Mat A, b;
+	a.copyTo(A);
+	B.copyTo(b);
+	if (A.rows != b.rows || A.cols > A.rows || A.empty())
+	{
+		fprintf(stderr, "ployFit(): input check failed!\n");
+		return -1;
+	}
+	if (A.type() != CV_64F) A.convertTo(A, CV_64F);
+	if (b.type() != CV_64F) b.convertTo(b, CV_64F);
+	Mat A_t;
+	cv::transpose(A, A_t);
+	A = A_t * A;
+	b = A_t * b;
+	if (!cv::solve(A, b, x, cv::DECOMP_LU))
+	{
+		fprintf(stderr, "ployFit(): matrix defficiency!\n");
+		return -1;
+	}
+	return 0;
+}
+
+int Utils::polyVal(Mat& coefficient, double x, double* val)
+{
+	if (!val || coefficient.rows < 1 || coefficient.cols != 1) return -1;
+	double sum = 0.0;
+	if (coefficient.type() != CV_64F) coefficient.convertTo(coefficient, CV_64F);
+	for (int i = 0; i < coefficient.rows; i++)
+	{
+		sum += coefficient.at<double>(i, 0) * pow(x, (double)i);
+	}
+	*val = sum;
+	return 0;
+}
+
 int Utils::get_mode_index(const Mat& input, int* out)
 {
 	if (input.empty() || input.type() != CV_32S || out == NULL)
@@ -2414,6 +2470,65 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 	return 0;
 }
 
+int Utils::Multilook(
+	const ComplexMat& master, 
+	const ComplexMat& slave,
+	int multilook_rg, 
+	int multilook_az,
+	Mat& phase
+)
+{
+	if (master.GetRows() != slave.GetRows() ||
+		master.GetCols() != slave.GetCols() ||
+		master.type() != CV_64F ||
+		slave.type() != CV_64F ||
+		master.GetRows() < 1 ||
+		master.GetCols() < 1 ||
+		multilook_rg < 1 ||
+		multilook_az < 1 ||
+		master.GetRows() < multilook_az ||
+		master.GetCols() < multilook_rg)
+	{
+		fprintf(stderr, "multilook(): input check failed!\n\n");
+		return -1;
+	}
+	int ret;
+	if (multilook_rg == 1 && multilook_az == 1)
+	{
+		ret = generate_phase(master, slave, phase);
+		if (return_check(ret, "generate_phase(*, *, *)", error_head)) return -1;
+		return 0;
+	}
+	ComplexMat tmp;
+	ret = master.Mul(slave, tmp, true);
+	if (return_check(ret, "Master.Mul(*, *, *)", error_head)) return -1;
+	int nr = tmp.GetRows();
+	int nc = tmp.GetCols();
+	int nr_new = nr / multilook_az;
+	int nc_new = nc / multilook_rg;
+
+	Mat real = Mat::zeros(nr_new, nc_new, CV_64F);
+	Mat imag = Mat::zeros(nr_new, nc_new, CV_64F);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr_new; i++)
+	{
+		int left, right, bottom, top;
+		top = i * multilook_az; top = top < 0 ? 0 : top;
+		bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
+		for (int j = 0; j < nc_new; j++)
+		{
+			left = j * multilook_rg; left = left < 0 ? 0 : left;
+			right = left + multilook_rg; right = right > nc ? nc : right;
+			real.at<double>(i, j) = cv::mean(tmp.re(Range(top, bottom), Range(left, right)))[0];
+			imag.at<double>(i, j) = cv::mean(tmp.im(Range(top, bottom), Range(left, right)))[0];
+		}
+	}
+	tmp.SetRe(real);
+	tmp.SetIm(imag);
+	tmp.GetPhase().copyTo(phase);
+	return 0;
+}
+
 int Utils::phase2cos(const Mat& phase, Mat& cos, Mat& sin)
 {
 	if (phase.rows < 1 ||
@@ -2543,6 +2658,26 @@ int Utils::ell2xyz(Mat llh, Mat& xyz)
 	tmp.at<double>(0, 1) = y;
 	tmp.at<double>(0, 2) = z;
 	tmp.copyTo(xyz);
+	return 0;
+}
+
+int Utils::ell2xyz(double lon, double lat, double elevation, Position& xyz)
+{
+	if (fabs(lon) > 180.0 || fabs(lat) > 90.0)
+	{
+		fprintf(stderr, "ell2xyz(): input check failed!\n");
+		return -1;
+	}
+	double e2 = 0.00669438003551279091;
+	double height = elevation;
+	lat = lat / 180.0 * PI;
+	lon = lon / 180.0 * PI;
+	double Ea = 6378136.49;
+	double N = Ea / sqrt(1 - e2 * (sin(lat) * sin(lat)));
+	double Nph = N + height;
+	xyz.x = Nph * cos(lat) * cos(lon);
+	xyz.y = Nph * cos(lat) * sin(lon);
+	xyz.z = (Nph - e2 * N) * sin(lat);
 	return 0;
 }
 
@@ -4074,7 +4209,7 @@ int Utils::_PS_deflat(
 	A = A_t * A;
 	Mat b = A_t * (R_M - R_S);
 	Mat x;
-	if (!solve(A, b, x, DECOMP_LU))
+	if (!cv::solve(A, b, x, DECOMP_LU))
 	{
 		fprintf(stderr, "_PS_deflat(): can't solve least square problem!\n");
 		return -1;
@@ -6088,7 +6223,7 @@ int Utils::coh_thresh_fit(const Mat& D_A, Mat& coh_ps, Mat& Nr, Mat& coh_thresh_
 			b = A_t * b;
 			A = A_t * A;
 			double false_alarm_tmp;
-			if (solve(A, b, x, cv::DECOMP_LU))
+			if (cv::solve(A, b, x, cv::DECOMP_LU))
 			{
 
 				false_alarm_tmp = (false_alarm - mean) / (std + 1e-12);
@@ -6141,7 +6276,7 @@ int Utils::coh_thresh_fit(const Mat& D_A, Mat& coh_ps, Mat& Nr, Mat& coh_thresh_
 		A = A_t * A;
 		Mat x;
 		
-		if (solve(A, b, x, DECOMP_LU))
+		if (cv::solve(A, b, x, DECOMP_LU))
 		{
 			double a0 = x.at<double>(0, 0);
 			double a1 = x.at<double>(1, 0);

@@ -264,7 +264,6 @@ struct tri_edge
 /*********************************************************/
 /*          Delaunay三角网 三角形边序列号结构体          */
 /*********************************************************/
-
 struct edge_index
 {
 	double quality;
@@ -280,7 +279,6 @@ struct edge_index
 /*-------------------------------------------------------*/
 /*                   规则网格节点结构体                  */
 /*-------------------------------------------------------*/
-
 struct node_index
 {
 	/*节点行数（从0开始）*/
@@ -305,6 +303,136 @@ struct node_index
 	}
 };
 
+/*-------------------------------------------------------*/
+/*                    三维位置矢量                       */
+/*-------------------------------------------------------*/
+struct Position
+{
+	double x;
+	double y;
+	double z;
+	Position()
+	{
+		this->x = 0.0;
+		this->y = 0.0;
+		this->z = 0.0;
+	}
+	/*传值构造函数*/
+	Position(double x, double y, double z)
+	{
+		this->x = x;
+		this->y = y;
+		this->z = z;
+	}
+	/*拷贝构造函数*/
+	Position(const Position& cp)
+	{
+		this->x = cp.x;
+		this->y = cp.y;
+		this->z = cp.z;
+	}
+	/*赋值函数(深拷贝)*/
+	Position operator=(const Position& cp)
+	{
+		this->x = cp.x;
+		this->y = cp.y;
+		this->z = cp.z;
+		return *this;
+	}
+
+};
+
+/*-------------------------------------------------------*/
+/*                    三维速度矢量                       */
+/*-------------------------------------------------------*/
+struct Velocity
+{
+	double vx;
+	double vy;
+	double vz;
+	Velocity()
+	{
+		this->vx = 0.0;
+		this->vy = 0.0;
+		this->vz = 0.0;
+	}
+	/*传值构造函数*/
+	Velocity(double vx, double vy, double vz)
+	{
+		this->vx = vx;
+		this->vy = vy;
+		this->vz = vz;
+	}
+	/*拷贝构造函数*/
+	Velocity(const Velocity& cp)
+	{
+		this->vx = cp.vx;
+		this->vy = cp.vy;
+		this->vz = cp.vz;
+	}
+	/*赋值函数(深拷贝)*/
+	Velocity operator=(const Velocity& cp)
+	{
+		this->vx = cp.vx;
+		this->vy = cp.vy;
+		this->vz = cp.vz;
+		return *this;
+	}
+
+};
+
+/*-------------------------------------------------------*/
+/*                   卫星轨道信息                        */
+/*-------------------------------------------------------*/
+struct OSV
+{
+	double time;
+	double x;
+	double y;
+	double z;
+	double vx;
+	double vy;
+	double vz;
+	OSV()
+	{
+		time = x = y = z = vx = vy = vz = 0.0;
+	}
+	OSV(double time, double x, double y, double z, double vx, double vy, double vz)
+	{
+		this->time = time;
+		this->x = x;
+		this->y = y;
+		this->z = z;
+		this->vx = vx;
+		this->vy = vy;
+		this->vz = vz;
+	}
+	/*拷贝构造函数*/
+	OSV(const OSV& osv)
+	{
+		this->time = osv.time;
+		this->x = osv.x;
+		this->y = osv.y;
+		this->z = osv.z;
+		this->vx = osv.vx;
+		this->vy = osv.vy;
+		this->vz = osv.vz;
+	}
+	/*赋值函数*/
+	OSV operator=(const OSV& osv)
+	{
+		this->time = osv.time;
+		this->x = osv.x;
+		this->y = osv.y;
+		this->z = osv.z;
+		this->vx = osv.vx;
+		this->vy = osv.vy;
+		this->vz = osv.vz;
+		return *this;
+	}
+
+};
+
 
 /*********************************************************/
 /*               干涉SAR处理基本函数类库                 */
@@ -314,6 +442,33 @@ class InSAR_API Utils
 public:
 	Utils();
 	~Utils();
+	/*@brief 生成范德蒙矩阵
+	* @param inArray                           自变量序列
+	* @param vandermondeMatrix                 范德蒙矩阵
+	* @param degree                            阶数
+	* @return 成功返回-1，否则返回0
+	*/
+	static int createVandermondeMatrix(
+		Mat& inArray,
+		Mat& vandermondeMatrix,
+		int degree
+	);
+	/*@brief 多项式拟合（Ax=b）
+	* @param A
+	* @param b
+	* @param x
+	*/
+	static int ployFit(
+		Mat& A,
+		Mat& b,
+		Mat& x
+	);
+	/*@brief polyVal
+	* @param coefficient
+	* @param x
+	* @param val
+	*/
+	static int polyVal(Mat& coefficient, double x, double* val);
 	/** @brief 求int型矩阵的众数
 	
 	@param input                  输入矩阵（int型）
@@ -598,6 +753,21 @@ public:
 	@param multilooked_phase             多视相位
 	*/
 	int multilook(const ComplexMat& master, const ComplexMat& slave, int multilook_rg, int multilook_az, Mat& phase);
+	/*@brief InSAR多视处理（改变窗口尺寸）
+	* @param master                      主图像
+	* @param slave                       复图像
+	* @param multilook_rg                距离向多视倍数
+	* @param multilook_az                方位向多视倍数
+	* @param phase                       多视相位
+	* @return 成功返回0，否则返回-1
+	*/
+	int Multilook(
+		const ComplexMat& master, 
+		const ComplexMat& slave, 
+		int multilook_rg, 
+		int multilook_az,
+		Mat& phase
+	);
 	/** @brief 将相位转换成cos和sin（实部和虚部）
 	
 	@param phase                     输入相位
@@ -616,6 +786,14 @@ public:
 	* 参数2 84坐标系坐标
 	*/
 	int ell2xyz(Mat llh, Mat& xyz);
+	/*@brief 经/纬/高 ---> x/y/z
+	* @param lon                 经度
+	* @param lat                 纬度
+	* @param elevation           高度
+	* @param xyz                 x/y/z
+	* @return 成功返回0，否则返回-1
+	*/
+	static int ell2xyz(double lon, double lat, double elevation, Position& xyz);
 
 
 
