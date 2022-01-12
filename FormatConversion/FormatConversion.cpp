@@ -6264,10 +6264,10 @@ int Sentinel1Reader::getGeolocationGridPoint()
 		return -1;
 	}
 	ret = sscanf(pnode->FirstAttribute()->Value(), "%d", &n_gcps);
-	geolocationGridPoint.create(n_gcps, 6, CV_64F);
+	geolocationGridPoint.create(n_gcps, 7, CV_64F);//最后一行是方位向时间
 	TiXmlElement* pchild = NULL;
 	ret = xmldoc._find_node(pnode, "geolocationGridPoint", pchild);
-	double lon, lat, height, row, col, inc;
+	double lon, lat, height, row, col, inc, azimuthTime;
 	for (int i = 0; i < n_gcps; i++)
 	{
 		if (!pchild) break;
@@ -6296,6 +6296,10 @@ int Sentinel1Reader::getGeolocationGridPoint()
 		ret = xmldoc._find_node(pchild, "incidenceAngle", pnode);
 		ret = sscanf(pnode->GetText(), "%lf", &inc);
 
+		//azimuthTime
+		ret = xmldoc._find_node(pchild, "azimuthTime", pnode);
+		UTC2GPS(pnode->GetText(), &azimuthTime);
+
 		//assignment
 		geolocationGridPoint.at<double>(i, 0) = lon;
 		geolocationGridPoint.at<double>(i, 1) = lat;
@@ -6303,7 +6307,451 @@ int Sentinel1Reader::getGeolocationGridPoint()
 		geolocationGridPoint.at<double>(i, 3) = row;
 		geolocationGridPoint.at<double>(i, 4) = col;
 		geolocationGridPoint.at<double>(i, 5) = inc;
+		geolocationGridPoint.at<double>(i, 6) = azimuthTime;
 		pchild = pchild->NextSiblingElement();
+	}
+	return 0;
+}
+
+int Sentinel1Reader::updateGeolocationGridPoint()
+{
+	if (geolocationGridPoint.empty()) return 0;
+	double startTime = geolocationGridPoint.at<double>(0, 6);
+	for (int i = 0; i < geolocationGridPoint.rows; i++)
+	{
+		double time = geolocationGridPoint.at<double>(i, 6);
+		
+		if (fabs(time - startTime) > azimuthTimeInterval)
+		{
+			geolocationGridPoint.at<double>(i, 3) = (time - startTime) / azimuthTimeInterval;
+		}
+	}
+
+	return 0;
+}
+
+int Sentinel1Reader::fitCoordinateConversionCoefficient()
+{
+	double mean_lon, mean_lat, mean_inc, max_lon, max_lat, max_inc, min_lon, min_lat, min_inc;
+	Mat lon, lat, inc, row, col, gcps;
+	geolocationGridPoint(cv::Range(0, geolocationGridPoint.rows), cv::Range(0, 6)).copyTo(gcps);
+	gcps(cv::Range(0, gcps.rows), cv::Range(0, 1)).copyTo(lon);
+	gcps(cv::Range(0, gcps.rows), cv::Range(1, 2)).copyTo(lat);
+	gcps(cv::Range(0, gcps.rows), cv::Range(3, 4)).copyTo(row);
+	gcps(cv::Range(0, gcps.rows), cv::Range(4, 5)).copyTo(col);
+	gcps(cv::Range(0, gcps.rows), cv::Range(5, 6)).copyTo(inc);
+	mean_lon = cv::mean(lon)[0];
+	mean_lat = cv::mean(lat)[0];
+	mean_inc = cv::mean(inc)[0];
+	cv::minMaxLoc(lon, &min_lon, &max_lon);
+	cv::minMaxLoc(lat, &min_lat, &max_lat);
+	cv::minMaxLoc(inc, &min_inc, &max_inc);
+	lon = (lon - mean_lon) / (max_lon - min_lon + 1e-10);
+	lat = (lat - mean_lat) / (max_lat - min_lat + 1e-10);
+	inc = (inc - mean_inc) / (max_inc - min_inc + 1e-10);
+	row = (row + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);//sentinel行列起点为0，+1统一为1.
+	col = (col + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);
+
+	//拟合经度
+
+	Mat A, B, b, temp, coefficient, error, eye, b_t, a, a_t;
+	double rms;
+	lon.copyTo(b);
+	A = Mat::ones(lon.rows, 25, CV_64F);
+	row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	temp = row.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+	col.copyTo(temp);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+	col.copyTo(temp);
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+	col.copyTo(temp);
+	temp = temp.mul(col);
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+	col.copyTo(temp);
+	temp = temp.mul(col);
+	temp = temp.mul(col);
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		//error = b_t * (eye - a * error * a_t) * b;
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		temp.create(1, 32, CV_64F);
+		temp.at<double>(0, 0) = mean_lon;
+		temp.at<double>(0, 1) = max_lon - min_lon + 1e-10;
+		temp.at<double>(0, 2) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 3) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 4) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 5) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 31) = rms;
+		cv::transpose(coefficient, coefficient);
+		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+		temp.copyTo(lon_coefficient);
+	}
+
+	//拟合纬度
+
+	lat.copyTo(b);
+
+	A = Mat::ones(lon.rows, 25, CV_64F);
+	row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	temp = row.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+	col.copyTo(temp);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+	col.copyTo(temp);
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+	col.copyTo(temp);
+	temp = temp.mul(col);
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+	col.copyTo(temp);
+	temp = temp.mul(col);
+	temp = temp.mul(col);
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+	temp = temp.mul(row);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		//error = b_t * (eye - a * error * a_t) * b;
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		temp.create(1, 32, CV_64F);
+		temp.at<double>(0, 0) = mean_lat;
+		temp.at<double>(0, 1) = max_lat - min_lat + 1e-10;
+		temp.at<double>(0, 2) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 3) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 4) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 5) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 31) = rms;
+		cv::transpose(coefficient, coefficient);
+		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+		temp.copyTo(lat_coefficient);
+	}
+
+	//拟合下视角
+
+	inc.copyTo(b);
+	A = Mat::ones(inc.rows, 6, CV_64F);
+	col.copyTo(A(cv::Range(0, inc.rows), cv::Range(1, 2)));
+	temp = col.mul(col);
+	temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(2, 3)));
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(3, 4)));
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(4, 5)));
+	temp = temp.mul(col);
+	temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(5, 6)));
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		//error = b_t * (eye - a * error * a_t) * b;
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		temp.create(1, 11, CV_64F);
+		temp.at<double>(0, 0) = mean_inc;
+		temp.at<double>(0, 1) = max_inc - min_inc + 1e-10;
+		temp.at<double>(0, 2) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 3) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 10) = rms;
+		cv::transpose(coefficient, coefficient);
+		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(4, 10)));
+		temp.copyTo(inc_coefficient);
+	}
+
+	//拟合行坐标
+
+	row.copyTo(b);
+	A = Mat::ones(lon.rows, 25, CV_64F);
+	lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	temp = lon.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+	lat.copyTo(temp);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+	lat.copyTo(temp);
+	temp = temp.mul(lat);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+	lat.copyTo(temp);
+	temp = temp.mul(lat);
+	temp = temp.mul(lat);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+	lat.copyTo(temp);
+	temp = temp.mul(lat);
+	temp = temp.mul(lat);
+	temp = temp.mul(lat);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		//error = b_t * (eye - a * error * a_t) * b;
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		temp.create(1, 32, CV_64F);
+		temp.at<double>(0, 0) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 1) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 2) = mean_lon;
+		temp.at<double>(0, 3) = max_lon - min_lon + 1e-10;
+		temp.at<double>(0, 4) = mean_lat;
+		temp.at<double>(0, 5) = max_lat - min_lat + 1e-10;
+		temp.at<double>(0, 31) = rms;
+		cv::transpose(coefficient, coefficient);
+		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+		temp.copyTo(row_coefficient);
+	}
+
+	//拟合列坐标
+
+	col.copyTo(b);
+	A = Mat::ones(lon.rows, 25, CV_64F);
+	lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	temp = lon.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+	lat.copyTo(temp);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+	lat.copyTo(temp);
+	temp = temp.mul(lat);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+	lat.copyTo(temp);
+	temp = temp.mul(lat);
+	temp = temp.mul(lat);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+	lat.copyTo(temp);
+	temp = temp.mul(lat);
+	temp = temp.mul(lat);
+	temp = temp.mul(lat);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+	temp = temp.mul(lon);
+	temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		//error = b_t * (eye - a * error * a_t) * b;
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		temp.create(1, 32, CV_64F);
+		temp.at<double>(0, 0) = double(numberOfSamples) * 0.5;
+		temp.at<double>(0, 1) = double(numberOfSamples) + 1e-10;
+		temp.at<double>(0, 2) = mean_lon;
+		temp.at<double>(0, 3) = max_lon - min_lon + 1e-10;
+		temp.at<double>(0, 4) = mean_lat;
+		temp.at<double>(0, 5) = max_lat - min_lat + 1e-10;
+		temp.at<double>(0, 31) = rms;
+		cv::transpose(coefficient, coefficient);
+		coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+		temp.copyTo(col_coefficient);
 	}
 	return 0;
 }
@@ -6500,6 +6948,10 @@ int Sentinel1Reader::prepareData(const char* PODFile)
 	{
 		this->getPOD(PODFile);
 	}
+	//更新控制点
+	updateGeolocationGridPoint();
+	//拟合坐标转换系数
+	fitCoordinateConversionCoefficient();
 	isDataAvailable = true;
 	return 0;
 }
@@ -6598,7 +7050,17 @@ int Sentinel1Reader::writeToh5(const char* h5File)
 	conversion.write_array_to_h5(h5File, "dcEstimateList", this->DcEstimateList);
 	conversion.write_array_to_h5(h5File, "firstValidLine", this->firstValidLine);
 	conversion.write_array_to_h5(h5File, "firstValidSample", this->firstValidSample);
-	conversion.write_array_to_h5(h5File, "gcps", this->geolocationGridPoint);
+	conversion.write_array_to_h5(h5File, "lon_coefficient", this->lon_coefficient);
+	conversion.write_array_to_h5(h5File, "lat_coefficient", this->lat_coefficient);
+	conversion.write_array_to_h5(h5File, "row_coefficient", this->row_coefficient);
+	conversion.write_array_to_h5(h5File, "col_coefficient", this->col_coefficient);
+	conversion.write_array_to_h5(h5File, "inc_coefficient", this->inc_coefficient);
+
+
+	Mat gcps;
+	if (geolocationGridPoint.cols > 6) geolocationGridPoint(cv::Range(0, geolocationGridPoint.rows), cv::Range(0, 6)).copyTo(gcps);
+	else geolocationGridPoint.copyTo(gcps);
+	conversion.write_array_to_h5(h5File, "gcps", gcps);
 	conversion.write_array_to_h5(h5File, "lastValidLine", this->lastValidLine);
 	conversion.write_array_to_h5(h5File, "lastValidSample", this->lastValidSample);
 	conversion.write_array_to_h5(h5File, "state_vec", this->orbitList);
@@ -7487,7 +7949,7 @@ int DigitalElevationModel::getRawDEM(
 		if (!bAlreadyExist[i])
 		{
 			ret = downloadSRTM(srtmFileName[i].c_str());
-			if (return_check(ret, "downloadSRTM()", error_head)) return -1;
+			//if (return_check(ret, "downloadSRTM()", error_head)) return -1;
 		}
 	}
 	//解压文件
@@ -7500,6 +7962,7 @@ int DigitalElevationModel::getRawDEM(
 		if (-1 != GetFileAttributesA(path.c_str())) continue;
 		string srcFile = this->DEMPath + "\\" + srtmFileName[i];
 		std::replace(srcFile.begin(), srcFile.end(), '/', '\\');
+		if (GetFileAttributesA(srcFile.c_str()) == -1) continue;
 		ret = unzip(srcFile.c_str(), path.c_str());
 		if (return_check(ret, "unzip()", error_head)) return -1;
 	}
@@ -7537,10 +8000,10 @@ int DigitalElevationModel::getRawDEM(
 		folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 		string path = this->DEMPath + string("\\") + folderName;
 		path = path + string("\\") + folderName + string(".tif");
-		Mat outDEM;
+		Mat outDEM = Mat::zeros(6000, 6000, CV_16S);
 		std::replace(path.begin(), path.end(), '/', '\\');
 		ret = geotiffread(path.c_str(), outDEM);
-		if (return_check(ret, "geotiffread()", error_head)) return -1;
+		//if (return_check(ret, "geotiffread()", error_head)) return -1;
 		outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(this->rawDEM);
 		this->lonUpperLeft = lonUpperLeft + (startCol - 1) * lonSpacing;
 		this->latUpperLeft = latUpperLeft - (startRow - 1) * latSpacing;
@@ -7583,16 +8046,18 @@ int DigitalElevationModel::getRawDEM(
 				string path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM = Mat::zeros(6000, 6000, CV_16S);
 				ret = geotiffread(path.c_str(), outDEM);
-				if (return_check(ret, "geotiffread()", error_head)) return -1;
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 				folderName = srtmFileName[1];
 				folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 				path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 				ret = geotiffread(path.c_str(), outDEM2);
-				if (return_check(ret, "geotiffread()", error_head)) return -1;
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
 				cv::vconcat(outDEM, outDEM2, outDEM);
 			}
 			else
@@ -7602,16 +8067,18 @@ int DigitalElevationModel::getRawDEM(
 				string path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM = Mat::zeros(6000, 6000, CV_16S);
 				ret = geotiffread(path.c_str(), outDEM);
-				if (return_check(ret, "geotiffread()", error_head)) return -1;
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 				folderName = srtmFileName[0];
 				folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 				path = this->DEMPath + string("\\") + folderName;
 				path = path + string("\\") + folderName + string(".tif");
 				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 				ret = geotiffread(path.c_str(), outDEM2);
-				if (return_check(ret, "geotiffread()", error_head)) return -1;
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
 				cv::vconcat(outDEM, outDEM2, outDEM);
 			}
 			
@@ -7652,16 +8119,18 @@ int DigitalElevationModel::getRawDEM(
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[1];
 					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM2);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 					cv::hconcat(outDEM, outDEM2, outDEM);
 				}
 				else
@@ -7671,16 +8140,18 @@ int DigitalElevationModel::getRawDEM(
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[0];
 					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM2);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 					cv::hconcat(outDEM, outDEM2, outDEM);
 				}
 
@@ -7718,16 +8189,18 @@ int DigitalElevationModel::getRawDEM(
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[1];
 					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM2);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 					cv::hconcat(outDEM, outDEM2, outDEM);
 				}
 				else
@@ -7737,16 +8210,18 @@ int DigitalElevationModel::getRawDEM(
 					string path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 					folderName = srtmFileName[0];
 					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
 					path = this->DEMPath + string("\\") + folderName;
 					path = path + string("\\") + folderName + string(".tif");
 					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 					ret = geotiffread(path.c_str(), outDEM2);
-					if (return_check(ret, "geotiffread()", error_head)) return -1;
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
 					cv::hconcat(outDEM, outDEM2, outDEM);
 				}
 
@@ -7800,8 +8275,9 @@ int DigitalElevationModel::getRawDEM(
 			string path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 			if (endCol < 10 && startRow < 10) format = "srtm_0%d_0%d.zip";
 			else if (endCol >= 10 && startRow < 10) format = "srtm_%d_0%d.zip";
@@ -7813,8 +8289,9 @@ int DigitalElevationModel::getRawDEM(
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM2);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 			cv::hconcat(outDEM, outDEM2, outDEM);
 
 			if (startCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
@@ -7827,8 +8304,9 @@ int DigitalElevationModel::getRawDEM(
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM2);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 			if (endCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
 			else if (endCol >= 10 && endRow < 10) format = "srtm_%d_0%d.zip";
@@ -7840,8 +8318,9 @@ int DigitalElevationModel::getRawDEM(
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM3 = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM3);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 			cv::hconcat(outDEM2, outDEM3, outDEM2);
 
 			cv::vconcat(outDEM, outDEM2, outDEM);
@@ -7891,8 +8370,9 @@ int DigitalElevationModel::getRawDEM(
 			string path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 			if (endCol < 10 && startRow < 10) format = "srtm_0%d_0%d.zip";
 			else if (endCol >= 10 && startRow < 10) format = "srtm_%d_0%d.zip";
@@ -7904,8 +8384,9 @@ int DigitalElevationModel::getRawDEM(
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM2);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 			cv::hconcat(outDEM, outDEM2, outDEM);
 
 			if (startCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
@@ -7918,8 +8399,9 @@ int DigitalElevationModel::getRawDEM(
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM2);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 
 			if (endCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
 			else if (endCol >= 10 && endRow < 10) format = "srtm_%d_0%d.zip";
@@ -7931,8 +8413,9 @@ int DigitalElevationModel::getRawDEM(
 			path = this->DEMPath + string("\\") + folderName;
 			path = path + string("\\") + folderName + string(".tif");
 			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM3 = Mat::zeros(6000, 6000, CV_16S);
 			ret = geotiffread(path.c_str(), outDEM3);
-			if (return_check(ret, "geotiffread()", error_head)) return -1;
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
 			cv::hconcat(outDEM2, outDEM3, outDEM2);
 
 			cv::vconcat(outDEM, outDEM2, outDEM);
@@ -8661,7 +9144,6 @@ int Sentinel1BackGeocoding::slaveBilinearInterpolation(
 	ret = computeSlaveOffset(slaveAzimuthOffset, slaveRangeOffset);
 	if (return_check(ret, "computeSlaveOffset()", error_head)) return -1;
 	Utils util;
-	util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\slaveAzimuthOffset.bin", slaveAzimuthOffset);
 	ret = fitSlaveOffset(slaveAzimuthOffset, &a0Az, &a1Az, &a2Az);
 	if (return_check(ret, "fitSlaveOffset()", error_head)) return -1;
 	ret = fitSlaveOffset(slaveRangeOffset, &a0Rg, &a1Rg, &a2Rg);

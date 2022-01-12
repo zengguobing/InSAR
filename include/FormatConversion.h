@@ -928,6 +928,14 @@ public:
 	* @return 成功返回0，否则返回-1
 	*/
 	int getGeolocationGridPoint();
+	/*@brief 更新控制点信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int updateGeolocationGridPoint();
+	/*@brief 根据控制点数据拟合经纬度、下视角与像素坐标（行、列）之间的多项式关系
+	* @return 成功返回0，否则返回-1
+	*/
+	int fitCoordinateConversionCoefficient();
 	/*@brief 获取轨道信息
 	* @return 成功返回0，否则返回-1
 	*/
@@ -1027,6 +1035,18 @@ private:
 	Mat antennaPattern_elevationAngle;
 	/*地面控制点*/
 	Mat geolocationGridPoint;
+
+
+	/*经度拟合系数*/
+	Mat lon_coefficient;
+	/*纬度拟合系数*/
+	Mat lat_coefficient;
+	/*行坐标拟合系数*/
+	Mat row_coefficient;
+	/*列坐标拟合系数*/
+	Mat col_coefficient;
+	/*下视角拟合系数*/
+	Mat inc_coefficient;
 
 
 	/*tiff文件*/
