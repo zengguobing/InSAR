@@ -6910,6 +6910,7 @@ int Sentinel1Reader::getOtherParameters()
 	ret = xmldoc.get_double_para("rangePixelSpacing", &this->rangePixelSpacing);
 	ret = xmldoc.get_double_para("rangeSamplingRate", &this->rangeSamplingRate);
 	ret = xmldoc.get_double_para("slantRangeTime", &this->slantRangeTime);
+	ret = xmldoc.get_double_para("incidenceAngleMidSwath", &this->incidence_center);
 
 	ret = xmldoc.get_int_para("numberOfLines", &this->numberOfLines);
 	ret = xmldoc.get_int_para("numberOfSamples", &this->numberOfSamples);
@@ -7034,6 +7035,7 @@ int Sentinel1Reader::writeToh5(const char* h5File)
 	conversion.write_double_to_h5(h5File, "azimuthSteeringRate", this->azimuthSteeringRate);
 	conversion.write_double_to_h5(h5File, "prf", 1.0 / this->azimuthTimeInterval);
 	conversion.write_double_to_h5(h5File, "heading", this->headingAngle);
+	conversion.write_double_to_h5(h5File, "incidence_center", this->incidence_center);
 	conversion.write_double_to_h5(h5File, "carrier_frequency", this->radarFrequency);
 	conversion.write_double_to_h5(h5File, "slant_range_first_pixel", this->slantRangeTime * VEL_C / 2.0);
 

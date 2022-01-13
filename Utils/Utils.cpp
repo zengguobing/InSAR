@@ -2529,6 +2529,56 @@ int Utils::Multilook(
 	return 0;
 }
 
+int Utils::multilook(const Mat& phase, Mat& outPhase, int multi_rg, int multi_az)
+{
+	ComplexMat slc, slc2;
+	int ret;
+	outPhase = 0.5 * phase;
+	ret = phase2cos(outPhase, slc.re, slc.im);
+	if (return_check(ret, "phase2cos()", error_head)) return -1;
+	outPhase = -0.5 * phase;
+	ret = phase2cos(outPhase, slc2.re, slc2.im);
+	if (return_check(ret, "phase2cos()", error_head)) return -1;
+	ret = Multilook(slc, slc2, multi_rg, multi_az, outPhase);
+	if (return_check(ret, "Multilook()", error_head)) return -1;
+
+	return 0;
+}
+
+int Utils::multilook_SAR(const Mat& amplitude, Mat& outAmplitude, int multilook_rg, int multilook_az)
+{
+	if (amplitude.empty() ||
+		amplitude.rows < multilook_rg ||
+		amplitude.cols < multilook_az ||
+		multilook_rg < 1 || multilook_az < 1||
+		amplitude.type() != CV_64F
+		)
+	{
+		fprintf(stderr, "multilook_SAR(): input check failed!\n");
+		return -1;
+	}
+	int nr = amplitude.rows;
+	int nc = amplitude.cols;
+	int nr_new = (int)((double)nr / (double)multilook_az);
+	int nc_new = (int)((double)nc / (double)multilook_rg);
+	Mat tmp = Mat::zeros(nr_new, nc_new, CV_64F);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr_new; i++)
+	{
+		int left, right, bottom, top;
+		top = i * multilook_az; top = top < 0 ? 0 : top;
+		bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
+		for (int j = 0; j < nc_new; j++)
+		{
+			left = j * multilook_rg; left = left < 0 ? 0 : left;
+			right = left + multilook_rg; right = right > nc ? nc : right;
+			tmp.at<double>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+		}
+	}
+	tmp.copyTo(outAmplitude);
+	return 0;
+}
+
 int Utils::phase2cos(const Mat& phase, Mat& cos, Mat& sin)
 {
 	if (phase.rows < 1 ||
@@ -2768,6 +2818,44 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 	mod = (mod - min) / (max - min) * 255.0;
 	mod.convertTo(mod, CV_8U);
 	bool ret = cv::imwrite(filename, mod);
+	if (!ret)
+	{
+		fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", filename);
+		return -1;
+	}
+	return 0;
+}
+
+int Utils::saveAmplitude(const char* filename, Mat& amplitude)
+{
+	if (!filename || amplitude.empty() || amplitude.type() != CV_64F)
+	{
+		fprintf(stderr, "saveAmplitude(): input check failed!\n");
+		return -1;
+	}
+	double min, max;
+	int nr = amplitude.rows;
+	int nc = amplitude.cols;
+	
+	
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			amplitude.at<double>(i, j) = 20 * log10(amplitude.at<double>(i, j) + 0.001);
+		}
+	}
+	cv::minMaxLoc(amplitude, &min, &max);
+	if (fabs(max - min) < 0.00000001)
+	{
+		fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
+		return -1;
+	}
+
+	amplitude = (amplitude - min) / (max - min) * 255.0;
+	amplitude.convertTo(amplitude, CV_8U);
+	bool ret = cv::imwrite(filename, amplitude);
 	if (!ret)
 	{
 		fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", filename);

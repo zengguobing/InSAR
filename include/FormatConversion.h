@@ -986,6 +986,8 @@ private:
 	double slantRangeTime;
 	/*Heading*/
 	double headingAngle;
+	/*中心下视角*/
+	double incidence_center;
 	/*数据行数*/
 	int numberOfLines;
 	/*数据列数*/

@@ -768,6 +768,32 @@ public:
 		int multilook_az,
 		Mat& phase
 	);
+	/*@brief 相位多视处理(改变尺寸)
+	* @param phase                      待处理相位
+	* @param outPhase                   处理结果
+	* @param multi_rg                   距离向多视倍数
+	* @param multi_az                   方位向多视倍数
+	* @return 成功返回0，否则返回-1
+	*/
+	int multilook(
+		const Mat& phase,
+		Mat& outPhase,
+		int multi_rg,
+		int multi_az
+	);
+	/*@brief SAR图像多视
+	* @param amplitude                 SAR图像幅度图
+	* @param outAmplitude              多视SAR图像
+	* @param multilook_rg              距离向多视倍数
+	* @param multilook_az              方位向多视倍数
+	* @return 成功返回0，否则返回-1
+	*/
+	int multilook_SAR(
+		const Mat& amplitude,
+		Mat& outAmplitude,
+		int multilook_rg,
+		int multilook_az
+	);
 	/** @brief 将相位转换成cos和sin（实部和虚部）
 	
 	@param phase                     输入相位
@@ -807,6 +833,15 @@ public:
 	* 参数3 单视复图像
 	*/
 	int saveSLC(const char* filename, double db, ComplexMat& SLC);
+	/*@brief 量化保存SAR幅度图
+	* @param filename             保存文件名
+	* @param amplitude            幅度数据
+	* @return 成功返回0，否则返回-1
+	*/
+	int saveAmplitude(
+		const char* filename,
+		Mat& amplitude
+	);
 	/*保存干涉相位图
 	* 参数1 目标文件名
 	* 参数2 颜色映射（jet/hsv/cool/parula等）
