@@ -2579,7 +2579,8 @@ int FormatConversion::import_sentinel(
 	const char* manifest,
 	const char* subswath_name,
 	const char* polarization,
-	const char* dest_h5_file
+	const char* dest_h5_file,
+	const char* PODFile
 )
 {
 	if (manifest == NULL ||
@@ -2663,8 +2664,9 @@ int FormatConversion::import_sentinel(
 		}
 		pnode = pnode->NextSiblingElement();
 	}
-	ret = sentinel2h5(tiff_filename.c_str(), xml_filename.c_str(), dest_h5_file);
-	if (return_check(ret, "sentinel2h5()", error_head)) return -1;
+	Sentinel1Reader reader(xml_filename.c_str(), tiff_filename.c_str(), PODFile);
+	ret = reader.writeToh5(dest_h5_file);
+	if (return_check(ret, "writeToh5()", error_head)) return -1;
 	return 0;
 }
 
@@ -4053,7 +4055,7 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 		B_parallel == NULL
 		)
 	{
-		fprintf(stderr, "XMLFile_add_cut(): input check failed!\n");
+		fprintf(stderr, "XMLFile_add_regis(): input check failed!\n");
 		return -1;
 	}
 	TiXmlElement* DataNode = NULL;
@@ -4065,7 +4067,6 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 		DataNode->SetAttribute("name", datanode_name);
 		int index = 1;
 		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
-		tmp = root->Value();
 		for (; root != NULL; root = root->NextSiblingElement(), index++)
 		{
 			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
@@ -4184,6 +4185,125 @@ int XMLFile::XMLFile_add_regis(const char* datanode_name, const char* node_name,
 		Data->LinkEndChild(Row_Offset);
 		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
 		tmp = int2str(Col_offset);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+		DataNode->InsertBeforeChild(LastNode, *Data);
+	}
+	return 0;
+}
+
+int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataName, const char* dataPath, int masterIndex)
+{
+	if (!dataNode ||
+		!dataName ||
+		!dataPath
+		)
+	{
+		fprintf(stderr, "XMLFile_add_backgeocoding(): input check failed!\n");
+		return -1;
+	}
+	TiXmlElement* DataNode = NULL;
+	int ret = find_node_with_attribute(doc.RootElement(), "DataNode", "name", dataNode, DataNode);
+	string tmp;
+	if (!DataNode)
+	{
+		DataNode = new TiXmlElement("DataNode");
+		DataNode->SetAttribute("name", dataNode);
+		int index = 1;
+		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
+		for (; root != NULL; root = root->NextSiblingElement(), index++)
+		{
+			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
+				strcmp(root->Attribute("rank"), "complex-1.0") == 0 ||
+				strcmp(root->Attribute("rank"), "complex-2.0") == 0)
+				continue;
+			else
+				break;
+		}
+		string index_str = int2str(index);
+		DataNode->SetAttribute("index", index_str.c_str());
+		DataNode->SetAttribute("data_count", "1");
+		DataNode->SetAttribute("data_processing", "coregistration");
+		DataNode->SetAttribute("rank", "complex-2.0");
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+		DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(dataName));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText("complex-2.0"));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText("1"));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(dataPath));
+		Data->LinkEndChild(Data_Path);
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(0);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(0);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+
+		TiXmlElement* Data_Processing_Parameters = new TiXmlElement("Data_Processing_Parameters");
+		DataNode->LinkEndChild(Data_Processing_Parameters);
+		TiXmlElement* Master_index = new TiXmlElement("master_image");
+		tmp = int2str(masterIndex);
+		Master_index->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data_Processing_Parameters->LinkEndChild(Master_index);
+		
+		if (!root)
+		{
+			doc.RootElement()->LinkEndChild(DataNode);
+		}
+		else
+		{
+			doc.RootElement()->InsertBeforeChild(root, *DataNode);
+			while (root)
+			{
+				index_str = int2str(++index);
+				root->SetAttribute("index", index_str.c_str());
+				root = root->NextSiblingElement();
+			}
+
+		}
+	}
+	else
+	{
+		string str = DataNode->Attribute("data_count");
+		int index = str2int(str) + 1;
+		TiXmlElement* p = NULL;
+		tmp = int2str(index);
+		DataNode->SetAttribute("data_count", tmp.c_str());
+		TiXmlElement* LastNode = DataNode->LastChild()->ToElement();
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+
+		int data_count = 0;
+		ret = get_children_count(DataNode, &data_count);
+		//DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(dataName));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText("complex-2.0"));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(dataPath));
+		Data->LinkEndChild(Data_Path);
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(0);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(0);
 		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
 		Data->LinkEndChild(Col_Offset);
 		DataNode->InsertBeforeChild(LastNode, *Data);
@@ -5804,6 +5924,9 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*轨道方向*/
 	if (!read_str_from_h5(Input_file, "orbit_dir", tmp_str))
 		write_str_to_h5(Output_file, "orbit_dir", tmp_str.c_str());
+	/*子带号（swath）*/
+	if (!read_str_from_h5(Input_file, "swath", tmp_str))
+		write_str_to_h5(Output_file, "swath", tmp_str.c_str());
 	/*轨道高度*/
 	if (!read_array_from_h5(Input_file, "orbit_altitude", tmp_mat))
 		write_array_to_h5(Output_file, "orbit_altitude", tmp_mat);

@@ -87,6 +87,19 @@ public:
 		int master_index, int interp_times, int block_size,
 		const char* temporal_baseline, const char* B_effect, const char* B_parallel
 	);
+	/*@brief 添加后向地理编码配准节点
+	* @param dataNode            配准图像数据节点名
+	* @param dataName            配准图像数据名
+	* @param dataPath            配准图像数据储存路径（相对路径）
+	* @param masterIndex         主图像序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_backgeocoding(
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath,
+		int masterIndex
+	);
 	/** @brief 添加干涉相位生成节点
 
 	@param datanode_node  干涉相位图像节点名
@@ -556,18 +569,19 @@ public:
 		const char* POD_file = NULL
 	);
 	/** 导入sentinel卫星数据至h5文件中
-	* 
-	* @param manifest文件                        sentinel卫星数据manifest文件
+	* @param manifest                            sentinel卫星数据manifest文件
 	* @param subswath_name                       sentinel卫星IW模式中为（iw1/iw2/iw3）
 	* @param polarization                        极化方式（vv/vh）
 	* @param dest_h5_file                        目标h5文件
+	* @param PODFile                             精轨数据文件
 	* @return 成功返回0，否则返回-1
 	*/
 	int import_sentinel(
 		const char* manifest,
 		const char* subswath_name,
 		const char* polarization,
-		const char* dest_h5_file
+		const char* dest_h5_file,
+		const char* PODFile = NULL
 	);
 	/** @brief 读出一个burst数据
 	* 
@@ -1421,7 +1435,7 @@ public:
 	*/
 	int backGeoCodingCoregistration();
 
-private:
+public:
 
 	/*影像数量*/
 	int numOfImages;
