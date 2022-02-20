@@ -4311,6 +4311,124 @@ int XMLFile::XMLFile_add_backgeocoding(const char* dataNode, const char* dataNam
 	return 0;
 }
 
+int XMLFile::XMLFile_add_S1_Deburst(const char* dataNode, const char* dataName, const char* dataPath)
+{
+	if (!dataNode ||
+		!dataName ||
+		!dataPath
+		)
+	{
+		fprintf(stderr, "XMLFile_add_S1_Deburst(): input check failed!\n");
+		return -1;
+	}
+	TiXmlElement* DataNode = NULL;
+	int ret = find_node_with_attribute(doc.RootElement(), "DataNode", "name", dataNode, DataNode);
+	string tmp;
+	if (!DataNode)
+	{
+		DataNode = new TiXmlElement("DataNode");
+		DataNode->SetAttribute("name", dataNode);
+		int index = 1;
+		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
+		for (; root != NULL; root = root->NextSiblingElement(), index++)
+		{
+			if (strcmp(root->Attribute("rank"), "complex-0.0") == 0 ||
+				strcmp(root->Attribute("rank"), "complex-1.0") == 0)
+				continue;
+			else
+				break;
+		}
+		string index_str = int2str(index);
+		DataNode->SetAttribute("index", index_str.c_str());
+		DataNode->SetAttribute("data_count", "1");
+		DataNode->SetAttribute("data_processing", "deburst");
+		DataNode->SetAttribute("rank", "complex-1.0");
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+		DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(dataName));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText("complex-1.0"));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText("1"));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(dataPath));
+		Data->LinkEndChild(Data_Path);
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(0);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(0);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+
+		TiXmlElement* Data_Processing_Parameters = new TiXmlElement("Data_Processing_Parameters");
+		DataNode->LinkEndChild(Data_Processing_Parameters);
+		TiXmlElement* nill = new TiXmlElement("nill");
+		tmp = int2str(0);
+		nill->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data_Processing_Parameters->LinkEndChild(nill);
+
+		if (!root)
+		{
+			doc.RootElement()->LinkEndChild(DataNode);
+		}
+		else
+		{
+			doc.RootElement()->InsertBeforeChild(root, *DataNode);
+			while (root)
+			{
+				index_str = int2str(++index);
+				root->SetAttribute("index", index_str.c_str());
+				root = root->NextSiblingElement();
+			}
+
+		}
+	}
+	else
+	{
+		string str = DataNode->Attribute("data_count");
+		int index = str2int(str) + 1;
+		TiXmlElement* p = NULL;
+		tmp = int2str(index);
+		DataNode->SetAttribute("data_count", tmp.c_str());
+		TiXmlElement* LastNode = DataNode->LastChild()->ToElement();
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+
+		int data_count = 0;
+		ret = get_children_count(DataNode, &data_count);
+		//DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(dataName));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText("complex-1.0"));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(dataPath));
+		Data->LinkEndChild(Data_Path);
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(0);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(0);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+		DataNode->InsertBeforeChild(LastNode, *Data);
+	}
+	return 0;
+}
+
 int XMLFile::XMLFile_add_interferometric_phase(const char* datanode_name, const char* node_name, const char* node_path,
 	const char* master_name, const char* rank, int offset_row, int offset_col, int isdeflat, int istopo_removal, int iscoherence,
 	int win_w, int win_h, int multilook_rg, int multilook_az)
@@ -7783,6 +7901,70 @@ int Sentinel1Utils::computeImageGeoBoundry(
 	*lonMax = *lonMax + extra * 100;
 	*latMin = *latMin - extra * 100;
 	*latMax = *latMax + extra * 100;
+	return 0;
+}
+
+int Sentinel1Utils::deburst(const char* outFile)
+{
+	if (!bInitialized || !outFile)
+	{
+		fprintf(stderr, "deburst(): input check failed!\n");
+		return -1;
+	}
+
+	//创建新的deburst文件
+
+	FormatConversion conversion;
+	int ret = conversion.creat_new_h5(outFile);
+	Mat start(this->burstCount, 1, CV_32S), end(this->burstCount, 1, CV_32S);
+	start.at<int>(0, 0) = 1;
+	end.at<int>(0, 0) = this->lastValidLine.at<int>(0, 0);
+	double lastValidTime = this->burstAzimuthTime.at<double>(0, 0) +
+		(this->lastValidLine.at<int>(0, 0) - 1) * this->azimuthTimeInterval;
+	double firstValidTime;
+	int deburstLines = 0;
+	int overlap;
+	for (int i = 1; i < this->burstCount; i++)
+	{
+		firstValidTime = this->burstAzimuthTime.at<double>(i, 0) + (this->firstValidLine.at<int>(i, 0) - 1) *
+			this->azimuthTimeInterval;
+
+		overlap = round((lastValidTime - firstValidTime) / this->azimuthTimeInterval + 1);
+
+		end.at<int>(i - 1, 0) = end.at<int>(i - 1, 0) - int(overlap / 2);
+
+		start.at<int>(i, 0) = this->linesPerBurst * i + this->firstValidLine.at<int>(i, 0) + overlap - int(overlap / 2);
+
+		end.at<int>(i, 0) = this->linesPerBurst * i + this->lastValidLine.at<int>(i, 0);
+
+		lastValidTime = this->burstAzimuthTime.at<double>(i, 0) +
+			(this->lastValidLine.at<int>(i, 0) - 1) * this->azimuthTimeInterval;
+	}
+	end.at<int>(this->burstCount - 1, 0) = this->linesPerBurst * this->burstCount;
+	start -= 1;
+	//deburst
+	ComplexMat tmp, tmp2, slc;
+	ret = conversion.read_slc_from_h5(this->h5File.c_str(), tmp);
+	tmp.convertTo(tmp, CV_32F);
+	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+	slc = tmp(cv::Range(start.at<int>(0, 0), end.at<int>(0, 0)), cv::Range(0, this->samplesPerBurst));
+	for (int i = 1; i < this->burstCount; i++)
+	{
+		tmp2 = tmp(cv::Range(start.at<int>(i, 0), end.at<int>(i, 0)), cv::Range(0, this->samplesPerBurst));
+		cv::vconcat(slc.re, tmp2.re, slc.re);
+		cv::vconcat(slc.im, tmp2.im, slc.im);
+	}
+	//往文件里写入卫星数据和辅助数据
+	ret = conversion.write_slc_to_h5(outFile, slc);
+	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	ret = conversion.Copy_para_from_h5_2_h5(this->h5File.c_str(), outFile);
+	conversion.write_str_to_h5(outFile, "process_state", "deburst");
+	conversion.write_str_to_h5(outFile, "comment", "complex-1.0");
+	conversion.write_int_to_h5(outFile, "offset_row", 0);
+	conversion.write_int_to_h5(outFile, "offset_col", 0);
+	conversion.write_int_to_h5(outFile, "azimuth_len", slc.GetRows());
+	conversion.write_int_to_h5(outFile, "range_len", slc.GetCols());
+
 	return 0;
 }
 
