@@ -2826,6 +2826,99 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 	return 0;
 }
 
+int Utils::SAR_image_quantify(const char* filename, double db, ComplexMat& SLC)
+{
+	if (filename == NULL ||
+		db < 0 ||
+		SLC.GetRows() < 1 ||
+		SLC.GetCols() < 1 /*||
+		SLC.type() != CV_64F*/)
+	{
+		fprintf(stderr, "SAR_image_quantify(): input check failed!\n\n");
+		return -1;
+	}
+	ComplexMat tmp;
+	Mat mod;
+	if (SLC.type() != CV_64F && SLC.type() != CV_32F)
+	{
+		SLC.re.convertTo(tmp.re, CV_32F);
+		SLC.im.convertTo(tmp.im, CV_32F);
+		mod = tmp.GetMod();
+	}
+	else
+	{
+		mod = SLC.GetMod();
+	}
+	int nr = mod.rows;
+	int nc = mod.cols;
+	double max, min;
+	if (SLC.type() == CV_64F)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				mod.at<double>(i, j) = 20 * log10(mod.at<double>(i, j) + 0.000001);
+			}
+		}
+
+		minMaxLoc(mod, &min, &max);
+		if (fabs(max - min) < 0.00000001)
+		{
+			fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
+			return -1;
+		}
+		min = min < -1.0 ? -1.0 : min;
+		max = min + db;
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				if (mod.at<double>(i, j) >= max) mod.at<double>(i, j) = max;
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				mod.at<float>(i, j) = 20 * log10(mod.at<float>(i, j) + 0.000001);
+			}
+		}
+
+		minMaxLoc(mod, &min, &max);
+		if (fabs(max - min) < 0.00000001)
+		{
+			fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
+			return -1;
+		}
+		min = min < -1.0 ? -1.0 : min;
+		max = min + db;
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				if (mod.at<float>(i, j) >= max) mod.at<float>(i, j) = max;
+			}
+		}
+	}
+	mod = (mod - min) / (max - min) * 255.0;
+	mod.convertTo(mod, CV_8U);
+	bool ret = cv::imwrite(filename, mod);
+	if (!ret)
+	{
+		fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", filename);
+		return -1;
+	}
+	return 0;
+}
+
 int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 {
 	if (!filename || amplitude.empty() || amplitude.type() != CV_64F)

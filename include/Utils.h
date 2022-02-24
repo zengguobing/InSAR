@@ -833,6 +833,13 @@ public:
 	* 参数3 单视复图像
 	*/
 	int saveSLC(const char* filename, double db, ComplexMat& SLC);
+	/*@brief SAR图像量化
+	* @param filename       保存目标文件
+	* @param db             量化动态范围
+	* @param slc            单视复图像
+	* @return 成功返回0，否则返回-1
+	*/
+	int SAR_image_quantify(const char* filename, double db, ComplexMat& SLC);
 	/*@brief 量化保存SAR幅度图
 	* @param filename             保存文件名
 	* @param amplitude            幅度数据
