@@ -161,6 +161,16 @@ int Unwrap::MCF(
 	solution.append(".sol");
 	ret = util.read_DIMACS(solution.c_str(), k1, k2, wrapped_phase.rows, wrapped_phase.cols);
 	if (return_check(ret, "read_DIMACS(*, *, *)", error_head)) return -1;
+	util.cvmat2bin("E:\\zgb1\\functions\\k1.bin", k1);
+	util.cvmat2bin("E:\\zgb1\\functions\\k2.bin", k2);
+	//Mat quality;
+	//ret = util.phase_derivatives_variance(wrapped_phase, quality);
+	//if (return_check(ret, "phase_derivatives_variance()", error_head)) return -1;
+	//Mat mask;
+	//ret = util.gen_mask(coherence, mask, 7, 0.75);
+	//if (return_check(ret, "gen_mask()", error_head)) return -1;
+	//ret = quailtyGuidedFloodfill(wrapped_phase, unwrapped_phase, mask, quality, k1, k2);
+	//if (return_check(ret, "quailtyGuidedFloodfill()", error_head)) return -1;
 	Mat diff_1, diff_2;
 	ret = util.diff(wrapped_phase, diff_1, diff_2, false);
 	if (return_check(ret, "diff(*, *, *, *)", error_head)) return -1;
@@ -183,19 +193,1031 @@ int Unwrap::MCF(
 		diff_1.at<double>(0, i) = tmp.at<double>(0, i);
 	}
 	ret = util.cumsum(diff_1, 1);
-	/*Mat tmp = diff_1(Range(0, diff_1.rows), Range(0, 1));
-	copyMakeBorder(tmp, tmp, 1, 0, 0, 0, BORDER_CONSTANT, Scalar(0.0));
-	ret = util.cumsum(tmp, 1);
-	if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
-	copyMakeBorder(diff_2, diff_2, 0, 0, 1, 0, BORDER_CONSTANT, Scalar(0));
-	for (int i = 0; i < diff_2.rows; i++)
-	{
-		diff_2.at<double>(i, 0) = tmp.at<double>(i, 0);
-	}
-	ret = util.cumsum(diff_2, 2);*/
 	if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
 	unwrapped_phase = (diff_1)* 2 * pi;
 	unwrapped_phase = unwrapped_phase + wrapped_phase.at<double>(0, 0);
+	return 0;
+}
+
+int Unwrap::MCF_improved(
+	Mat& wrapped_phase, 
+	Mat& unwrapped_phase,
+	const char* MCF_problem_file,
+	const char* MCF_exe_path,
+	double coh_thresh
+)
+{
+	if (wrapped_phase.rows < 2 ||
+		wrapped_phase.cols < 2 ||
+		wrapped_phase.type() != CV_64F)
+	{
+		fprintf(stderr, "MCF_improved(): input check failed!\n\n");
+		return -1;
+	}
+	USES_CONVERSION;
+	Utils util;
+	Mat residue, cost, mask, phase_derivatives_variance;
+	int ret;
+	ret = util.residue(wrapped_phase, residue);
+	if (return_check(ret, "residue()", error_head)) return -1;
+	/*ret = util.phase_coherence(wrapped_phase, coherence);
+	if (return_check(ret, "phase_coherence()", error_head)) return -1;*/
+	ret = util.phase_derivatives_variance(wrapped_phase, phase_derivatives_variance);
+	//ret = util.gen_mask(phase_derivatives_variance, mask, 7, coh_thresh);
+	ret = util.gen_mask_pdv(phase_derivatives_variance, mask, 3, coh_thresh);
+	if (return_check(ret, "gen_mask_pdv()", error_head)) return -1;
+	cost = phase_derivatives_variance + 0.001;
+	cost = 1 / cost;
+	ret = util.write_DIMACS(MCF_problem_file, residue, mask, cost);
+	if (return_check(ret, "write_DIMACS(*, *, *)", error_head)) return -1;
+	Mat m; mask.convertTo(m, CV_64F);
+	util.cvmat2bin("E:\\zgb1\\functions\\mask.bin", m);
+	//////////////////////////创建并调用最小费用流法进程///////////////////////////////
+	LPWSTR szCommandLine = new TCHAR[256];
+	wcscpy(szCommandLine, A2W(MCF_exe_path));
+	wcscat(szCommandLine, L"\\mcf.exe ");
+	wcscat(szCommandLine, A2W(MCF_problem_file));
+	STARTUPINFO si;
+	PROCESS_INFORMATION p_i;
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	ZeroMemory(&p_i, sizeof(p_i));
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = FALSE;
+	BOOL bRet = ::CreateProcess(
+		NULL,           // 不在此指定可执行文件的文件名
+		szCommandLine,      // 命令行参数
+		NULL,           // 默认进程安全性
+		NULL,           // 默认线程安全性
+		FALSE,          // 指定当前进程内的句柄不可以被子进程继承
+		CREATE_NEW_CONSOLE, // 为新进程创建一个新的控制台窗口
+		NULL,           // 使用本进程的环境变量
+		NULL,           // 使用本进程的驱动器和目录
+		&si,
+		&p_i);
+	if (bRet)
+	{
+		char mcf_job_name[512]; mcf_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(mcf_job_name, "MCF_%lld", tt);
+		string mcf_job_name_string(mcf_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, mcf_job_name_string.c_str());
+		if (hd)
+		{
+			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;
+			extLimitInfo.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+			BOOL retval = SetInformationJobObject(hd, JobObjectExtendedLimitInformation, &extLimitInfo, sizeof(extLimitInfo));
+			if (retval)
+			{
+				if (p_i.hProcess)
+				{
+					retval = AssignProcessToJobObject(hd, p_i.hProcess);
+				}
+			}
+		}
+		WaitForSingleObject(p_i.hProcess, INFINITE);
+		if (szCommandLine != NULL) delete[] szCommandLine;
+		::CloseHandle(p_i.hThread);
+		::CloseHandle(p_i.hProcess);
+	}
+	else
+	{
+		fprintf(stderr, "MCF_improved(): create mcf.exe process failed!\n\n");
+		if (szCommandLine != NULL) delete[] szCommandLine;
+		return -1;
+	}
+	Mat k1, k2;
+	string solution(MCF_problem_file);
+	solution.append(".sol");
+	ret = util.read_DIMACS(solution.c_str(), k1, k2, wrapped_phase.rows, wrapped_phase.cols);
+	if (return_check(ret, "read_DIMACS(*, *, *)", error_head)) return -1;
+	util.cvmat2bin("E:\\zgb1\\functions\\k1.bin", k1);
+	util.cvmat2bin("E:\\zgb1\\functions\\k2.bin", k2);
+	Mat quality;
+	ret = util.phase_derivatives_variance(wrapped_phase, quality);
+	if (return_check(ret, "phase_derivatives_variance()", error_head)) return -1;
+	ret = quailtyGuidedFloodfill(wrapped_phase, unwrapped_phase, mask, quality, k1, k2);
+	if (return_check(ret, "quailtyGuidedFloodfill()", error_head)) return -1;
+	/*Mat diff_1, diff_2;
+	ret = util.diff(wrapped_phase, diff_1, diff_2, false);
+	if (return_check(ret, "diff(*, *, *, *)", error_head)) return -1;
+	ret = util.wrap(diff_1, diff_1);
+	if (return_check(ret, "wrap(*, *)", error_head)) return -1;
+	ret = util.wrap(diff_2, diff_2);
+	if (return_check(ret, "wrap(*, *)", error_head)) return -1;
+	double pi = 3.1415926535;
+	diff_1 = diff_1 / (2 * pi);
+	diff_2 = diff_2 / (2 * pi);
+	diff_1 = diff_1 - k1;
+	diff_2 = diff_2 - k2;
+	Mat tmp = diff_2(Range(0, 1), Range(0, diff_2.cols));
+	copyMakeBorder(tmp, tmp, 0, 0, 1, 0, BORDER_CONSTANT, Scalar(0.0));
+	ret = util.cumsum(tmp, 2);
+	if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
+	copyMakeBorder(diff_1, diff_1, 1, 0, 0, 0, BORDER_CONSTANT, Scalar(0));
+	for (int i = 0; i < diff_1.cols; i++)
+	{
+		diff_1.at<double>(0, i) = tmp.at<double>(0, i);
+	}
+	ret = util.cumsum(diff_1, 1);
+	if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
+	unwrapped_phase = (diff_1) * 2 * pi;
+	unwrapped_phase = unwrapped_phase + wrapped_phase.at<double>(0, 0);*/
+	return 0;
+}
+
+int Unwrap::quailtyGuidedFloodfill(Mat& wrapped_phase, Mat& unwrapped_phase, Mat& mask, Mat& quality, Mat& k1, Mat& k2)
+{
+	if (wrapped_phase.type() != CV_64F ||
+		quality.type() != CV_64F ||
+		mask.type() != CV_32S ||
+		mask.rows != wrapped_phase.rows ||
+		mask.cols != wrapped_phase.cols ||
+		k1.type() != CV_64F ||
+		k2.type() != CV_64F ||
+		wrapped_phase.empty() ||
+		k1.rows != (wrapped_phase.rows - 1) ||
+		k1.cols != wrapped_phase.cols ||
+		k2.rows != wrapped_phase.rows ||
+		k2.cols != (wrapped_phase.cols - 1) ||
+		k1.empty() ||
+		k2.empty()
+		)
+	{
+		fprintf(stderr, "quailtyGuidedFloodfill(): input check failed!\n");
+		return -1;
+	}
+	int nr = wrapped_phase.rows;
+	int nc = wrapped_phase.cols;
+	wrapped_phase.copyTo(unwrapped_phase);
+	Mat unwrapped_status = Mat::zeros(nr, nc, CV_32S);
+
+	/*策略1：高质量先解缠，低质量后解缠，都采用洪水淹没法*/
+#if 0
+	//找到质量最高点
+	double max_quailty = 1000000000.0;
+	int i_start = 0, j_start = 0;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (quality.at<int>(i, j) < max_quailty)
+			{
+				i_start = i; j_start = j; max_quailty = quality.at<int>(i, j);
+			}
+		}
+	}
+	priority_queue<node_index> que;
+	node_index node, node2;
+	node.row = i_start; node.col = j_start; node.quality = max_quailty;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.top();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col ;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+	queue<node_index> que2;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			ii = i + 1 > nr - 1 ? nr - 1 : i + 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i - 1 < 0 ? 0 : i - 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j - 1 < 0 ? 0 : j - 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j + 1 > nc - 1 ? nc - 1 : j + 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+		}
+	}
+	while (!que2.empty())
+	{
+		node = que2.front();
+		que2.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+#endif
+	/*策略2：低质量先解缠，高质量后解缠，都采用洪水淹没法*/
+#if 0
+	double max_quailty = 1000000000.0;
+	int i_start = 0, j_start = 0;
+	bool isbreak = false;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (mask.at<int>(i, j) == 0)
+			{
+				i_start = i; j_start = j;
+				isbreak = true;
+				break;
+			}
+		}
+		if (isbreak) break;
+	}
+	queue<node_index> que;
+	node_index node, node2;
+	node.row = i_start; node.col = j_start;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.front();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+	priority_queue<node_index> que2;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			ii = i + 1 > nr - 1 ? nr - 1 : i + 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj; node.quality = quality.at<double>(ii, jj);
+				}
+				else
+				{
+					node.row = i; node.col = j; node.quality = quality.at<double>(i, j);
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i - 1 < 0 ? 0 : i - 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj; node.quality = quality.at<double>(ii, jj);
+				}
+				else
+				{
+					node.row = i; node.col = j; node.quality = quality.at<double>(i, j);
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j - 1 < 0 ? 0 : j - 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj; node.quality = quality.at<double>(ii, jj);
+				}
+				else
+				{
+					node.row = i; node.col = j; node.quality = quality.at<double>(i, j);
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j + 1 > nc - 1 ? nc - 1 : j + 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj; node.quality = quality.at<double>(ii, jj);
+				}
+				else
+				{
+					node.row = i; node.col = j; node.quality = quality.at<double>(i, j);
+				}
+				que2.push(node);
+				continue;
+			}
+		}
+	}
+	while (!que2.empty())
+	{
+		node = que2.top();
+		que2.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+#endif
+	/*策略3：同时解缠，采用洪水淹没法*/
+#if 0
+	double max_quailty = 1000000000.0;
+	int i_start = nr / 2, j_start = nc / 2;
+	queue<node_index> que;
+	node_index node, node2;
+	node.row = 1; node.col = 1;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.front();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+#endif
+	/*策略4：同时解缠，采用洪水淹没法，并绕过枝切线*/
+#if  0
+	double max_quailty = 1000000000.0;
+	int i_start = nr / 2, j_start = nc / 2;
+	queue<node_index> que;
+	node_index node, node2;
+	node.row = i_start; node.col = j_start;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.front();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k2.at<double>(node.row, jj)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+			
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k2.at<double>(node.row, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k1.at<double>(ii, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k1.at<double>(node.row, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+	}
+#endif
+	/*策略5：高质量先解缠，低质量后解缠，都采用洪水淹没法，积分时绕过枝切线*/
+#if 0
+	//找到质量最高点
+	double max_quailty = 1000000000.0;
+	int i_start = 0, j_start = 0;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (quality.at<int>(i, j) < max_quailty)
+			{
+				i_start = i; j_start = j; max_quailty = quality.at<int>(i, j);
+			}
+		}
+	}
+	priority_queue<node_index> que;
+	node_index node, node2;
+	node.row = i_start; node.col = j_start; node.quality = max_quailty;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.top();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0 && mask.at<int>(ii, jj) == 1)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+	queue<node_index> que2;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			ii = i + 1 > nr - 1 ? nr - 1 : i + 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i - 1 < 0 ? 0 : i - 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j - 1 < 0 ? 0 : j - 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j + 1 > nc - 1 ? nc - 1 : j + 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+		}
+	}
+	while (!que2.empty())
+	{
+		node = que2.front();
+		que2.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k2.at<double>(node.row, jj)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que2.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k2.at<double>(node.row, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que2.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k1.at<double>(ii, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que2.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k1.at<double>(node.row, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que2.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+	}
+#endif
+	/*策略6：质量图引导法同时解缠，积分时绕过枝切线*/
+#if 1
+	//找到质量最高点
+	double max_quailty = 1000000000.0;
+	int i_start = 0, j_start = 0;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (quality.at<int>(i, j) < max_quailty)
+			{
+				i_start = i; j_start = j; max_quailty = quality.at<int>(i, j);
+			}
+		}
+	}
+	priority_queue<node_index> que;
+	node_index node, node2;
+	node.row = i_start; node.col = j_start; node.quality = max_quailty;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.top();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k2.at<double>(node.row, jj)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k2.at<double>(node.row, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k1.at<double>(ii, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			if (fabs(k1.at<double>(node.row, node.col)) < 0.1)
+			{
+				node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+				que.push(node2);
+				grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+				grad = atan2(sin(grad), cos(grad));
+				unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+				unwrapped_status.at<int>(ii, jj) = 1;
+			}
+		}
+	}
+
+	if ((int)cv::sum(unwrapped_status)[0] == nr * nc) return 0;
+	//处理未解缠的像素
+	queue<node_index> que2;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			ii = i + 1 > nr - 1 ? nr - 1 : i + 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i - 1 < 0 ? 0 : i - 1; jj = j;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j - 1 < 0 ? 0 : j - 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+			ii = i; jj = j + 1 > nc - 1 ? nc - 1 : j + 1;
+			if ((unwrapped_status.at<int>(ii, jj) + unwrapped_status.at<int>(i, j)) == 1)
+			{
+				if (unwrapped_status.at<int>(ii, jj) == 1)
+				{
+					node.row = ii; node.col = jj;
+				}
+				else
+				{
+					node.row = i; node.col = j;
+				}
+				que2.push(node);
+				continue;
+			}
+		}
+	}
+	while (!que2.empty())
+	{
+		node = que2.front();
+		que2.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k2.at<double>(node.row, jj);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k2.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad + 2 * PI * k1.at<double>(ii, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que2.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad - 2 * PI * k1.at<double>(node.row, node.col);
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+#endif 
+
 	return 0;
 }
 
@@ -1698,6 +2720,234 @@ int Unwrap::snaphu(
 	fclose(fp);
 	fp = NULL;
 	unwrapped_phase.convertTo(unwrapped_phase, CV_64F);
+	return 0;
+}
+
+int Unwrap::snaphu(Mat& wrapped_phase, Mat& unwrapped_phase, const char* tmp_folder)
+{
+	if (wrapped_phase.type() != CV_64F ||
+		wrapped_phase.empty() ||
+		!tmp_folder
+		)
+	{
+		fprintf(stderr, "snaphu(): input check failed!\n");
+		return -1;
+	}
+	FILE* fp = NULL;
+	string folder(tmp_folder);
+	std::replace(folder.begin(), folder.end(), '/', '\\');
+	string config_file, coh_file, in_file, out_file;
+	config_file = folder + "\\config.txt";
+	coh_file = folder + "\\coherence.dat";
+	in_file = folder + "\\wrapped_phase_snaphu.dat";
+	out_file = folder + "\\unwrapped_phase_snaphu.dat";
+	Utils util;
+	Mat coherence, phase;
+	int ret, nr, nc;
+	nr = wrapped_phase.rows;
+	nc = wrapped_phase.cols;
+	ret = util.phase_coherence(wrapped_phase, coherence);
+	if (return_check(ret, "phase_coherence()", error_head)) return -1;
+	//写入缠绕相位文件
+	fopen_s(&fp, in_file.c_str(), "wb");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", in_file.c_str());
+		return -1;
+	}
+	wrapped_phase.convertTo(phase, CV_32F);
+	fwrite(phase.data, sizeof(float), nr * nc, fp);
+	fclose(fp);
+	fp = NULL;
+	//写入相关系数文件
+	fopen_s(&fp, coh_file.c_str(), "wb");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", coh_file.c_str());
+		return -1;
+	}
+	coherence.convertTo(coherence, CV_32F);
+	fwrite(coherence.data, sizeof(float), nr * nc, fp);
+	fclose(fp);
+	fp = NULL;
+
+
+	//写入配置参数
+	
+	fp = fopen(config_file.c_str(), "wt");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", coh_file.c_str());
+		return -1;
+	}
+	fprintf(fp, "INFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "OUTFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "CORRFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "AMPFILEFORMAT FLOAT_DATA\n");
+	fprintf(fp, "LINELENGTH %d\n", nc);
+	fprintf(fp, "INFILE %s\n", in_file.c_str());
+	fprintf(fp, "OUTFILE %s\n", out_file.c_str());
+	fprintf(fp, "CORRFILE %s\n", coh_file.c_str());
+	fclose(fp);
+
+
+	USES_CONVERSION;
+	//////////////////////////创建并调用snaphu.exe进程///////////////////////////////
+	char szFilePath[MAX_PATH + 1] = { 0 };
+	GetModuleFileNameA(NULL, szFilePath, MAX_PATH);
+	string str(szFilePath);
+	str = str.substr(0, str.rfind("\\"));
+	string commandline = str + string("\\snaphu.exe -f ") + config_file;
+	char szCommandLine[1024];
+	strcpy(szCommandLine, commandline.c_str());
+
+	STARTUPINFOA si;
+	PROCESS_INFORMATION p_i;
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	ZeroMemory(&p_i, sizeof(p_i));
+	si.dwFlags = STARTF_USESHOWWINDOW;
+	si.wShowWindow = FALSE;
+	BOOL bRet = ::CreateProcessA(
+		NULL,           // 不在此指定可执行文件的文件名
+		szCommandLine,      // 命令行参数
+		NULL,           // 默认进程安全性
+		NULL,           // 默认线程安全性
+		FALSE,          // 指定当前进程内的句柄不可以被子进程继承
+		CREATE_NEW_CONSOLE, // 为新进程创建一个新的控制台窗口
+		NULL,           // 使用本进程的环境变量
+		NULL,           // 使用本进程的驱动器和目录
+		&si,
+		&p_i);
+	if (bRet)
+	{
+		char snaphu_job_name[512]; snaphu_job_name[0] = 0;
+		time_t tt = std::time(0);
+		sprintf(snaphu_job_name, "SNAPHU_%lld", tt);
+		string snaphu_job_name_string(snaphu_job_name);
+		HANDLE hd = CreateJobObjectA(NULL, snaphu_job_name_string.c_str());
+		if (hd)
+		{
+			JOBOBJECT_EXTENDED_LIMIT_INFORMATION extLimitInfo;
+			extLimitInfo.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+			BOOL retval = SetInformationJobObject(hd, JobObjectExtendedLimitInformation, &extLimitInfo, sizeof(extLimitInfo));
+			if (retval)
+			{
+				if (p_i.hProcess)
+				{
+					retval = AssignProcessToJobObject(hd, p_i.hProcess);
+				}
+			}
+		}
+		WaitForSingleObject(p_i.hProcess, INFINITE);
+		::CloseHandle(p_i.hThread);
+		::CloseHandle(p_i.hProcess);
+	}
+	else
+	{
+		fprintf(stderr, "snaphu(): create snaphu.exe process failed!\n\n");
+		return -1;
+	}
+
+	//读取结果
+	fp = NULL;
+	unwrapped_phase.create(nr, nc, CV_32F);
+	fopen_s(&fp, out_file.c_str(), "rb");
+	if (!fp)
+	{
+		fprintf(stderr, "snaphu(): can't open %s!\n", out_file.c_str());
+		return -1;
+	}
+	fread(unwrapped_phase.data, sizeof(float), nr * nc, fp);
+	fclose(fp);
+	fp = NULL;
+	unwrapped_phase.convertTo(unwrapped_phase, CV_64F);
+
+	return 0;
+}
+
+int Unwrap::qualityGuided(Mat& wrapped_phase, Mat& unwrapped_phase, Mat& quality)
+{
+	if (wrapped_phase.type() != CV_64F ||
+		wrapped_phase.empty() ||
+		quality.type() != CV_64F ||
+		quality.rows != wrapped_phase.rows ||
+		quality.cols != wrapped_phase.cols
+		)
+	{
+		fprintf(stderr, "qualityGuided(): input check failed!\n");
+		return -1;
+	}
+	int nr = wrapped_phase.rows;
+	int nc = wrapped_phase.cols;
+	wrapped_phase.copyTo(unwrapped_phase);
+	Mat unwrapped_status = Mat::zeros(nr, nc, CV_32S);
+
+	double max_quailty = 1000000000.0;
+	int i_start = 0, j_start = 0;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (quality.at<int>(i, j) < max_quailty)
+			{
+				i_start = i; j_start = j; max_quailty = quality.at<int>(i, j);
+			}
+		}
+	}
+	priority_queue<node_index> que;
+	node_index node, node2;
+	node.row = i_start; node.col = j_start; node.quality = max_quailty;
+	que.push(node);
+	int ii, jj;
+	double grad;
+	while (!que.empty())
+	{
+		node = que.top();
+		que.pop();
+		unwrapped_status.at<int>(node.row, node.col) = 1;
+		ii = node.row; jj = node.col - 1;
+		if (jj > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad;
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row; jj = node.col + 1;
+		if (jj < nc && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad;
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row - 1; jj = node.col;
+		if (ii > 0 && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad;
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+		ii = node.row + 1; jj = node.col;
+		if (ii < nr && unwrapped_status.at<int>(ii, jj) == 0)
+		{
+			node2.col = jj; node2.row = ii; node2.quality = quality.at<double>(ii, jj);
+			que.push(node2);
+			grad = wrapped_phase.at<double>(ii, jj) - wrapped_phase.at<double>(node.row, node.col);
+			grad = atan2(sin(grad), cos(grad));
+			unwrapped_phase.at<double>(ii, jj) = unwrapped_phase.at<double>(node.row, node.col) + grad;
+			unwrapped_status.at<int>(ii, jj) = 1;
+		}
+	}
+
 	return 0;
 }
 

@@ -963,6 +963,287 @@ int Utils::write_DIMACS(const char* DIMACS_file_problem, Mat& residue, Mat& cohe
 	return 0;
 }
 
+int Utils::write_DIMACS(const char* DIMACS_problem_file, const Mat& residue, Mat& mask, const Mat& cost, double thresh)
+{
+	if (residue.cols < 2 ||
+		residue.rows < 2 ||
+		cost.cols < 2 ||
+		cost.rows < 2 ||
+		residue.type() != CV_64F ||
+		cost.type() != CV_64F ||
+		mask.type() != CV_32S ||
+		mask.rows != cost.rows ||
+		mask.cols != cost.cols ||
+		(cost.rows - residue.rows) != 1 ||
+		(cost.cols - residue.cols) != 1 ||
+		thresh < 0.0)
+	{
+		fprintf(stderr, "write_DIMACS(): input check failed!\n\n");
+		return -1;
+	}
+	long nr = residue.rows;
+	long nc = residue.cols;
+	long positive, negative, total, Arcs_num = 0, Nodes_num, feasible_node_num;
+	Mat new_mask; mask.copyTo(new_mask);
+	new_mask = 1 - new_mask;
+	Mat residue_mask = Mat::zeros(nr, nc, CV_32S);
+	//根据输入掩膜数据和残差点数据更新掩膜
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (fabs(residue.at<double>(i, j)) > thresh)
+			{
+				residue_mask.at<int>(i, j) = 1;
+				new_mask.at<int>(i, j) = 1;
+				new_mask.at<int>(i + 1, j) = 1;
+				new_mask.at<int>(i + 1, j + 1) = 1;
+				new_mask.at<int>(i, j + 1) = 1;
+			}
+		}
+	}
+	mask = 1 - new_mask;
+	//根据更新的掩膜计算可行的网络节点和流数量
+	for (int i = 0; i < nr + 1; i++)
+	{
+		for (int j = 0; j < nc + 1; j++)
+		{
+			if (new_mask.at<int>(i, j) == 1)
+			{
+				int ii, jj;
+				ii = i - 1; ii = ii < 0 ? 0 : ii;
+				jj = j; jj = jj > nc - 1 ? nc - 1 : jj;
+				residue_mask.at<int>(ii, jj) = 1;
+
+				ii = i - 1; ii = ii < 0 ? 0 : ii;
+				jj = j - 1; jj = jj < 0 ? 0 : jj;
+				residue_mask.at<int>(ii, jj) = 1;
+
+				ii = i; ii = ii > nr - 1 ? nr - 1 : ii;
+				jj = j; jj = jj > nc - 1 ? nc - 1 : jj;
+				residue_mask.at<int>(ii, jj) = 1;
+
+				ii = i; ii = ii > nr - 1 ? nr - 1 : ii;
+				jj = j - 1; jj = jj < 0 ? 0 : jj;
+				residue_mask.at<int>(ii, jj) = 1;
+			}
+		}
+	}
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (residue_mask.at<int>(i, j) == 1)
+			{
+				int ii, jj;
+				ii = i; jj = j - 1;
+				if (jj >= 0 && residue_mask.at<int>(ii, jj) == 1) Arcs_num++;
+				ii = i; jj = j + 1;
+				if (jj < nc && residue_mask.at<int>(ii, jj) == 1) Arcs_num++;
+				ii = i - 1; jj = j;
+				if (ii >= 0 && residue_mask.at<int>(ii, jj) == 1) Arcs_num++;
+				ii = i + 1; jj = j;
+				if (ii < nr && residue_mask.at<int>(ii, jj) == 1) Arcs_num++;
+			}
+		}
+	}
+	//计算可行节点掩膜边缘点数
+	int edge_node_num = 0;
+	for (int j = 0; j < nc; j++)
+	{
+		if (residue_mask.at<int>(0, j) == 1) edge_node_num++;
+		if (residue_mask.at<int>(nr - 1, j) == 1) edge_node_num++;
+	}
+	for (int i = 1; i < nr - 1; i++)
+	{
+		if (residue_mask.at<int>(i, 0) == 1) edge_node_num++;
+		if (residue_mask.at<int>(i, nc - 1) == 1) edge_node_num++;
+	}
+	long i, j;
+	long node_index = 1;
+	long node_index2;
+	double sum = 0.0;
+	//统计正负残差点数
+	positive = 0;
+	negative = 0;
+	for (i = 0; i < nr; i++)
+	{
+		for (j = 0; j < nc; j++)
+		{
+			if (residue.at<double>(i, j) > thresh)
+			{
+				positive++;
+			}
+			if (residue.at<double>(i, j) < -thresh)
+			{
+				negative++;
+			}
+		}
+	}
+	bool b_balanced = (positive == negative);
+	if (/*!b_balanced*/1)
+	{
+		Nodes_num = residue.rows * residue.cols + 1;
+		Arcs_num += 2 * 2 * residue.cols + 2 * 2 * (residue.rows - 2);
+		/*Arcs_num = 2 * (residue.rows - 1) * residue.cols + 2 * residue.rows * (residue.cols - 1) +
+			2 * 2 * residue.cols + 2 * 2 * (residue.rows - 2);*/
+	}
+	else
+	{
+		Nodes_num = residue.rows * residue.cols;
+		Arcs_num = Arcs_num;
+		//Arcs_num = 2 * (residue.rows - 1) * residue.cols + 2 * residue.rows * (residue.cols - 1);
+	}
+	ofstream fout;
+	FILE* fp = NULL;
+	fopen_s(&fp, DIMACS_problem_file, "wt");
+	if (!fp)
+	{
+		fprintf(stderr, "write_DIMACS(): cant't open file %s\n\n", DIMACS_problem_file);
+		return -1;
+	}
+	fprintf(fp, "c This is a DIMACS file, describing Minimum Cost Flow problem.\n");
+	fprintf(fp, "c Problem line (nodes, links)\n");
+	fprintf(fp, "p min %ld %ld\n", Nodes_num, Arcs_num);
+	fprintf(fp, "c Node descriptor lines (supply+ or demand-)\n");
+
+
+	/*
+	* 写入节点的度（残差值1，-1）
+	*/
+
+	for (i = 0; i < nr; i++)
+	{
+		for (j = 0; j < nc; j++)
+		{
+			if (residue.at<double>(i, j) > thresh)
+			{
+				node_index = i * nc + j + 1;
+				fprintf(fp, "n %ld %lf\n", node_index, residue.at<double>(i, j));
+				sum += residue.at<double>(i, j);
+			}
+			if (residue.at<double>(i, j) < -thresh)
+			{
+				node_index = i * nc + j + 1;
+				fprintf(fp, "n %ld %lf\n", node_index, residue.at<double>(i, j));
+				sum += residue.at<double>(i, j);
+			}
+		}
+	}
+
+	/*写接地节点*/
+
+	node_index = nc * nr + 1;
+	if (/*!b_balanced*/1)
+	{
+		fprintf(fp, "n %ld %lf\n", node_index, -sum);
+	}
+
+
+	long earth_node_index = node_index;
+
+	/*
+	* 写入每个有向弧的费用（流费用）
+	*/
+	long lower_bound = 0;
+	long upper_bound = 5;
+	double mean_cost;
+	fprintf(fp, "c Arc descriptor lines (from, to, minflow, maxflow, cost)\n");
+	/*接地节点的有向弧流费用*/
+	if (/*!b_balanced*/1)
+	{
+		//top
+		for (i = 0; i < nc; i++)
+		{
+			node_index = i + 1;
+			mean_cost = cost.at<double>(0, i);
+			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+				node_index, earth_node_index, lower_bound, upper_bound, mean_cost,
+				earth_node_index, node_index, lower_bound, upper_bound, mean_cost);
+		}
+		//bottom
+		for (i = 0; i < nc; i++)
+		{
+			node_index = nc * (nr - 1) + i + 1;
+			mean_cost = cost.at<double>(nr - 1, i);
+			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+				node_index, earth_node_index, lower_bound, upper_bound, mean_cost,
+				earth_node_index, node_index, lower_bound, upper_bound, mean_cost);
+		}
+		//left
+		for (i = 1; i < nr - 1; i++)
+		{
+			node_index = nc * i + 1;
+			mean_cost = cost.at<double>(i, 0);
+			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+				node_index, earth_node_index, lower_bound, upper_bound, mean_cost,
+				earth_node_index, node_index, lower_bound, upper_bound, mean_cost);
+		}
+		//right
+		for (i = 1; i < nr - 1; i++)
+		{
+			node_index = nc * (i + 1);
+			mean_cost = cost.at<double>(i, nc - 1);
+			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+				node_index, earth_node_index, lower_bound, upper_bound, mean_cost,
+				earth_node_index, node_index, lower_bound, upper_bound, mean_cost);
+		}
+	}
+
+	/*非接地节点的有向弧流费用*/
+	for (i = 0; i < nr; i++)
+	{
+		for (j = 0; j < nc; j++)
+		{
+			if (residue_mask.at<int>(i, j) == 1)
+			{
+				node_index = i * nc + j + 1;
+				int ii, jj;
+				
+				ii = i; jj = j - 1;
+				if (jj >= 0 && residue_mask.at<int>(ii, jj) == 1)
+				{
+					node_index2 = ii * nc + jj + 1;
+					mean_cost = mean(cost(Range(i, i + 1), Range(j, j + 1))).val[0];
+					fprintf(fp, "a %ld %ld %ld %ld %lf\n",
+						node_index, node_index2, lower_bound, upper_bound, mean_cost);
+				}
+
+				ii = i; jj = j + 1;
+				if (jj < nc && residue_mask.at<int>(ii, jj) == 1)
+				{
+					node_index2 = ii * nc + jj + 1;
+					mean_cost = mean(cost(Range(i, i + 1), Range(j, j + 1))).val[0];
+					fprintf(fp, "a %ld %ld %ld %ld %lf\n",
+						node_index, node_index2, lower_bound, upper_bound, mean_cost);
+				}
+				ii = i - 1; jj = j;
+				if (ii >= 0 && residue_mask.at<int>(ii, jj) == 1)
+				{
+					node_index2 = ii * nc + jj + 1;
+					mean_cost = mean(cost(Range(i, i + 1), Range(j, j + 1))).val[0];
+					fprintf(fp, "a %ld %ld %ld %ld %lf\n",
+						node_index, node_index2, lower_bound, upper_bound, mean_cost);
+				}
+				ii = i + 1; jj = j;
+				if (ii < nr && residue_mask.at<int>(ii, jj) == 1)
+				{
+					node_index2 = ii * nc + jj + 1;
+					mean_cost = mean(cost(Range(i, i + 1), Range(j, j + 1))).val[0];
+					fprintf(fp, "a %ld %ld %ld %ld %lf\n",
+						node_index, node_index2, lower_bound, upper_bound, mean_cost);
+				}
+			}
+		}
+	}
+
+	fprintf(fp, "c ");
+	fprintf(fp, "c End of file");
+	if (fp) fclose(fp);
+	fp = NULL;
+	return 0;
+}
+
 int Utils::cumsum(Mat& phase, int dim)
 {
 	/*
@@ -1383,6 +1664,42 @@ int Utils::gen_mask(Mat& coherence, Mat& mask, int wnd_size, double thresh)
 		{
 			mean = cv::mean(temp_coh(cv::Range(i, i + 2 * radius + 1), cv::Range(j, j + 2 * radius + 1)))[0];
 			if (mean > thresh && coherence.at<double>(i, j) > thresh) mask.at<int>(i, j) = 1;
+		}
+	}
+	return 0;
+}
+
+int Utils::gen_mask_pdv(Mat& phase_derivatives_variance, Mat& mask, int wndsize, double thresh)
+{
+	if (phase_derivatives_variance.rows < 2 ||
+		phase_derivatives_variance.cols < 2 ||
+		phase_derivatives_variance.channels() != 1 ||
+		phase_derivatives_variance.type() != CV_64F ||
+		wndsize < 0 ||
+		wndsize > phase_derivatives_variance.rows ||
+		thresh < 0.0 ||
+		thresh > 1.0
+		)
+	{
+		fprintf(stderr, "gen_mask(): input check failed!\n\n");
+		return -1;
+	}
+	int nr = phase_derivatives_variance.rows;
+	int nc = phase_derivatives_variance.cols;
+	Mat temp_coh;
+	phase_derivatives_variance.copyTo(temp_coh);
+	int radius = (wndsize + 1) / 2;
+	cv::copyMakeBorder(temp_coh, temp_coh, radius, radius, radius, radius, cv::BORDER_REFLECT);
+	Mat tmp = Mat::zeros(nr, nc, CV_32S);
+	tmp.copyTo(mask);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr; i++)
+	{
+		double mean;
+		for (int j = 0; j < nc; j++)
+		{
+			mean = cv::mean(temp_coh(cv::Range(i, i + 2 * radius + 1), cv::Range(j, j + 2 * radius + 1)))[0];
+			if (mean < thresh && phase_derivatives_variance.at<double>(i, j) < thresh) mask.at<int>(i, j) = 1;
 		}
 	}
 	return 0;

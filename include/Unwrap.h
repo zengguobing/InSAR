@@ -27,6 +27,38 @@ public:
 		const char* MCF_problem_file,
 		const char* MCF_EXE_PATH
 	);
+	/*@brief 改进的最小费用流算法
+	* @param wrapped_phase                待解缠相位
+	* @param unwrapped_phase              解缠相位（返回值）
+	* @param MCF_problem_file             最小费用流问题描述文件（DIMACS文件）
+	* @param MCF_exe_path                 最小费用流求解器路径（mcf.exe路径）
+	* @param coh_thresh                   高低质量划分阈值（默认为0.7）
+	* @return 成功返回0，否则返回-1
+	*/
+	int MCF_improved(
+		Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		const char* MCF_problem_file,
+		const char* MCF_exe_path,
+		double coh_thresh = 0.75
+	);
+	/*@brief 基于相位质量的洪水淹没法积分解缠
+	* @param wrapped_phase                待解缠相位
+	* @param unwrapped_phase              解缠相位
+	* @param mask                         高低质量掩膜（高质量为1，低质量为0）
+	* @param quality                      相位质量图
+	* @param k1                           相位模糊梯度（垂直方向）
+	* @param k2                           相位模糊梯度（水平方向）
+	* @return 成功返回0，否则返回-1
+	*/
+	int quailtyGuidedFloodfill(
+		Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		Mat& mask,
+		Mat& quality,
+		Mat& k1,
+		Mat& k2
+	);
 	/*基于不规则网络的最小费用流解缠算法
 	* 参数1 待解缠相位
 	* 参数2 解缠相位（返回值）
@@ -186,6 +218,30 @@ public:
 		const char* project_path,
 		const char* tmp_folder,
 		const char* exe_path
+	);
+
+	/*@brief 统计费用流法解缠（SNAPHU）
+	* @param wrapped_phase                               待解缠相位
+	* @param unwrapped_phase                             解缠相位（返回值）
+	* @param tmp_folder                                  中间结果文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int snaphu(
+		Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		const char* tmp_folder
+	);
+
+	/*@brief 质量图法解缠
+	* @param wrapped_phase                               缠绕相位
+	* @param unwrapped_phase                             解缠相位（返回值）
+	* @param quality                                     相位质量
+	* @return 成功返回0，否则返回-1
+	*/
+	int qualityGuided(
+		Mat& wrapped_phase,
+		Mat& unwrapped_phase,
+		Mat& quality
 	);
 
 	/** @brief 求相位图SPD

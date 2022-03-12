@@ -285,21 +285,27 @@ struct node_index
 	int row;
 	/*节点列数（从0开始）*/
 	int col;
+	/*节点相位质量*/
+	double quality;
 	/*默认构造函数*/
 	node_index()
 	{
-		row = 0; col = 0;
+		row = 0; col = 0; quality = 0.0;
 	}
 	/*拷贝构造函数*/
 	node_index(const node_index& cp)
 	{
-		this->row = cp.row; this->col = cp.col;
+		this->row = cp.row; this->col = cp.col; this->quality = cp.quality;
 	}
 	/*赋值函数*/
 	node_index operator = (const node_index& cp)
 	{
-		this->row = cp.row; this->col = cp.col;
+		this->row = cp.row; this->col = cp.col; this->quality = cp.quality;
 		return *this;
+	}
+	friend bool operator < (struct node_index a, struct node_index b)
+	{
+		return a.quality > b.quality;
 	}
 };
 
@@ -608,6 +614,19 @@ public:
 	* 参数4 阈值
 	*/
 	int gen_mask(Mat& coherence, Mat& mask, int wnd_size, double thresh);
+	/*@brief 根据相位导数方差和设定阈值计算高质量掩膜
+	* @param phase_derivatives_variance                   相位导数方差
+	* @param mask                                         输出高质量掩膜
+	* @param wndsize                                      计算掩膜窗口大小
+	* @param thresh                                       阈值
+	* @return 成功返回0，否则返回-1
+	*/
+	int gen_mask_pdv(
+		Mat& phase_derivatives_variance,
+		Mat& mask,
+		int wndsize,
+		double thresh
+	);
 	/*计算mask（筛选高质量点）
 	* 参数1 相关系数矩阵
 	* 参数2 相位导数方差
@@ -655,6 +674,21 @@ public:
 	 参数4 残差点阈值(大于0)
 	*/
 	int write_DIMACS(const char* DIMACS_file_problem, Mat& residue, Mat& coherence, double thresh);
+	/*@brief 写入DIMACS文件（表述改进的最小费用流问题）
+	* @param DIMACS_problem_file      目标文件
+	* @param residue                  残差点矩阵
+	* @param mask                     可行路径区域掩膜(int型)
+	* @param cost                     流费用
+	* @param thresh                   残差点阈值（默认为0.7）
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_DIMACS(
+		const char* DIMACS_problem_file,
+		const Mat& residue,
+		Mat& mask,
+		const Mat& cost,
+		double thresh = 0.7
+	);
 	/*写入DIMACS文件（描述最小费用问题，不规则三角网络）
 	* 参数1 目标文件名
 	* 参数2 Delaunay三角形结构体数组
