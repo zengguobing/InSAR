@@ -6114,12 +6114,12 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*行坐标拟合系数*/
 	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
-	/*行偏移量*/
-	if (!read_array_from_h5(Input_file, "offset_row", tmp_mat))
-		write_array_to_h5(Output_file, "offset_row", tmp_mat);
-	/*列偏移量*/
-	if (!read_array_from_h5(Input_file, "offset_col", tmp_mat))
-		write_array_to_h5(Output_file, "offset_col", tmp_mat);
+	///*行偏移量*/
+	//if (!read_array_from_h5(Input_file, "offset_row", tmp_mat))
+	//	write_array_to_h5(Output_file, "offset_row", tmp_mat);
+	///*列偏移量*/
+	//if (!read_array_from_h5(Input_file, "offset_col", tmp_mat))
+	//	write_array_to_h5(Output_file, "offset_col", tmp_mat);
 	return 0;
 }
 
