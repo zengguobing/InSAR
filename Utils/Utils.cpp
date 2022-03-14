@@ -5481,6 +5481,7 @@ int Utils::stack_coregistration(
 		//if (slave1.type() != CV_16S) slave1.convertTo(slave1, CV_16S);
 		int rows_slave, cols_slave;
 		rows_slave = slave1.GetRows(); cols_slave = slave1.GetCols();
+		type = slave1.type();
 		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
 #pragma omp parallel for schedule(guided)
 		for (int i = 0; i < rows; i++)
