@@ -54,6 +54,7 @@ public:
 	@param lat            中心纬度
 	@param width          裁剪宽度
 	@param height         裁剪高度
+	@param data_rank      数据等级
 	*/
 	int XMLFile_add_cut(
 		const char* datenode_name,
@@ -62,7 +63,8 @@ public:
 		int Row_offset,
 		int Col_offset,
 		double lon, double lat,
-		double width, double height
+		double width, double height,
+		const char* data_rank
 	);
 	/** @brief 添加配准图像节点
 

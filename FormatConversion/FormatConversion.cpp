@@ -1484,9 +1484,10 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	ret = write_array_to_h5(dst_h5_filename, "azimuth_spacing", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 	//距离向采样间隔
-	ret = xmldoc._find_node(pnode, "slantRange", pchild);
+	ret = xmldoc._find_node(pnode, "commonRSF", pchild);
 	if (return_check(ret, "_find_node()", error_head)) return -1;
 	ret = sscanf(pchild->GetText(), "%lf", &range_spacing);
+	range_spacing = VEL_C / range_spacing / 2.0;
 	if (ret != 1)
 	{
 		fprintf(stderr, "TSX2h5(): groundNear not found in %s!\n", xml_filename);
@@ -3902,7 +3903,18 @@ int XMLFile::XMLFile_add_origin(
 
 
 
-int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, const char* node_path, int Row_offset, int Col_offset, double lon, double lat, double width, double height)
+int XMLFile::XMLFile_add_cut(
+	const char* datanode_name,
+	const char* node_name,
+	const char* node_path,
+	int Row_offset,
+	int Col_offset, 
+	double lon, 
+	double lat, 
+	double width,
+	double height,
+	const char* data_rank
+)
 {
 	if (datanode_name == NULL ||
 		node_name == NULL ||
@@ -3936,7 +3948,7 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 		DataNode->SetAttribute("index", index_str.c_str());
 		DataNode->SetAttribute("data_count", "1");
 		DataNode->SetAttribute("data_processing", "cut");
-		DataNode->SetAttribute("rank", "complex-1.0");
+		DataNode->SetAttribute("rank", data_rank);
 		
 		
 		TiXmlElement* Data = new TiXmlElement("Data");
@@ -3945,7 +3957,7 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 		Data_Name->LinkEndChild(new TiXmlText(node_name));
 		Data->LinkEndChild(Data_Name);
 		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
-		Data_Rank->LinkEndChild(new TiXmlText("complex-1.0"));
+		Data_Rank->LinkEndChild(new TiXmlText(data_rank));
 		Data->LinkEndChild(Data_Rank);
 		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
 		Data_Index->LinkEndChild(new TiXmlText("1"));
@@ -4022,7 +4034,7 @@ int XMLFile::XMLFile_add_cut(const char* datanode_name, const char* node_name, c
 		Data_Name->LinkEndChild(new TiXmlText(node_name));
 		Data->LinkEndChild(Data_Name);
 		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
-		Data_Rank->LinkEndChild(new TiXmlText("complex-1.0"));
+		Data_Rank->LinkEndChild(new TiXmlText(data_rank));
 		Data->LinkEndChild(Data_Rank);
 		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
 		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));
@@ -5503,18 +5515,19 @@ int XMLFile::get_stateVec_from_TSX(Mat& stateVec)
 	{
 		if (!pnode) break;
 		//GPS时间
-		ret = _find_node(pnode, "timeGPS", pchild);
+		ret = _find_node(pnode, "timeUTC", pchild);
 		if (ret < 0)
 		{
 			fprintf(stderr, "get_stateVec_from_TSX(): %s : unknown data format!\n", this->m_xmlFileName);
 			return -1;
 		}
-		ret = sscanf(pchild->GetText(), "%lf", &GPS_time);
-		if (ret != 1)
-		{
-			fprintf(stderr, "get_stateVec_from_TSX(): %s : unknown data format!\n", this->m_xmlFileName);
-			return -1;
-		}
+		UTC2GPS(pchild->GetText(), &GPS_time);
+		//ret = sscanf(pchild->GetText(), "%lf", &GPS_time);
+		//if (ret != 1)
+		//{
+		//	fprintf(stderr, "get_stateVec_from_TSX(): %s : unknown data format!\n", this->m_xmlFileName);
+		//	return -1;
+		//}
 		//posX
 		ret = _find_node(pnode, "posX", pchild);
 		if (ret < 0)
@@ -6114,6 +6127,9 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*行坐标拟合系数*/
 	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "slant_range_first_pixel", tmp_mat))
+		write_array_to_h5(Output_file, "slant_range_first_pixel", tmp_mat);
 	///*行偏移量*/
 	//if (!read_array_from_h5(Input_file, "offset_row", tmp_mat))
 	//	write_array_to_h5(Output_file, "offset_row", tmp_mat);
@@ -7772,7 +7788,8 @@ int Sentinel1Utils::getZeroDopplerTime(Position groundPosition, double* zeroDopp
 			upperBoundFreq = midFreq;
 		}
 		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
-			return midTime;
+			*zeroDopplerTime =  midTime;
+			return 0;
 		}
 
 		diffTime = fabs(upperBoundTime - lowerBoundTime);
