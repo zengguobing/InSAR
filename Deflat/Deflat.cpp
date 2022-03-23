@@ -408,8 +408,6 @@ int Deflat::deflat(
 		phase.empty() ||
 		phase.type() != CV_64F ||
 		phase.cols * phase.rows < 500||
-		offset_row < 0 ||
-		offset_col < 0 ||
 		height < 0.0||
 		time_interval < 0.0||
 		time_interval2 < 0.0 ||
@@ -640,7 +638,7 @@ int Deflat::topo_removal(
 		dem_range_lat.type() != CV_64F || dem_range_lon.type() != CV_64F ||
 		stateVec1.cols != 7 || stateVec1.rows < 7 || stateVec1.type() != CV_64F || stateVec2.cols != 7 || stateVec2.rows < 7 || stateVec2.type() != CV_64F ||
 		lon_coef.rows != 1 || lon_coef.cols != 32 || lon_coef.type() != CV_64F || lat_coef.rows != 1 || lat_coef.cols != 32 || lat_coef.type() != CV_64F ||
-		offset_row < 0 || offset_col < 0 || interp_interval1 < 0.0 || interp_interval2 < 0.0 ||
+		interp_interval1 < 0.0 || interp_interval2 < 0.0 ||
 		mode > 2 || mode < 1 || wavelength < 0.0 || inc_coef.type() != CV_64F||inc_coef.rows != 1|| inc_coef.cols != 11
 		)
 	{
@@ -841,8 +839,6 @@ int Deflat::topography_simulation(
 		inc_cofficient.rows != 1 ||
 		inc_cofficient.cols != 11 ||
 		nearRangeTime <= 0.0 ||
-		offset_row < 0 ||
-		offset_col < 0 ||
 		prf1 <= 0.0 ||
 		prf2 <= 0.0 ||
 		wavelength < 0.0 ||
@@ -876,6 +872,8 @@ int Deflat::topography_simulation(
 		sceneHeight, sceneWidth, prf1, rangeSpacing, wavelength,
 		nearRangeTime, acquisition_start_time, acquisition_stop_time, statevector1, interp_times);
 	if (return_check(ret, "demMapping()", error_head)) return -1;
+	//Mat out; dem_out.convertTo(out, CV_64F);
+	//util.cvmat2bin("E:\\zgb1\\functions\\out.bin", out);
 	ret = util.baseline_estimation(statevector1, statevector2, lon_cofficient, lat_cofficient, offset_row,
 		offset_col, dem_out.rows, dem_out.cols,
 		1 / prf1, 1 / prf2, &B_effect, &B_para);
@@ -911,8 +909,6 @@ int Deflat::demMapping(
 		DEM84.type() != CV_16S ||
 		sceneHeight < 10 ||
 		sceneWidth < 10 ||
-		offset_row < 0 ||
-		offset_col < 0 ||
 		prf <= 0 ||
 		wavelength <= 0 ||
 		rangeSpacing <= 0 ||
@@ -1047,9 +1043,7 @@ int Deflat::demMapping(
 			}
 		}
 	}
-	Utils util;
-	Mat out; DEM_out.convertTo(out, CV_64F);
-	util.cvmat2bin("E:\\zgb1\\functions\\out.bin", out);
+	
 	//Í¶Ó°DEM²åÖµ
 	for (int i = 0; i < sceneHeight; i++)
 	{
@@ -1173,8 +1167,6 @@ int Deflat::topography_phase_simulation(
 		inc_coef.rows != 1 ||
 		inc_coef.cols != 11 ||
 		nearRangeTime <= 0.0 ||
-		offset_row < 0 ||
-		offset_col < 0 ||
 		wavelength < 0.0 ||
 		rangeSpacing < 0.0
 		)
@@ -1236,8 +1228,6 @@ int Deflat::computeImageGeoBoundry(
 		lat_coefficient.type() != CV_64F ||
 		sceneHeight < 1 ||
 		sceneWidth < 1 ||
-		offset_row < 0 ||
-		offset_col < 0 ||
 		!lonMax || !lonMin || !latMax || !latMin
 		)
 	{

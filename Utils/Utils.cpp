@@ -6,10 +6,17 @@
 #include"..\include\Registration.h"
 #include"..\include\Deflat.h"
 #include"..\include\Unwrap.h"
+#include<direct.h>
+#include<SensAPI.h>
+#include<urlmon.h>
+#include<Windows.h>
 #include<tchar.h>
 #include <atlconv.h>
 #include"../include/FormatConversion.h"
 #include"Eigen/Dense"
+
+#pragma comment(lib,"URlmon")
+#pragma comment(lib, "Sensapi.lib")
 
 #ifdef _DEBUG
 #pragma comment(lib,"ComplexMat_d.lib")
@@ -90,10 +97,7 @@ inline bool parallel_flag_change(volatile bool parallel_flag, int ret)
 }
 Utils::Utils()
 {
-	memset(this->error_head, 0, 256);
-	memset(this->parallel_error_head, 0, 256);
-	strcpy(this->error_head, "UTILS_DLL_ERROR: error happens when using ");
-	strcpy(this->parallel_error_head, "UTILS_DLL_ERROR: error happens when using parallel computing in function: ");
+
 }
 
 Utils::~Utils()
@@ -7678,8 +7682,6 @@ int Utils::baseline_estimation(
 		lat_coef.cols != 32 ||
 		lat_coef.rows != 1 ||
 		lat_coef.type() != CV_64F ||
-		offset_row < 0 ||
-		offset_col < 0 ||
 		B_effect == NULL ||
 		B_parallel == NULL ||
 		time_interval < 0.0 ||
@@ -9129,6 +9131,850 @@ int Utils::unwrap_3D_adaptive_tiling(
 	}
 	mask1.convertTo(mask1, CV_64F);
 	cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\mask1.bin", mask1);
+	return 0;
+}
+
+int Utils::computeImageGeoBoundry(
+	Mat& lat_coefficient,
+	Mat& lon_coefficient,
+	int sceneHeight,
+	int sceneWidth, 
+	int offset_row,
+	int offset_col,
+	double* lonMax,
+	double* latMax,
+	double* lonMin,
+	double* latMin
+)
+{
+	if (lon_coefficient.rows != 1 ||
+		lon_coefficient.cols != 32 ||
+		lon_coefficient.type() != CV_64F ||
+		lat_coefficient.rows != 1 ||
+		lat_coefficient.cols != 32 ||
+		lat_coefficient.type() != CV_64F ||
+		sceneHeight < 1 ||
+		sceneWidth < 1 ||
+		!lonMax || !lonMin || !latMax || !latMin
+		)
+	{
+		fprintf(stderr, "computeImageGeoBoundry(): input check failed! \n");
+		return -1;
+	}
+	int ret;
+	Utils util;
+	/*
+	* 图像坐标转经纬坐标
+	*/
+	Mat row, col;
+	row.create(4, 1, CV_64F); col.create(4, 1, CV_64F);
+	row.at<double>(0, 0) = offset_row;//左上角
+	col.at<double>(0, 0) = offset_col;
+
+	row.at<double>(1, 0) = offset_row;//右上角
+	col.at<double>(1, 0) = offset_col + sceneWidth;
+
+	row.at<double>(2, 0) = offset_row + sceneHeight;//左下角
+	col.at<double>(2, 0) = offset_col;
+
+	row.at<double>(3, 0) = offset_row + sceneHeight;//右下角
+	col.at<double>(3, 0) = offset_col + sceneWidth;
+	Mat lon, lat;
+	ret = util.coord_conversion(lon_coefficient, row, col, lon);
+	if (return_check(ret, "coord_conversion()", error_head)) return -1;
+	ret = util.coord_conversion(lat_coefficient, row, col, lat);
+	if (return_check(ret, "coord_conversion()", error_head)) return -1;
+	cv::minMaxLoc(lon, lonMin, lonMax);
+	cv::minMaxLoc(lat, latMin, latMax);
+	double extra = 5.0 / 6000;
+	*lonMin = *lonMin - extra * 20;
+	*lonMax = *lonMax + extra * 20;
+	*latMin = *latMin - extra * 20;
+	*latMax = *latMax + extra * 20;
+	return 0;
+}
+
+int Utils::getSRTMDEM(
+	const char* filepath,
+	Mat& DEM_out,
+	double* lonUL,
+	double* latUL,
+	double lonMin,
+	double lonMax,
+	double latMin,
+	double latMax
+)
+{
+	double latSpacing = 5.0 / 6000.0;
+	double lonSpacing = 5.0 / 6000.0;
+	if (!filepath || !lonUL || !latUL) return -1;
+	//this->DEMPath = filepath;
+	if (GetFileAttributesA(filepath) == -1)
+	{
+		if (_mkdir(filepath) != 0) return -1;
+	}
+	string DEMPath = filepath;
+	vector<string> srtmFileName;
+	vector<bool> bAlreadyExist;
+	int ret = getSRTMFileName(lonMin, lonMax, latMin, latMax, srtmFileName);
+	if (ret < 0)//不在SRTM数据范围内（-60°,60°）,则以0填充
+	{
+		int rows = (latMax - latMin) / latSpacing;
+		int cols = (lonMax - lonMin) / lonSpacing;
+		Mat temp = Mat::zeros(rows, cols, CV_16S);
+		temp.copyTo(DEM_out);
+		*lonUL = lonMin;
+		*latUL = latMax;
+		return 0;
+	}
+	//if (return_check(ret, "getSRTMFileName()", error_head)) return -1;
+	//判断文件是否已经存在
+	for (int i = 0; i < srtmFileName.size(); i++)
+	{
+		string tmp = DEMPath + "\\" + srtmFileName[i];
+		std::replace(tmp.begin(), tmp.end(), '/', '\\');
+		if (-1 != GetFileAttributesA(tmp.c_str()))bAlreadyExist.push_back(true);
+		else bAlreadyExist.push_back(false);
+	}
+	//不存在则下载
+	for (int i = 0; i < srtmFileName.size(); i++)
+	{
+		if (!bAlreadyExist[i])
+		{
+			ret = downloadSRTM(srtmFileName[i].c_str(), DEMPath.c_str());
+			if (ret < 0)//未下载到DEM数据,则以0填充
+			{
+				int rows = (latMax - latMin) / latSpacing;
+				int cols = (lonMax - lonMin) / lonSpacing;
+				Mat temp = Mat::zeros(rows, cols, CV_16S);
+				temp.copyTo(DEM_out);
+				*lonUL = lonMin;
+				*latUL = latMax;
+				return 0;
+			}
+		}
+	}
+	//解压文件
+	for (int i = 0; i < srtmFileName.size(); i++)
+	{
+		string folderName = srtmFileName[i];
+		folderName = folderName.substr(0, folderName.length() - 4);
+		string path = DEMPath + string("\\") + folderName;
+		std::replace(path.begin(), path.end(), '/', '\\');
+		if (-1 != GetFileAttributesA(path.c_str())) continue;
+		string srcFile = DEMPath + "\\" + srtmFileName[i];
+		std::replace(srcFile.begin(), srcFile.end(), '/', '\\');
+		if (GetFileAttributesA(srcFile.c_str()) == -1) continue;
+		ret = DigitalElevationModel::unzip(srcFile.c_str(), path.c_str());
+		if (return_check(ret, "unzip()", error_head)) return -1;
+	}
+
+
+	int startRow, startCol, endRow, endCol;
+	double lonUpperLeft, lonLowerRight, latUpperLeft, latLowerRight;
+	int total_rows, total_cols;
+
+	//DEM在一个SRTM方格内
+	if (srtmFileName.size() == 1)
+	{
+		total_rows = 6000, total_cols = 6000;
+		int xx, yy;
+		sscanf(srtmFileName[0].c_str(), "srtm_%d_%d.zip", &xx, &yy);
+		latUpperLeft = 60.0 - (yy - 1) * 5.0;
+		latLowerRight = latUpperLeft - 5.0;
+		lonUpperLeft = -180.0 + (xx - 1) * 5.0;
+		lonLowerRight = lonUpperLeft + 5.0;
+
+		startRow = (latUpperLeft - latMax) / latSpacing;
+		startRow = startRow < 1 ? 1 : startRow;
+		startRow = startRow > total_rows ? total_rows : startRow;
+		endRow = (latUpperLeft - latMin) / latSpacing;
+		endRow = endRow < 1 ? 1 : endRow;
+		endRow = endRow > total_rows ? total_rows : endRow;
+		startCol = (lonMin - lonUpperLeft) / lonSpacing;
+		startCol = startCol < 1 ? 1 : startCol;
+		startCol = startCol > total_cols ? total_cols : startCol;
+		endCol = (lonMax - lonUpperLeft) / lonSpacing;
+		endCol = endCol < 1 ? 1 : endCol;
+		endCol = endCol > total_cols ? total_cols : endCol;
+
+		string folderName = srtmFileName[0];
+		folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+		string path = DEMPath + string("\\") + folderName;
+		path = path + string("\\") + folderName + string(".tif");
+		Mat outDEM = Mat::zeros(6000, 6000, CV_16S);
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+		//if (return_check(ret, "geotiffread()", error_head)) return -1;
+		outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+		*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+		*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+	}
+	//DEM在2个方格内
+	else if (srtmFileName.size() == 2)
+	{
+		int xx, yy, xx2, yy2;
+		sscanf(srtmFileName[0].c_str(), "srtm_%d_%d.zip", &xx, &yy);
+		sscanf(srtmFileName[1].c_str(), "srtm_%d_%d.zip", &xx2, &yy2);
+		//同一列
+		if (xx == xx2)
+		{
+			total_rows = 6000 * 2; total_cols = 6000;
+			latUpperLeft = 60.0 - ((yy < yy2 ? yy : yy2) - 1) * 5.0;
+			latLowerRight = latUpperLeft - 10.0;
+			lonUpperLeft = -180.0 + (xx - 1) * 5.0;
+			lonLowerRight = lonUpperLeft + 5.0;
+
+			startRow = (latUpperLeft - latMax) / latSpacing;
+			startRow = startRow < 1 ? 1 : startRow;
+			startRow = startRow > total_rows ? total_rows : startRow;
+			endRow = (latUpperLeft - latMin) / latSpacing;
+			endRow = endRow < 1 ? 1 : endRow;
+			endRow = endRow > total_rows ? total_rows : endRow;
+			startCol = (lonMin - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMax - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+
+
+			Mat outDEM, outDEM2;
+
+			if (yy < yy2)
+			{
+				string folderName = srtmFileName[0];
+				folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+				string path = DEMPath + string("\\") + folderName;
+				path = path + string("\\") + folderName + string(".tif");
+				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM = Mat::zeros(6000, 6000, CV_16S);
+				ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+				folderName = srtmFileName[1];
+				folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+				path = DEMPath + string("\\") + folderName;
+				path = path + string("\\") + folderName + string(".tif");
+				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+				ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
+				cv::vconcat(outDEM, outDEM2, outDEM);
+			}
+			else
+			{
+				string folderName = srtmFileName[1];
+				folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+				string path = DEMPath + string("\\") + folderName;
+				path = path + string("\\") + folderName + string(".tif");
+				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM = Mat::zeros(6000, 6000, CV_16S);
+				ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+				folderName = srtmFileName[0];
+				folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+				path = DEMPath + string("\\") + folderName;
+				path = path + string("\\") + folderName + string(".tif");
+				std::replace(path.begin(), path.end(), '/', '\\');
+				outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+				ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+				//if (return_check(ret, "geotiffread()", error_head)) return -1;
+				cv::vconcat(outDEM, outDEM2, outDEM);
+			}
+
+			outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+			*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+			*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+		}
+		//同一行
+		else if (yy == yy2)
+		{
+			total_cols = 6000 * 2; total_rows = 6000;
+			//跨越-180.0/180.0线
+			if ((xx == 1 && xx2 == 72) || (xx == 72 && xx2 == 1))
+			{
+				latUpperLeft = 60.0 - (yy - 1) * 5.0;
+				latLowerRight = latUpperLeft - 5.0;
+				lonUpperLeft = 175.0;
+				lonLowerRight = -175.0;
+				startRow = (latUpperLeft - latMax) / latSpacing;
+				startRow = startRow < 1 ? 1 : startRow;
+				startRow = startRow > total_rows ? total_rows : startRow;
+				endRow = (latUpperLeft - latMin) / latSpacing;
+				endRow = endRow < 1 ? 1 : endRow;
+				endRow = endRow > total_rows ? total_rows : endRow;
+				startCol = (lonMax - lonUpperLeft) / lonSpacing;
+				startCol = startCol < 1 ? 1 : startCol;
+				startCol = startCol > total_cols ? total_cols : startCol;
+				endCol = (lonMin - lonUpperLeft + 360.0) / lonSpacing;
+				endCol = endCol < 1 ? 1 : endCol;
+				endCol = endCol > total_cols ? total_cols : endCol;
+
+				Mat outDEM, outDEM2;
+
+				if (xx > xx2)
+				{
+					string folderName = srtmFileName[0];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					string path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+					folderName = srtmFileName[1];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+					cv::hconcat(outDEM, outDEM2, outDEM);
+				}
+				else
+				{
+					string folderName = srtmFileName[1];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					string path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+					folderName = srtmFileName[0];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+					cv::hconcat(outDEM, outDEM2, outDEM);
+				}
+
+				outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+				*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+				*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+			}
+			else
+			{
+				latUpperLeft = 60.0 - (yy - 1) * 5.0;
+				latLowerRight = latUpperLeft - 5.0;
+				lonUpperLeft = -180.0 + ((xx < xx2 ? xx : xx2) - 1) * 5.0;
+				lonLowerRight = lonUpperLeft + 10.0;
+
+				startRow = (latUpperLeft - latMax) / latSpacing;
+				startRow = startRow < 1 ? 1 : startRow;
+				startRow = startRow > total_rows ? total_rows : startRow;
+				endRow = (latUpperLeft - latMin) / latSpacing;
+				endRow = endRow < 1 ? 1 : endRow;
+				endRow = endRow > total_rows ? total_rows : endRow;
+				startCol = (lonMin - lonUpperLeft) / lonSpacing;
+				startCol = startCol < 1 ? 1 : startCol;
+				startCol = startCol > total_cols ? total_cols : startCol;
+				endCol = (lonMax - lonUpperLeft) / lonSpacing;
+				endCol = endCol < 1 ? 1 : endCol;
+				endCol = endCol > total_cols ? total_cols : endCol;
+
+
+				Mat outDEM, outDEM2;
+
+				if (xx < xx2)
+				{
+					string folderName = srtmFileName[0];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					string path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+					folderName = srtmFileName[1];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+					cv::hconcat(outDEM, outDEM2, outDEM);
+				}
+				else
+				{
+					string folderName = srtmFileName[1];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					string path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+					folderName = srtmFileName[0];
+					folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+					path = DEMPath + string("\\") + folderName;
+					path = path + string("\\") + folderName + string(".tif");
+					std::replace(path.begin(), path.end(), '/', '\\');
+					outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+					ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+					//if (return_check(ret, "geotiffread()", error_head)) return -1;
+					cv::hconcat(outDEM, outDEM2, outDEM);
+				}
+
+				outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+				*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+				*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+			}
+		}
+		else
+		{
+			return -1;
+		}
+
+
+
+	}
+	//DEM在4个方格内
+	else if (srtmFileName.size() == 4)
+	{
+		int xx, yy, xx2, yy2, xx3, yy3, xx4, yy4, temp;
+		sscanf(srtmFileName[0].c_str(), "srtm_%d_%d.zip", &xx, &yy);
+		sscanf(srtmFileName[1].c_str(), "srtm_%d_%d.zip", &xx2, &yy2);
+		sscanf(srtmFileName[2].c_str(), "srtm_%d_%d.zip", &xx3, &yy3);
+		sscanf(srtmFileName[3].c_str(), "srtm_%d_%d.zip", &xx4, &yy4);
+		total_rows = 6000 * 2; total_cols = 6000 * 2;
+		//跨越-180.0/180.0线
+		if (lonMax * lonMin < 0 && (fabs(lonMin) + fabs(lonMax)) > 180.0)
+		{
+			startRow = (int)((60.0 - latMax) / 5.0) + 1;
+			endRow = (int)((60.0 - latMin) / 5.0) + 1;
+			endCol = (int)((lonMin + 180.0) / 5.0) + 1;
+			startCol = (int)((lonMax + 180.0) / 5.0) + 1;
+			latUpperLeft = 60.0 - (startRow - 1) * 5.0;
+			latLowerRight = latUpperLeft - 10.0;
+			lonUpperLeft = 175.0;
+			lonLowerRight = -175.0;
+
+
+
+			Mat outDEM, outDEM2, outDEM3;
+
+			char tmpstr[512];
+			const char* format = NULL;
+			if (startCol < 10 && startRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (startCol >= 10 && startRow < 10) format = "srtm_%d_0%d.zip";
+			else if (startCol < 10 && startRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, startCol, startRow);
+			string folderName(tmpstr);
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			string path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+			if (endCol < 10 && startRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (endCol >= 10 && startRow < 10) format = "srtm_%d_0%d.zip";
+			else if (endCol < 10 && startRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, endCol, startRow);
+			folderName = tmpstr;
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+			cv::hconcat(outDEM, outDEM2, outDEM);
+
+			if (startCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (startCol >= 10 && endRow < 10) format = "srtm_%d_0%d.zip";
+			else if (startCol < 10 && endRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, startCol, endRow);
+			folderName = tmpstr;
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+			if (endCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (endCol >= 10 && endRow < 10) format = "srtm_%d_0%d.zip";
+			else if (endCol < 10 && endRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, endCol, endRow);
+			folderName = tmpstr;
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM3 = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM3);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+			cv::hconcat(outDEM2, outDEM3, outDEM2);
+
+			cv::vconcat(outDEM, outDEM2, outDEM);
+
+
+			startRow = (latUpperLeft - latMax) / latSpacing;
+			startRow = startRow < 1 ? 1 : startRow;
+			startRow = startRow > total_rows ? total_rows : startRow;
+			endRow = (latUpperLeft - latMin) / latSpacing;
+			endRow = endRow < 1 ? 1 : endRow;
+			endRow = endRow > total_rows ? total_rows : endRow;
+			startCol = (lonMax - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMin - lonUpperLeft + 360.0) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+
+			outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+			*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+			*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+		}
+		else
+		{
+			startRow = (int)((60.0 - latMax) / 5.0) + 1;
+			endRow = (int)((60.0 - latMin) / 5.0) + 1;
+			startCol = (int)((lonMin + 180.0) / 5.0) + 1;
+			endCol = (int)((lonMax + 180.0) / 5.0) + 1;
+			latUpperLeft = 60.0 - (startRow - 1) * 5.0;
+			latLowerRight = latUpperLeft - 10.0;
+			lonUpperLeft = -180.0 + (startCol - 1) * 5.0;
+			lonLowerRight = lonUpperLeft + 10.0;
+
+
+
+			Mat outDEM, outDEM2, outDEM3;
+
+			char tmpstr[512];
+			const char* format = NULL;
+			if (startCol < 10 && startRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (startCol >= 10 && startRow < 10) format = "srtm_%d_0%d.zip";
+			else if (startCol < 10 && startRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, startCol, startRow);
+			string folderName(tmpstr);
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			string path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+			if (endCol < 10 && startRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (endCol >= 10 && startRow < 10) format = "srtm_%d_0%d.zip";
+			else if (endCol < 10 && startRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, endCol, startRow);
+			folderName = tmpstr;
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+			cv::hconcat(outDEM, outDEM2, outDEM);
+
+			if (startCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (startCol >= 10 && endRow < 10) format = "srtm_%d_0%d.zip";
+			else if (startCol < 10 && endRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, startCol, endRow);
+			folderName = tmpstr;
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM2 = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM2);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+
+			if (endCol < 10 && endRow < 10) format = "srtm_0%d_0%d.zip";
+			else if (endCol >= 10 && endRow < 10) format = "srtm_%d_0%d.zip";
+			else if (endCol < 10 && endRow >= 10) format = "srtm_0%d_%d.zip";
+			else format = "srtm_%d_%d.zip";
+			sprintf(tmpstr, format, endCol, endRow);
+			folderName = tmpstr;
+			folderName = folderName.substr(0, folderName.length() - 4);//去掉.zip后缀
+			path = DEMPath + string("\\") + folderName;
+			path = path + string("\\") + folderName + string(".tif");
+			std::replace(path.begin(), path.end(), '/', '\\');
+			outDEM3 = Mat::zeros(6000, 6000, CV_16S);
+			ret = DigitalElevationModel::geotiffread(path.c_str(), outDEM3);
+			//if (return_check(ret, "geotiffread()", error_head)) return -1;
+			cv::hconcat(outDEM2, outDEM3, outDEM2);
+
+			cv::vconcat(outDEM, outDEM2, outDEM);
+
+			startRow = (latUpperLeft - latMax) / latSpacing;
+			startRow = startRow < 1 ? 1 : startRow;
+			startRow = startRow > total_rows ? total_rows : startRow;
+			endRow = (latUpperLeft - latMin) / latSpacing;
+			endRow = endRow < 1 ? 1 : endRow;
+			endRow = endRow > total_rows ? total_rows : endRow;
+			startCol = (lonMin - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMax - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+
+			outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+			*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+			*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+		}
+
+	}
+	else return -1;
+	return 0;
+}
+
+int Utils::getSRTMFileName(double lonMin, double lonMax, double latMin, double latMax, vector<string>& name)
+{
+	if (fabs(lonMin) > 180.0 ||
+		fabs(lonMax) > 180.0 ||
+		fabs(latMin) >= 60.0 ||
+		fabs(latMax) >= 60.0
+		)
+	{
+		fprintf(stderr, "getSRTMFileName(): input check failed!\n");
+		return -1;
+	}
+	name.clear();
+	char tmp[512];
+	int maxRows = 24; int maxCols = 72; int startRow, endRow, startCol, endCol;
+	double spacing = 5.0;
+	startRow = (int)((60.0 - latMax) / spacing) + 1;
+	endRow = (int)((60.0 - latMin) / spacing) + 1;
+	startCol = (int)((lonMin + 180.0) / spacing) + 1;
+	endCol = (int)((lonMax + 180.0) / spacing) + 1;
+	if (startRow == endRow)
+	{
+		if (startCol == endCol)
+		{
+			memset(tmp, 0, 512);
+			if (startCol < 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", startCol, startRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", startCol, startRow);
+			}
+			name.push_back(string(tmp));
+		}
+		else
+		{
+			memset(tmp, 0, 512);
+			if (startCol < 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", startCol, startRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", startCol, startRow);
+			}
+			name.push_back(string(tmp));
+
+
+			memset(tmp, 0, 512);
+			if (endCol < 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", endCol, startRow);
+			}
+			else if (endCol >= 10 && startRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", endCol, startRow);
+			}
+			else if (endCol >= 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", endCol, startRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", endCol, startRow);
+			}
+			name.push_back(string(tmp));
+		}
+	}
+	else
+	{
+		if (startCol == endCol)
+		{
+			memset(tmp, 0, 512);
+			if (startCol < 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", startCol, startRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", startCol, startRow);
+			}
+			name.push_back(string(tmp));
+
+			memset(tmp, 0, 512);
+			if (startCol < 10 && endRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", startCol, endRow);
+			}
+			else if (startCol >= 10 && endRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", startCol, endRow);
+			}
+			else if (startCol >= 10 && endRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", startCol, endRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", startCol, endRow);
+			}
+			name.push_back(string(tmp));
+		}
+		else
+		{
+			memset(tmp, 0, 512);
+			if (startCol < 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", startCol, startRow);
+			}
+			else if (startCol >= 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", startCol, startRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", startCol, startRow);
+			}
+			name.push_back(string(tmp));
+
+
+			memset(tmp, 0, 512);
+			if (endCol < 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", endCol, startRow);
+			}
+			else if (endCol >= 10 && startRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", endCol, startRow);
+			}
+			else if (endCol >= 10 && startRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", endCol, startRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", endCol, startRow);
+			}
+			name.push_back(string(tmp));
+
+
+			memset(tmp, 0, 512);
+			if (endCol < 10 && endRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", endCol, endRow);
+			}
+			else if (endCol >= 10 && endRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", endCol, endRow);
+			}
+			else if (endCol >= 10 && endRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", endCol, endRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", endCol, endRow);
+			}
+			name.push_back(string(tmp));
+
+			memset(tmp, 0, 512);
+			if (startCol < 10 && endRow < 10)
+			{
+				sprintf(tmp, "srtm_0%d_0%d.zip", startCol, endRow);
+			}
+			else if (startCol >= 10 && endRow >= 10)
+			{
+				sprintf(tmp, "srtm_%d_%d.zip", startCol, endRow);
+			}
+			else if (startCol >= 10 && endRow < 10)
+			{
+				sprintf(tmp, "srtm_%d_0%d.zip", startCol, endRow);
+			}
+			else
+			{
+				sprintf(tmp, "srtm_0%d_%d.zip", startCol, endRow);
+			}
+			name.push_back(string(tmp));
+		}
+	}
+	return 0;
+}
+
+int Utils::downloadSRTM(const char* name, const char* DEMpath)
+{
+	bool isConnect;
+	DWORD dw;
+	isConnect = IsNetworkAlive(&dw);
+	if (!isConnect)
+	{
+		fprintf(stderr, "downloadSRTM(): network is not connected!\n");
+		return -1;
+	}
+	int ret;
+	string url = string(SRTMURL) + name;
+	string savefile = DEMpath + string("\\") + name;
+	std::replace(savefile.begin(), savefile.end(), '/', '\\');
+	HRESULT Result = URLDownloadToFileA(NULL, url.c_str(), savefile.c_str(), 0, NULL);
+	if (Result != S_OK)
+	{
+		fprintf(stderr, "downloadSRTM(): download failded!\n");
+		return -1;
+	}
 	return 0;
 }
 

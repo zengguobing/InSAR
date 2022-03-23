@@ -99,10 +99,108 @@ public:
 	*/
 	int gcps_sift(int rows, int cols, int move_rows, int move_cols, Mat& gcps);
 
-
+	/*@brief 根据DEM和卫星轨道等辅助参数计算DEM点在SAR图像中的位置
+	* @param DEM                          DEM（short型矩阵）
+	* @param stateVector                  卫星轨道数据（未插值）
+	* @param rangePos                     DEM点在SAR图像中距离向坐标（列，double型矩阵，返回值）
+	* @param azimuthPos                   DEM点在SAR图像中方位向坐标（行，double型矩阵，返回值）
+	* @param lon_upperleft                84坐标系DEM左上角经度
+	* @param lat_upperleft                84坐标系DEM左上角纬度
+	* @param offset_row                   SAR图像在原场景中的行偏移量
+	* @param offset_col                   SAR图像在原场景中的列偏移量
+	* @param sceneHeight                  SAR图像场景高度
+	* @param sceneWidth                   SAR图像场景宽度
+	* @param prf                          SAR卫星雷达脉冲重复频率
+	* @param rangeSpacing                 距离向采样间隔（m）
+	* @param wavelength                   波长
+	* @param nearRangeTime                最近斜距时间
+	* @param acquisitionStartTime         方位向采样开始时间
+	* @param acquisitionStopTime          方位向采样结束时间
+	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
+	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @return 成功返回0，否则返回-1
+	*/
+	int getDEMRgAzPos(
+		Mat& DEM,
+		Mat& stateVector,
+		Mat& rangePos,
+		Mat& azimuthPos,
+		double lon_upperleft,
+		double lat_upperleft,
+		int offset_row,
+		int offset_col,
+		int sceneHeight,
+		int sceneWidth,
+		double prf,
+		double rangeSpacing,
+		double wavelength,
+		double nearRangeTime,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		double lon_spacing,
+		double lat_spacing
+	);
+	/*@brief 拟合辅图像偏移（1阶拟合，offset = a0 + a1 * x + a2 * y）
+	* @param slaveOffset                           偏移量
+	* @param masterRange                           DEM点在主图中的距离向坐标（列数，double型矩阵）
+	* @param masterAzimuth                         DEM点在主图中的方位向坐标（行数，double型矩阵）
+	* @param a0                                    拟合系数
+	* @param a1                                    拟合系数
+	* @param a2                                    拟合系数
+	* @return 成功返回0，否则返回-1
+	*/
+	int fitSlaveOffset(
+		Mat& slaveOffset,
+		Mat& masterRange,
+		Mat& masterAzimuth,
+		double* a0,
+		double* a1,
+		double* a2
+	);
+	/*@brief 计算辅图像偏移
+	* @param masterRange                           DEM点在主图中的距离向坐标（列数）
+	* @param masterAzimuth                         DEM点在主图中的方位向坐标（行数）
+	* @param slaveRange                            DEM点在辅图中的距离向坐标（列数）
+	* @param slaveAzimuth                          DEM点在辅图中的方位向坐标（行数）
+	* @param slaveAzimuthOffset                    辅图像方位向偏移（返回值）
+	* @param slaveRangeOffset                      辅图像距离向偏移（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeSlaveOffset(
+		Mat& masterRange,
+		Mat& masterAzimuth,
+		Mat& slaveRange,
+		Mat& slaveAzimuth,
+		Mat& slaveAzimuthOffset,
+		Mat& slaveRangeOffset
+	);
+	/*@brief 复图像双线性插值重采样（inplace，原地操作）
+	* @param slc                                   待重采样图像（原地操作）
+	* @param dstHeight                             重采样图像高度
+	* @param dstWidth                              重采样图像宽度
+	* @param a0Rg                                  距离向偏移拟合系数
+	* @param a1Rg                                  距离向偏移拟合系数
+	* @param a2Rg                                  距离向偏移拟合系数
+	* @param a0Az                                  方位向偏移拟合系数
+	* @param a1Az                                  方位向偏移拟合系数
+	* @param a2Az                                  方位向偏移拟合系数
+	* @param offset_row                            辅图像左上角相对于主图像的行偏移量（返回值）
+	* @param offset_col                            辅图像左上角相对于主图像的列偏移量（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int performBilinearResampling(
+		ComplexMat& slc,
+		int dstHeight,
+		int dstWidth,
+		double a0Rg, double a1Rg, double a2Rg,
+		double a0Az, double a1Az, double a2Az,
+		int* offset_row = NULL,
+		int* offset_col = NULL
+	);
 private:
 	char error_head[256];
 	char parallel_error_head[256];
+	double invalidOffset = -9999.0;
 
 };
 

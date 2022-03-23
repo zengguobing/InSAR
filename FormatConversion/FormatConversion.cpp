@@ -1385,16 +1385,7 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	if (return_check(ret, "get_str_para()", error_head)) return -1;
 	ret = write_str_to_h5(dst_h5_filename, "orbit_dir", orbit_dir.c_str());
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//拍摄起始时间
-	ret = xmldoc.get_str_para("startTimeUTC", acquisition_start_time);
-	if (return_check(ret, "get_str_para()", error_head)) return -1;
-	ret = write_str_to_h5(dst_h5_filename, "acquisition_start_time", acquisition_start_time.c_str());
-	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
-	//拍摄结束时间
-	ret = xmldoc.get_str_para("stopTimeUTC", acquisition_stop_time);
-	if (return_check(ret, "get_str_para()", error_head)) return -1;
-	ret = write_str_to_h5(dst_h5_filename, "acquisition_stop_time", acquisition_stop_time.c_str());
-	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
+
 	//处理等级
 	ret = write_str_to_h5(dst_h5_filename, "process_state", "InSAR_0");
 	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
@@ -1412,8 +1403,24 @@ int FormatConversion::TSX2h5(const char* cosar_filename, const char* xml_filenam
 	tmp.at<double>(0, 0) = -1;
 	ret = write_array_to_h5(dst_h5_filename, "orbit_altitude", tmp);
 	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//载频
+	
 	TiXmlElement* pnode, * pchild;
+
+	//拍摄起始时间
+	ret = xmldoc.find_node("start", pnode);
+	if (return_check(ret, "find_node()", error_head)) return -1;
+	ret = xmldoc._find_node(pnode, "timeUTC", pchild);
+	if (return_check(ret, "_find_node()", error_head)) return -1;
+	ret = write_str_to_h5(dst_h5_filename, "acquisition_start_time", pchild->GetText());
+	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
+	//拍摄结束时间
+	ret = xmldoc.find_node("stop", pnode);
+	if (return_check(ret, "find_node()", error_head)) return -1;
+	ret = xmldoc._find_node(pnode, "timeUTC", pchild);
+	if (return_check(ret, "_find_node()", error_head)) return -1;
+	ret = write_str_to_h5(dst_h5_filename, "acquisition_stop_time", pchild->GetText());
+	if (return_check(ret, "write_str_to_h5()", error_head)) return -1;
+	//载频
 	ret = xmldoc.find_node("instrument", pnode);
 	if (return_check(ret, "find_node()", error_head)) return -1;
 	ret = xmldoc._find_node(pnode, "centerFrequency", pchild);
@@ -8273,7 +8280,16 @@ int DigitalElevationModel::getRawDEM(
 		if (!bAlreadyExist[i])
 		{
 			ret = downloadSRTM(srtmFileName[i].c_str());
-			//if (return_check(ret, "downloadSRTM()", error_head)) return -1;
+			if (ret < 0)//未下载到DEM数据,则以0填充
+			{
+				int rows = (latMax - latMin) / latSpacing;
+				int cols = (lonMax - lonMin) / lonSpacing;
+				Mat temp = Mat::zeros(rows, cols, CV_16S);
+				temp.copyTo(this->rawDEM);
+				this->lonUpperLeft = lonMin;
+				this->latUpperLeft = latMax;
+				return 0;
+			}
 		}
 	}
 	//解压文件

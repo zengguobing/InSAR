@@ -1718,9 +1718,78 @@ public:
 		double distance_thresh,
 		double quality_thresh
 	);
+	/*@brief 根据图像的大小、行列偏移以及行列-->经纬度的转换系数，计算图像的地理边界（最大最小经纬度）
+	* @param lat_coefficient                        地理坐标转换系数（行列-->纬度）
+	* @param lon_coefficient                        地理坐标转换系数（行列-->经度）
+	* @param sceneHeight                            场景高度
+	* @param sceneWidth                             场景宽度
+	* @param offset_row                             场景在原图像中的行偏移量
+	* @param offset_col                             场景在原图像中的列偏移量
+	* @param lonMax                                 最大经度（返回值）
+	* @param latMax                                 最大纬度（返回值）
+	* @param lonMin                                 最小经度（返回值）
+	* @param latMin                                 最小纬度（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	static int computeImageGeoBoundry(
+		Mat& lat_coefficient,
+		Mat& lon_coefficient,
+		int sceneHeight,
+		int sceneWidth,
+		int offset_row,
+		int offset_col,
+		double* lonMax,
+		double* latMax,
+		double* lonMin,
+		double* latMin
+	);
+	/*@brief 根据地理边界信息获取SRTM高程
+	* @param filepath                     下载的SRTM高程文件保存路径
+	* @param DEM_out                      DEM数据（返回值，short型）
+	* @param lonUpperLeft                 左上角经度（返回值）
+	* @param latUpperLeft                 左上角纬度（返回值）
+	* @param lonMin                       最小经度
+	* @param lonMax                       最大经度
+	* @param latMin                       最小纬度
+	* @param latMax                       最大纬度
+	* @return 成功返回0，否则返回-1
+	*/
+	static int getSRTMDEM(
+		const char* filepath,
+		Mat& DEM_out,
+		double* lonUpperLeft,
+		double* latUpperLeft,
+		double lonMin,
+		double lonMax,
+		double latMin,
+		double latMax
+	);
+	/*@brief 根据地理边界信息计算所需下载的SRTM高程文件名
+	* @param lonMin                       最小经度
+	* @param lonMax                       最大经度
+	* @param latMin                       最小纬度
+	* @param latMax                       最大纬度
+	* @param name                         文件名
+	* @return 成功返回0，否则返回-1
+	*/
+	static int getSRTMFileName(
+		double lonMin,
+		double lonMax,
+		double latMin,
+		double latMax,
+		vector<string>& name
+	);
+	/*@brief 下载SRTM高程数据
+	* @param name                         文件名
+	* @param DEMpath                      下载DEM文件保存路径
+	* @return 成功返回0，否则返回-1
+	*/
+	static int downloadSRTM(const char* name, const char* DEMpath);
+
 private:
-	char error_head[256];
-	char parallel_error_head[256];
+	static constexpr const char* SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
+	static constexpr const char* error_head = "UTILS_DLL_ERROR: error happens when using ";
+	static constexpr const char* parallel_error_head = "UTILS_DLL_ERROR: error happens when using parallel computing in function: ";
 
 };
 

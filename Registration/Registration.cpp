@@ -5,12 +5,15 @@
 #include "stdafx.h"
 #include<math.h>
 #include"..\include\Registration.h"
+#include"..\include\FormatConversion.h"
 #ifdef _DEBUG
 #pragma comment(lib, "ComplexMat_d.lib")
 #pragma comment(lib, "Utils_d.lib")
+#pragma comment(lib, "FormatConversion_d.lib")
 #else
 #pragma comment(lib, "ComplexMat.lib")
 #pragma comment(lib, "Utils.lib")
+#pragma comment(lib, "FormatConversion.lib")
 #endif // _DEBUG
 using namespace cv;
 inline bool return_check(int ret, const char* detail_info, const char* error_head)
@@ -1264,4 +1267,420 @@ int Registration::gcps_sift(int rows, int cols, int move_rows, int move_cols, Ma
 	GCPS.copyTo(gcps);
 	return 0;
 }
+
+int Registration::getDEMRgAzPos(
+	Mat& DEM,
+	Mat& stateVector, 
+	Mat& rangePos,
+	Mat& azimuthPos, 
+	double lon_upperleft,
+	double lat_upperleft,
+	int offset_row, 
+	int offset_col, 
+	int sceneHeight,
+	int sceneWidth,
+	double prf,
+	double rangeSpacing,
+	double wavelength,
+	double nearRangeTime,
+	double acquisitionStartTime,
+	double acquisitionStopTime,
+	double lon_spacing,
+	double lat_spacing
+)
+{
+	if (DEM.empty() ||
+		DEM.type() != CV_16S ||
+		sceneHeight < 10 ||
+		sceneWidth < 10 ||
+		prf <= 0 ||
+		wavelength <= 0 ||
+		rangeSpacing <= 0 ||
+		nearRangeTime <= 0 ||
+		acquisitionStartTime <= 0 ||
+		acquisitionStopTime <= 0 ||
+		lon_spacing <= 0.0 ||
+		lat_spacing <= 0.0 ||
+		fabs(lon_upperleft) > 180.0 ||
+		fabs(lat_upperleft) > 90.0 ||
+		stateVector.type() != CV_64F ||
+		stateVector.rows < 5 ||
+		stateVector.cols != 7
+		)
+	{
+		fprintf(stderr, "getDEMRgAzPos(): input check failed!\n");
+		return -1;
+	}
+	//初始化轨道类
+	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime);
+	stateVectors.applyOrbit();
+	int ret;
+	double time_interval = 1.0 / prf;
+
+	int DEM_rows = DEM.rows; int DEM_cols = DEM.cols;
+	rangePos.create(DEM_rows, DEM_cols, CV_64F);
+	azimuthPos.create(DEM_rows, DEM_cols, CV_64F);
+	double dopplerFrequency = 0.0;
+	//采用迭代计算每个DEM点在SAR图像中的坐标，以减小计算量
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < DEM_rows; i++)
+	{
+		for (int j = 0; j < DEM_cols; j++)
+		{
+			Position groundPosition;
+			double lat, lon, height;
+			lat = lat_upperleft - (double)i * lat_spacing;
+			lon = lon_upperleft + (double)j * lon_spacing;
+			lon = lon > 180.0 ? (lon - 360.0) : lon;
+			height = DEM.at<short>(i, j);
+			Utils::ell2xyz(lon, lat, height, groundPosition);
+			int numOrbitVec = stateVectors.newStateVectors.rows;
+			double firstVecTime = 0.0;
+			double secondVecTime = 0.0;
+			double firstVecFreq = 0.0;
+			double secondVecFreq = 0.0;
+			double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+			for (int ii = 0; ii < numOrbitVec; ii++) {
+				Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+					stateVectors.newStateVectors.at<double>(ii, 3));
+				Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+					stateVectors.newStateVectors.at<double>(ii, 6));
+				currentFreq = 0;
+				xdiff = groundPosition.x - orb_pos.x;
+				ydiff = groundPosition.y - orb_pos.y;
+				zdiff = groundPosition.z - orb_pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+				if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+					firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					firstVecFreq = currentFreq;
+				}
+				else {
+					secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					secondVecFreq = currentFreq;
+					break;
+				}
+			}
+
+			if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+				rangePos.at<double>(i, j) = -1.0;
+				azimuthPos.at<double>(i, j) = -1.0;
+				continue;
+			}
+
+			double lowerBoundTime = firstVecTime;
+			double upperBoundTime = secondVecTime;
+			double lowerBoundFreq = firstVecFreq;
+			double upperBoundFreq = secondVecFreq;
+			double midTime, midFreq;
+			double diffTime = fabs(upperBoundTime - lowerBoundTime);
+			double absLineTimeInterval = time_interval;
+
+			int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+			int numIterations = 0; Position pos; Velocity vel;
+			while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+				midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+				stateVectors.getPosition(midTime, pos);
+				stateVectors.getVelocity(midTime, vel);
+				xdiff = groundPosition.x - pos.x;
+				ydiff = groundPosition.y - pos.y;
+				zdiff = groundPosition.z - pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+				if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+					lowerBoundTime = midTime;
+					lowerBoundFreq = midFreq;
+				}
+				else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+					upperBoundTime = midTime;
+					upperBoundFreq = midFreq;
+				}
+				else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+					zeroDopplerTime = midTime;
+					break;
+				}
+
+				diffTime = fabs(upperBoundTime - lowerBoundTime);
+				numIterations++;
+			}
+
+
+			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
+			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			azimuthIndex = azimuthIndex - offset_row;
+			rangeIndex = rangeIndex - offset_col;
+			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
+			{
+				rangePos.at<double>(i, j) = -1.0;
+				azimuthPos.at<double>(i, j) = -1.0;
+			}
+			else
+			{
+				rangePos.at<double>(i, j) = rangeIndex;
+				azimuthPos.at<double>(i, j) = azimuthIndex;
+			}
+		}
+	}
+	return 0;
+}
+
+int Registration::fitSlaveOffset(Mat& slaveOffset, Mat& masterRange,
+	Mat& masterAzimuth, double* a0, double* a1, double* a2)
+{
+	if (slaveOffset.empty() ||
+		slaveOffset.type() != CV_64F || 
+		masterRange.type() != CV_64F ||
+		masterAzimuth.type() != CV_64F ||
+		masterRange.rows != slaveOffset.rows ||
+		masterRange.cols != slaveOffset.cols ||
+		masterAzimuth.rows != slaveOffset.rows ||
+		masterAzimuth.cols != slaveOffset.cols
+		)
+	{
+		fprintf(stderr, "fitSlaveOffset(): input check failed!\n");
+		return -1;
+	}
+	int count = 0, nr, nc;
+	nr = slaveOffset.rows;
+	nc = slaveOffset.cols;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (fabs(slaveOffset.at<double>(i, j) - invalidOffset) > 0.0001) count++;
+		}
+	}
+	if (count < 4)
+	{
+		fprintf(stderr, "fitSlaveOffset(): not enough valid offsetpoints!\n");
+		return -1;
+	}
+	Mat offset(count, 1, CV_64F);
+	Mat range(count, 1, CV_64F);
+	Mat azimuth(count, 1, CV_64F);
+	Mat A = Mat::ones(count, 3, CV_64F);
+	count = 0;
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (fabs(slaveOffset.at<double>(i, j) - invalidOffset) > 0.0001)
+			{
+				offset.at<double>(count, 0) = slaveOffset.at<double>(i, j);
+				range.at<double>(count, 0) = masterRange.at<double>(i, j);
+				azimuth.at<double>(count++, 0) = masterAzimuth.at<double>(i, j);
+			}
+		}
+	}
+	range.copyTo(A(cv::Range(0, count), cv::Range(1, 2)));
+	azimuth.copyTo(A(cv::Range(0, count), cv::Range(2, 3)));
+	Mat A_t, b, coef;
+	cv::transpose(A, A_t);
+	A = A_t * A;
+	b = A_t * offset;
+	if (!cv::solve(A, b, coef, cv::DECOMP_NORMAL))
+	{
+		fprintf(stderr, "fitSlaveOffset(): matrix defficiency!\n");
+		return -1;
+	}
+	if (a0) *a0 = coef.at<double>(0, 0);
+	if (a1) *a1 = coef.at<double>(1, 0);
+	if (a2) *a2 = coef.at<double>(2, 0);
+	return 0;
+}
+
+int Registration::computeSlaveOffset(
+	Mat& masterRange,
+	Mat& masterAzimuth, 
+	Mat& slaveRange,
+	Mat& slaveAzimuth,
+	Mat& slaveAzimuthOffset, 
+	Mat& slaveRangeOffset
+)
+{
+	if (masterRange.rows != masterAzimuth.rows ||
+		masterRange.cols != masterAzimuth.cols ||
+		masterRange.rows != slaveRange.rows ||
+		masterRange.cols != slaveRange.cols ||
+		masterRange.rows != slaveAzimuth.rows ||
+		masterRange.cols != slaveAzimuth.cols
+		)
+	{
+		fprintf(stderr, "computeSlaveOffset(): input check failed!\n");
+		return -1;
+	}
+	slaveAzimuthOffset.create(masterRange.size(), CV_64F);
+	slaveRangeOffset.create(masterRange.size(), CV_64F);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < slaveAzimuthOffset.rows; i++)
+	{
+		for (int j = 0; j < slaveAzimuthOffset.cols; j++)
+		{
+			//方位向偏移量计算
+			if (masterAzimuth.at<double>(i, j) < -0.5 || slaveAzimuth.at<double>(i, j) < -0.5)
+			{
+				slaveAzimuthOffset.at<double>(i, j) = invalidOffset;
+			}
+			else
+			{
+				slaveAzimuthOffset.at<double>(i, j) = slaveAzimuth.at<double>(i, j) - masterAzimuth.at<double>(i, j);
+			}
+			//距离向偏移量计算
+			if (masterRange.at<double>(i, j) < -0.5 || slaveRange.at<double>(i, j) < -0.5)
+			{
+				slaveRangeOffset.at<double>(i, j) = invalidOffset;
+			}
+			else
+			{
+				slaveRangeOffset.at<double>(i, j) = slaveRange.at<double>(i, j) - masterRange.at<double>(i, j);
+			}
+		}
+	}
+	return 0;
+}
+
+int Registration::performBilinearResampling(
+	ComplexMat& slave, 
+	int dstHeight,
+	int dstWidth, 
+	double a0Rg, double a1Rg, double a2Rg, 
+	double a0Az, double a1Az, double a2Az,
+	int* offset_row,
+	int* offset_col
+)
+{
+	if (slave.isempty() || dstHeight < 2 || dstWidth < 2 ||
+		(slave.type() != CV_16S && slave.type() != CV_64F && slave.type() != CV_32F)
+		)
+	{
+		fprintf(stderr, "performBilinearResampling(): input check failed!\n");
+		return -1;
+	}
+	ComplexMat slcResampled;
+	int type = slave.type();
+	if (type == CV_16S)
+	{
+		slcResampled.re.create(dstHeight, dstWidth, CV_16S);
+		slcResampled.im.create(dstHeight, dstWidth, CV_16S);
+	}
+	else if (type == CV_32F)
+	{
+		slcResampled.re.create(dstHeight, dstWidth, CV_32F);
+		slcResampled.im.create(dstHeight, dstWidth, CV_32F);
+	}
+	else {
+		slcResampled.re.create(dstHeight, dstWidth, CV_64F);
+		slcResampled.im.create(dstHeight, dstWidth, CV_64F);
+	}
+	
+	Mat coef_r(3, 1, CV_64F), coef_c(3, 1, CV_64F);
+	coef_r.at<double>(0, 0) = a0Az;
+	coef_r.at<double>(1, 0) = a1Az;
+	coef_r.at<double>(2, 0) = a2Az;
+	coef_c.at<double>(0, 0) = a0Rg;
+	coef_c.at<double>(1, 0) = a1Rg;
+	coef_c.at<double>(2, 0) = a2Rg;
+	if (offset_row && offset_col)
+	{
+		Mat tt(1, 3, CV_64F);
+		tt.at<double>(0, 0) = 1.0;
+		tt.at<double>(0, 1) = 0.0;
+		tt.at<double>(0, 2) = 0.0;
+
+		*offset_row = sum(tt * coef_r)[0];
+		*offset_col = sum(tt * coef_c)[0];
+	}
+	int rows = dstHeight; int cols = dstWidth;
+	int cols_slave = slave.GetCols(); int rows_slave = slave.GetRows();
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < rows; i++)
+	{
+		double x, y, ii, jj; Mat tmp(1, 3, CV_64F); Mat result;
+		int mm, nn, mm1, nn1;
+		double offset_rows, offset_cols, upper, lower;
+		for (int j = 0; j < cols; j++)
+		{
+			jj = (double)j;
+			ii = (double)i;
+			tmp.at<double>(0, 0) = 1.0;
+			tmp.at<double>(0, 1) = jj;
+			tmp.at<double>(0, 2) = ii;
+
+			result = tmp * coef_r;
+			offset_rows = result.at<double>(0, 0);
+			result = tmp * coef_c;
+			offset_cols = result.at<double>(0, 0);
+
+			ii += offset_rows;
+			jj += offset_cols;
+
+			mm = (int)floor(ii); nn = (int)floor(jj);
+			if (mm < 0 || nn < 0 || mm > rows_slave - 1 || nn > cols_slave - 1)
+			{
+				if (type == CV_16S)
+				{
+					slcResampled.re.at<short>(i, j) = 0;
+					slcResampled.im.at<short>(i, j) = 0;
+				}
+				else if (type == CV_32F)
+				{
+					slcResampled.re.at<float>(i, j) = 0.0;
+					slcResampled.im.at<float>(i, j) = 0.0;
+				}
+				else
+				{
+					slcResampled.re.at<double>(i, j) = 0.0;
+					slcResampled.im.at<double>(i, j) = 0.0;
+				}
+				
+			}
+			else
+			{
+				mm1 = mm + 1; nn1 = nn + 1;
+				mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
+				nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
+				if (type == CV_16S)
+				{
+					//实部插值
+					upper = slave.re.at<short>(mm, nn) + (slave.re.at<short>(mm, nn1) - slave.re.at<short>(mm, nn)) * (jj - (double)nn);
+					lower = slave.re.at<short>(mm1, nn) + (slave.re.at<short>(mm1, nn1) - slave.re.at<short>(mm1, nn)) * (jj - (double)nn);
+					slcResampled.re.at<short>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+					//虚部插值
+					upper = slave.im.at<short>(mm, nn) + (slave.im.at<short>(mm, nn1) - slave.im.at<short>(mm, nn)) * (jj - (double)nn);
+					lower = slave.im.at<short>(mm1, nn) + (slave.im.at<short>(mm1, nn1) - slave.im.at<short>(mm1, nn)) * (jj - (double)nn);
+					slcResampled.im.at<short>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				}
+				else if (type == CV_32F)
+				{
+					//实部插值
+					upper = slave.re.at<float>(mm, nn) + (slave.re.at<float>(mm, nn1) - slave.re.at<float>(mm, nn)) * (jj - (double)nn);
+					lower = slave.re.at<float>(mm1, nn) + (slave.re.at<float>(mm1, nn1) - slave.re.at<float>(mm1, nn)) * (jj - (double)nn);
+					slcResampled.re.at<float>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+					//虚部插值
+					upper = slave.im.at<float>(mm, nn) + (slave.im.at<float>(mm, nn1) - slave.im.at<float>(mm, nn)) * (jj - (double)nn);
+					lower = slave.im.at<float>(mm1, nn) + (slave.im.at<float>(mm1, nn1) - slave.im.at<float>(mm1, nn)) * (jj - (double)nn);
+					slcResampled.im.at<float>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				}
+				else
+				{
+					//实部插值
+					upper = slave.re.at<double>(mm, nn) + (slave.re.at<double>(mm, nn1) - slave.re.at<double>(mm, nn)) * (jj - (double)nn);
+					lower = slave.re.at<double>(mm1, nn) + (slave.re.at<double>(mm1, nn1) - slave.re.at<double>(mm1, nn)) * (jj - (double)nn);
+					slcResampled.re.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+					//虚部插值
+					upper = slave.im.at<double>(mm, nn) + (slave.im.at<double>(mm, nn1) - slave.im.at<double>(mm, nn)) * (jj - (double)nn);
+					lower = slave.im.at<double>(mm1, nn) + (slave.im.at<double>(mm1, nn1) - slave.im.at<double>(mm1, nn)) * (jj - (double)nn);
+					slcResampled.im.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				}
+				
+			}
+
+		}
+	}
+	slave = slcResampled;
+	return 0;
+}
+
 
