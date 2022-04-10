@@ -8456,6 +8456,67 @@ int Utils::MB_phase_estimation(
 	return 0;
 }
 
+int Utils::spatialTemporalBaselineEstimation(
+	vector<string>& SLCH5Files,
+	int reference,
+	Mat& temporal,
+	Mat& spatial
+)
+{
+	if (SLCH5Files.size() < 2 ||
+		reference < 1 || reference > SLCH5Files.size()
+		)
+	{
+		fprintf(stderr, "spatialTemporalBaselineEstimation(): input check failed!\n");
+		return -1;
+	}
+	Utils util; FormatConversion conversion;
+	int ret, offset_row, offset_col, num_images, sceneHeight, sceneWidth;
+	double prf1, prf2, acquisitionTime1, acquisitionTime2, B_temporal, B_spatial_para, B_spatial_effect;
+	Mat lon_coef, lat_coef, statevec1, statevec2;
+	string start;
+	num_images = SLCH5Files.size();
+	temporal.create(1, num_images, CV_64F); spatial.create(1, num_images, CV_64F);
+	temporal.at<double>(0, reference - 1) = 0; spatial.at<double>(0, reference - 1) = 0;
+	ret = conversion.read_array_from_h5(SLCH5Files[reference - 1].c_str(), "lon_coefficient", lon_coef);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(SLCH5Files[reference - 1].c_str(), "lat_coefficient", lat_coef);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(SLCH5Files[reference - 1].c_str(), "state_vec", statevec1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "prf", &prf1);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(SLCH5Files[reference - 1].c_str(), "acquisition_start_time", start);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start.c_str(), &acquisitionTime1);
+	ret = conversion.read_int_from_h5(SLCH5Files[reference - 1].c_str(), "offset_row", &offset_row);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(SLCH5Files[reference - 1].c_str(), "offset_col", &offset_col);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(SLCH5Files[reference - 1].c_str(), "range_len", &sceneWidth);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(SLCH5Files[reference - 1].c_str(), "azimuth_len", &sceneHeight);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	for (int i = 0; i < num_images; i++)
+	{
+		if (i == reference - 1) continue;
+		ret = conversion.read_array_from_h5(SLCH5Files[i].c_str(), "state_vec", statevec2);
+		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+		ret = conversion.read_str_from_h5(SLCH5Files[i].c_str(), "acquisition_start_time", start);
+		if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+		ret = conversion.utc2gps(start.c_str(), &acquisitionTime2);
+		ret = conversion.read_double_from_h5(SLCH5Files[i].c_str(), "prf", &prf2);
+		if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+		ret = util.baseline_estimation(statevec1, statevec2, lon_coef, lat_coef, offset_row, offset_col,
+			sceneHeight, sceneWidth, 1.0 / prf1, 1.0 / prf2, &B_spatial_effect, &B_spatial_para);
+		if (return_check(ret, "baseline_estimation()", error_head)) return -1;
+		B_temporal = (acquisitionTime2 - acquisitionTime1) / 60 / 60 / 24;
+		temporal.at<double>(0, i) = B_temporal;
+		spatial.at<double>(0, i) = B_spatial_effect;
+	}
+	return 0;
+}
+
 int Utils::unwrap_region_growing(
 	vector<tri_node>& nodes, 
 	const vector<tri_edge>& edges, 

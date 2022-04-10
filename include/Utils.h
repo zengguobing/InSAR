@@ -1634,6 +1634,19 @@ public:
 		bool b_flat = true,
 		bool b_normalize = true
 	);
+	/*@brief SAR图像堆栈时空基线分布计算
+	* @param SLCH5Files                SAR图像数据文件
+	* @param reference                 参考图像序号
+	* @param temporal                  时间基线（返回值,1×n，单位：day）
+	* @param spatial                   空间基线（返回值,1×n，单位：m）
+	* @return 成功返回0，否则返回-1
+	*/
+	int spatialTemporalBaselineEstimation(
+		vector<string>& SLCH5Files,
+		int reference,
+		Mat& temporal,
+		Mat& spatial
+	);
 	/** @brief 区域生长法解缠（delaunay三角网）
 	
 	@param nodes                       Delaunay三角网络节点数组

@@ -216,6 +216,79 @@ public:
 		double lon_spacing = 5.0 / 6000.0,
 		double lat_spacing = 5.0 / 6000.0
 	);
+	/*@brief 将WGS84坐标DEM投影到相应的SAR坐标系中（投影经纬度也返回）
+	* @param DEM84                        84坐标系DEM（short型矩阵）
+	* @param mappedDEM                    投影DEM（返回值,short型矩阵）
+	* @param mappedLat                    投影纬度坐标返回值，double型矩阵
+	* @param mappedLon                    投影经度坐标（返回值，double型矩阵）
+	* @param lon_upperleft                84坐标系DEM左上角经度
+	* @param lat_upperleft                84坐标系DEM左上角纬度
+	* @param offset_row                   SAR图像在原场景中的行偏移量
+	* @param offset_col                   SAR图像在原场景中的列偏移量
+	* @param sceneHeight                  SAR图像场景高度
+	* @param sceneWidth                   SAR图像场景宽度
+	* @param prf                          SAR卫星雷达脉冲重复频率
+	* @param rangeSpacing                 距离向采样间隔（m）
+	* @param wavelength                   波长
+	* @param nearRangeTime                最近斜距时间
+	* @param acquisitionStartTime         方位向采样开始时间
+	* @param acquisitionStopTime          方位向采样结束时间
+	* @param stateVector                  卫星轨道数据（未插值）
+	* @param interp_times                 84坐标系DEM插值倍数（默认值为10）
+	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
+	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @return 成功返回0，否则返回-1
+	*/
+	int demMapping(
+		Mat& DEM84,
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		double lon_upperleft,
+		double lat_upperleft,
+		int offset_row,
+		int offset_col,
+		int sceneHeight,
+		int sceneWidth,
+		double prf,
+		double rangeSpacing,
+		double wavelength,
+		double nearRangeTime,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		Mat& stateVector,
+		int interp_times = 10,
+		double lon_spacing = 5.0 / 6000.0,
+		double lat_spacing = 5.0 / 6000.0
+	);
+	/*@brief 去除配准SLC图像中的参考地形相位（包括平地相位）
+	* @param slc_deramped                           去参考相位后SLC图像（返回值）
+	* @param mappedDEM                              配准主图像坐标系DEM
+	* @param mappedLat                              DEM纬度坐标
+	* @param mappedLon                              DEM经度坐标
+	* @param slcH5File                              配准SLC图像h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int SLC_deramp(
+		ComplexMat& slc,
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		const char* slcH5File
+	);
+	/*@brief 去除配准SAR图像数据堆栈的参考地形相位（包括平地相位）
+	* @param SLCH5Files                             配准SAR图像数据堆栈h5文件
+	* @param reference                              参考主图像序号
+	* @param demPath                                DEM下载保存路径
+	* @param outSLCH5Files                          去参考相位后SAR图像数据堆栈h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int SLCs_deramp(
+		vector<string>& SLCH5Files,
+		int reference,
+		const char* demPath,
+		vector<string>& outSLCH5Files
+	);
 	/*@brief 根据投影至SAR坐标系的DEM和卫星系统参数模拟地形相位
 	* @param mappedDEM                              投影至SAR坐标系的DEM（short型）
 	* @param topography_phase                       地形相位（返回值）
