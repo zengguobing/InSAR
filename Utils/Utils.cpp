@@ -3326,6 +3326,69 @@ int Utils::savephase(const char* filename, const char* colormap, Mat phase)
 	return 0;
 }
 
+int Utils::savephase(const char* filename, const char* colormap, Mat& phase, Mat& mask)
+{
+	if (filename == NULL ||
+		colormap == NULL ||
+		phase.rows < 1 ||
+		phase.cols < 1 ||
+		phase.type() != CV_64F ||
+		phase.channels() != 1 ||
+		mask.size() != phase.size() ||
+		mask.type() != CV_32S
+		)
+	{
+		fprintf(stderr, "savephase(): input check failed!\n\n");
+		return -1;
+	}
+	bool gray = false;
+	cv::ColormapTypes type = cv::COLORMAP_PARULA;
+	if (strcmp(colormap, "jet") == 0) type = cv::COLORMAP_JET;
+	if (strcmp(colormap, "hsv") == 0) type = cv::COLORMAP_HSV;
+	if (strcmp(colormap, "cool") == 0) type = cv::COLORMAP_COOL;
+	if (strcmp(colormap, "rainbow") == 0) type = cv::COLORMAP_RAINBOW;
+	if (strcmp(colormap, "spring") == 0) type = cv::COLORMAP_SPRING;
+	if (strcmp(colormap, "summer") == 0) type = cv::COLORMAP_SUMMER;
+	if (strcmp(colormap, "winter") == 0) type = cv::COLORMAP_WINTER;
+	if (strcmp(colormap, "autumn") == 0) type = cv::COLORMAP_AUTUMN;
+	if (strcmp(colormap, "gray") == 0) gray = true;
+
+	double min, max;
+	Mat tmp;
+	phase.copyTo(tmp);
+	cv::minMaxLoc(tmp, &min, &max);
+	if (fabs(max - min) < 0.000001)
+	{
+		fprintf(stderr, "phase value is the same for every pixel\n\n");
+		return -1;
+	}
+	tmp = (tmp - min) / (max - min) * 255.0;
+	tmp.convertTo(tmp, CV_8UC3);
+	if (!gray)
+	{
+		cv::applyColorMap(tmp, tmp, type);
+	}
+	for (int i = 0; i < tmp.rows; i++)
+	{
+		for (int j = 0; j < tmp.cols; j++)
+		{
+			if (mask.at<int>(i, j) == 0)
+			{
+				tmp.at<Vec<uchar, 3>>(i, j)[0] = 0;
+				tmp.at<Vec<uchar, 3>>(i, j)[1] = 0;
+				tmp.at<Vec<uchar, 3>>(i, j)[2] = 0;
+			}
+		}
+	}
+	bool ret = cv::imwrite(filename, tmp);
+	if (!ret)
+	{
+		fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", filename);
+		return -1;
+	}
+	return 0;
+}
+
 int Utils::resampling(const char* Src_file, const char* Dst_file, int dst_rows, int dst_cols)
 {
 	if (Src_file == NULL ||
@@ -3538,6 +3601,11 @@ int Utils::read_edges(const char* edge_file, vector<tri_edge>& edges, std::vecto
 	edges.clear(); node_neighbours.clear();
 	edges.resize(num_edges);
 	node_neighbours.resize(num_nodes);
+	node_neighbours.resize(num_nodes);
+	for (int i = 0; i < num_nodes; i++)
+	{
+		node_neighbours[i] = 0;
+	}
 	long end1, end2, edges_number, boundry_marker;
 	for (int i = 0; i < num_edges; i++)
 	{
