@@ -799,17 +799,17 @@ int Utils::write_DIMACS(const char* DIMACS_file_problem, Mat& residue, Mat& cohe
 		}
 	}
 	bool b_balanced = (positive == negative);
-	if (!b_balanced)
+	if (/*!b_balanced*/true)
 	{
 		Nodes_num = residue.rows * residue.cols + 1;
 		Arcs_num = 2 * (residue.rows - 1) * residue.cols + 2 * residue.rows * (residue.cols - 1) +
 			2 * 2 * residue.cols + 2 * 2 * (residue.rows - 2);
 	}
-	else
-	{
-		Nodes_num = residue.rows * residue.cols;
-		Arcs_num = 2 * (residue.rows - 1) * residue.cols + 2 * residue.rows * (residue.cols - 1);
-	}
+	//else
+	//{
+	//	Nodes_num = residue.rows * residue.cols;
+	//	Arcs_num = 2 * (residue.rows - 1) * residue.cols + 2 * residue.rows * (residue.cols - 1);
+	//}
 	ofstream fout;
 	FILE* fp = NULL;
 	fopen_s(&fp, DIMACS_file_problem, "wt");
@@ -850,12 +850,7 @@ int Utils::write_DIMACS(const char* DIMACS_file_problem, Mat& residue, Mat& cohe
 	/*写接地节点*/
 	
 	node_index = nc * nr + 1;
-	if (!b_balanced)
-	{
-		fprintf(fp, "n %ld %lf\n", node_index, -sum);
-	}
-	
-
+	fprintf(fp, "n %ld %lf\n", node_index, -sum);
 	long earth_node_index = node_index;
 
 	/*
@@ -866,48 +861,45 @@ int Utils::write_DIMACS(const char* DIMACS_file_problem, Mat& residue, Mat& cohe
 	double mean_coherence1, mean_coherence2, mean_coherence3, mean_coherence4;
 	fprintf(fp, "c Arc descriptor lines (from, to, minflow, maxflow, cost)\n");
 	/*接地节点的有向弧流费用*/
-	if (!b_balanced)
+	//top
+	for (i = 0; i < nc; i++)
 	{
-		//top
-		for (i = 0; i < nc; i++)
-		{
-			node_index = i + 1;
-			mean_coherence1 = coherence.at<double>(0, i);
-			mean_coherence2 = mean_coherence1;
-			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
-				node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
-				earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
-		}
-		//bottom
-		for (i = 0; i < nc; i++)
-		{
-			node_index = nc * (nr - 1) + i + 1;
-			mean_coherence1 = coherence.at<double>(nr - 1, i);
-			mean_coherence2 = mean_coherence1;
-			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
-				node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
-				earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
-		}
-		//left
-		for (i = 1; i < nr - 1; i++)
-		{
-			node_index = nc * i + 1;
-			mean_coherence1 = coherence.at<double>(i, 0);
-			mean_coherence2 = mean_coherence1;
-			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
-				node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
-				earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
-		}
-		//right
-		for (i = 1; i < nr - 1; i++)
-		{
-			node_index = nc * (i + 1);
-			mean_coherence1 = coherence.at<double>(i, nc - 1);
-			mean_coherence2 = mean_coherence1;
-			fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
-				node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
-				earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
-		}
+		node_index = i + 1;
+		mean_coherence1 = coherence.at<double>(0, i);
+		mean_coherence2 = mean_coherence1;
+		fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+			node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
+			earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
+	}
+	//bottom
+	for (i = 0; i < nc; i++)
+	{
+		node_index = nc * (nr - 1) + i + 1;
+		mean_coherence1 = coherence.at<double>(nr - 1, i);
+		mean_coherence2 = mean_coherence1;
+		fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+			node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
+			earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
+	}
+	//left
+	for (i = 1; i < nr - 1; i++)
+	{
+		node_index = nc * i + 1;
+		mean_coherence1 = coherence.at<double>(i, 0);
+		mean_coherence2 = mean_coherence1;
+		fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+			node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
+			earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
+	}
+	//right
+	for (i = 1; i < nr - 1; i++)
+	{
+		node_index = nc * (i + 1);
+		mean_coherence1 = coherence.at<double>(i, nc - 1);
+		mean_coherence2 = mean_coherence1;
+		fprintf(fp, "a %ld %ld %ld %ld %lf\na %ld %ld %ld %ld %lf\n",
+			node_index, earth_node_index, lower_bound, upper_bound, mean_coherence1,
+			earth_node_index, node_index, lower_bound, upper_bound, mean_coherence2);
 	}
 
 	/*非接地节点的有向弧流费用*/
@@ -3326,7 +3318,7 @@ int Utils::savephase(const char* filename, const char* colormap, Mat phase)
 	return 0;
 }
 
-int Utils::savephase(const char* filename, const char* colormap, Mat& phase, Mat& mask)
+int Utils::savephase_black(const char* filename, const char* colormap, Mat& phase, Mat& mask)
 {
 	if (filename == NULL ||
 		colormap == NULL ||
@@ -3338,7 +3330,7 @@ int Utils::savephase(const char* filename, const char* colormap, Mat& phase, Mat
 		mask.type() != CV_32S
 		)
 	{
-		fprintf(stderr, "savephase(): input check failed!\n\n");
+		fprintf(stderr, "savephase_black(): input check failed!\n\n");
 		return -1;
 	}
 	bool gray = false;
@@ -3359,7 +3351,7 @@ int Utils::savephase(const char* filename, const char* colormap, Mat& phase, Mat
 	cv::minMaxLoc(tmp, &min, &max);
 	if (fabs(max - min) < 0.000001)
 	{
-		fprintf(stderr, "phase value is the same for every pixel\n\n");
+		fprintf(stderr, "savephase_black(): phase value is the same for every pixel\n\n");
 		return -1;
 	}
 	tmp = (tmp - min) / (max - min) * 255.0;
@@ -3377,6 +3369,69 @@ int Utils::savephase(const char* filename, const char* colormap, Mat& phase, Mat
 				tmp.at<Vec<uchar, 3>>(i, j)[0] = 0;
 				tmp.at<Vec<uchar, 3>>(i, j)[1] = 0;
 				tmp.at<Vec<uchar, 3>>(i, j)[2] = 0;
+			}
+		}
+	}
+	bool ret = cv::imwrite(filename, tmp);
+	if (!ret)
+	{
+		fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", filename);
+		return -1;
+	}
+	return 0;
+}
+
+int Utils::savephase_white(const char* filename, const char* colormap, Mat& phase, Mat& mask)
+{
+	if (filename == NULL ||
+		colormap == NULL ||
+		phase.rows < 1 ||
+		phase.cols < 1 ||
+		phase.type() != CV_64F ||
+		phase.channels() != 1 ||
+		mask.size() != phase.size() ||
+		mask.type() != CV_32S
+		)
+	{
+		fprintf(stderr, "savephase_white(): input check failed!\n\n");
+		return -1;
+	}
+	bool gray = false;
+	cv::ColormapTypes type = cv::COLORMAP_PARULA;
+	if (strcmp(colormap, "jet") == 0) type = cv::COLORMAP_JET;
+	if (strcmp(colormap, "hsv") == 0) type = cv::COLORMAP_HSV;
+	if (strcmp(colormap, "cool") == 0) type = cv::COLORMAP_COOL;
+	if (strcmp(colormap, "rainbow") == 0) type = cv::COLORMAP_RAINBOW;
+	if (strcmp(colormap, "spring") == 0) type = cv::COLORMAP_SPRING;
+	if (strcmp(colormap, "summer") == 0) type = cv::COLORMAP_SUMMER;
+	if (strcmp(colormap, "winter") == 0) type = cv::COLORMAP_WINTER;
+	if (strcmp(colormap, "autumn") == 0) type = cv::COLORMAP_AUTUMN;
+	if (strcmp(colormap, "gray") == 0) gray = true;
+
+	double min, max;
+	Mat tmp;
+	phase.copyTo(tmp);
+	cv::minMaxLoc(tmp, &min, &max);
+	if (fabs(max - min) < 0.000001)
+	{
+		fprintf(stderr, "savephase_white() : phase value is the same for every pixel\n\n");
+		return -1;
+	}
+	tmp = (tmp - min) / (max - min) * 255.0;
+	tmp.convertTo(tmp, CV_8UC3);
+	if (!gray)
+	{
+		cv::applyColorMap(tmp, tmp, type);
+	}
+	for (int i = 0; i < tmp.rows; i++)
+	{
+		for (int j = 0; j < tmp.cols; j++)
+		{
+			if (mask.at<int>(i, j) == 0)
+			{
+				tmp.at<Vec<uchar, 3>>(i, j)[0] = 255;
+				tmp.at<Vec<uchar, 3>>(i, j)[1] = 255;
+				tmp.at<Vec<uchar, 3>>(i, j)[2] = 255;
 			}
 		}
 	}
@@ -7784,14 +7839,12 @@ int Utils::baseline_estimation(
 	* 图像坐标转经纬坐标
 	*/
 	Mat row, col;
-	row.create(rows, cols, CV_64F); col.create(rows, cols, CV_64F);
+	int j_col = (int)cols / 2;
+	row.create(rows, 1, CV_64F); col.create(rows, 1, CV_64F);
 	for (int i = 0; i < rows; i++)
 	{
-		for (int j = 0; j < cols; j++)
-		{
-			row.at<double>(i, j) = i + offset_row;
-			col.at<double>(i, j) = j + offset_col;
-		}
+		row.at<double>(i, 0) = i + offset_row;
+		col.at<double>(i, 0) = j_col + offset_col;
 	}
 	Mat lon, lat, lon_coefficient, lat_coefficient;
 	lon_coef.copyTo(lon_coefficient);
@@ -7813,8 +7866,8 @@ int Utils::baseline_estimation(
 	for (int i = 0; i < 1; i++)
 	{
 		Mat tmp(1, 3, CV_64F); Mat xyz;
-		tmp.at<double>(0, 0) = lat.at<double>(i, (int)cols / 2);
-		tmp.at<double>(0, 1) = lon.at<double>(i, (int)cols / 2);
+		tmp.at<double>(0, 0) = lat.at<double>(i, 0);
+		tmp.at<double>(0, 1) = lon.at<double>(i, 0);
 		tmp.at<double>(0, 2) = 0;
 		ell2xyz(tmp, xyz);
 
@@ -7845,8 +7898,8 @@ int Utils::baseline_estimation(
 	for (int i = 0; i < 1; i++)
 	{
 		Mat tmp(1, 3, CV_64F); Mat xyz;
-		tmp.at<double>(0, 0) = lat.at<double>(i, (int)cols / 2);
-		tmp.at<double>(0, 1) = lon.at<double>(i, (int)cols / 2);
+		tmp.at<double>(0, 0) = lat.at<double>(i, 0);
+		tmp.at<double>(0, 1) = lon.at<double>(i, 0);
 		tmp.at<double>(0, 2) = 0;
 		ell2xyz(tmp, xyz);
 
@@ -7878,8 +7931,8 @@ int Utils::baseline_estimation(
 	{
 		Mat R, B, tmp, xyz, effect_dir; double r;
 		tmp = Mat::zeros(1, 3, CV_64F);
-		tmp.at<double>(0, 0) = lat.at<double>(i, (int)cols / 2);
-		tmp.at<double>(0, 1) = lon.at<double>(i, (int)cols / 2);
+		tmp.at<double>(0, 0) = lat.at<double>(i, 0);
+		tmp.at<double>(0, 1) = lon.at<double>(i, 0);
 		tmp.at<double>(0, 2) = 0;
 		ell2xyz(tmp, xyz);
 

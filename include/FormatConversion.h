@@ -102,6 +102,30 @@ public:
 		const char* dataPath,
 		int masterIndex
 	);
+	/*@brief 添加单视复图像去参考相位节点
+	* @param dataNode            配准图像数据节点名
+	* @param dataName            配准图像数据名
+	* @param dataPath            配准图像数据储存路径（相对路径）
+	* @param masterIndex         主图像序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_SLC_deramp(
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath,
+		int masterIndex
+	);
+	/*@brief 添加小基线集时间序列分析节点
+	* @param dataNode            SBAS时间序列分析数据节点名
+	* @param dataName            SBAS时间序列分析数据名
+	* @param dataPath            SBAS时间序列分析图像数据储存路径（相对路径）
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_SBAS(
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath
+	);
 	/*@brief 添加哨兵一号burst拼接节点
 	* @param dataNode            deburst图像数据节点名
 	* @param dataName            deburst图像数据名

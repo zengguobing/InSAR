@@ -100,7 +100,47 @@ int Unwrap::MCF(
 	USES_CONVERSION;
 	Utils util;
 	int ret;
-	ret = util.write_DIMACS(MCF_problem_file, residue, coherence, 0.7);
+	int residue_count = 0;
+	for (int i = 0; i < residue.rows; i++)
+	{
+		for (int j = 0; j < residue.cols; j++)
+		{
+			if (fabs(residue.at<double>(i, j)) > 0.5) residue_count++;
+		}
+	}
+	if (residue_count == 0)
+	{
+		Mat k1, k2;
+		k1 = Mat::zeros(wrapped_phase.rows - 1, wrapped_phase.cols, CV_64F);
+		k2 = Mat::zeros(wrapped_phase.rows, wrapped_phase.cols - 1, CV_64F);
+		Mat diff_1, diff_2;
+		ret = util.diff(wrapped_phase, diff_1, diff_2, false);
+		if (return_check(ret, "diff(*, *, *, *)", error_head)) return -1;
+		ret = util.wrap(diff_1, diff_1);
+		if (return_check(ret, "wrap(*, *)", error_head)) return -1;
+		ret = util.wrap(diff_2, diff_2);
+		if (return_check(ret, "wrap(*, *)", error_head)) return -1;
+		double pi = 3.1415926535;
+		diff_1 = diff_1 / (2 * pi);
+		diff_2 = diff_2 / (2 * pi);
+		diff_1 = diff_1 - k1;
+		diff_2 = diff_2 - k2;
+		Mat tmp = diff_2(Range(0, 1), Range(0, diff_2.cols));
+		copyMakeBorder(tmp, tmp, 0, 0, 1, 0, BORDER_CONSTANT, Scalar(0.0));
+		ret = util.cumsum(tmp, 2);
+		if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
+		copyMakeBorder(diff_1, diff_1, 1, 0, 0, 0, BORDER_CONSTANT, Scalar(0));
+		for (int i = 0; i < diff_1.cols; i++)
+		{
+			diff_1.at<double>(0, i) = tmp.at<double>(0, i);
+		}
+		ret = util.cumsum(diff_1, 1);
+		if (return_check(ret, "cumsum(*, *)", error_head)) return -1;
+		unwrapped_phase = (diff_1) * 2 * pi;
+		unwrapped_phase = unwrapped_phase + wrapped_phase.at<double>(0, 0);
+		return 0;
+	}
+	ret = util.write_DIMACS(MCF_problem_file, residue, coherence, 0.5);
 	if (return_check(ret, "write_DIMACS(*, *, *)", error_head)) return -1;
 	//////////////////////////创建并调用最小费用流法进程///////////////////////////////
 	LPWSTR szCommandLine = new TCHAR[256];
@@ -161,16 +201,6 @@ int Unwrap::MCF(
 	solution.append(".sol");
 	ret = util.read_DIMACS(solution.c_str(), k1, k2, wrapped_phase.rows, wrapped_phase.cols);
 	if (return_check(ret, "read_DIMACS(*, *, *)", error_head)) return -1;
-	util.cvmat2bin("E:\\zgb1\\functions\\k1.bin", k1);
-	util.cvmat2bin("E:\\zgb1\\functions\\k2.bin", k2);
-	//Mat quality;
-	//ret = util.phase_derivatives_variance(wrapped_phase, quality);
-	//if (return_check(ret, "phase_derivatives_variance()", error_head)) return -1;
-	//Mat mask;
-	//ret = util.gen_mask(coherence, mask, 7, 0.75);
-	//if (return_check(ret, "gen_mask()", error_head)) return -1;
-	//ret = quailtyGuidedFloodfill(wrapped_phase, unwrapped_phase, mask, quality, k1, k2);
-	//if (return_check(ret, "quailtyGuidedFloodfill()", error_head)) return -1;
 	Mat diff_1, diff_2;
 	ret = util.diff(wrapped_phase, diff_1, diff_2, false);
 	if (return_check(ret, "diff(*, *, *, *)", error_head)) return -1;

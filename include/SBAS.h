@@ -384,12 +384,14 @@ public:
 	* @param nodes                   高相干点三角网络节点
 	* @param edges                   高相干点三角网络边
 	* @param start                   解缠起始节点
+	* @param b_zero_start            解缠起始点值是否设置为0
 	* @return 成功返回0，否则返回-1
 	*/
 	int floodFillUnwrap(
 		vector<SBAS_node>& nodes,
 		vector<SBAS_edge>& edges,
-		int start
+		int start,
+		bool b_zero_start = false
 	);
 	/*@brief 用相干系数设置高相干点三角网络边的权重
 	* @param coherence               相干系数
@@ -470,6 +472,7 @@ public:
 	* @param multilook_rg        距离向多视倍数
 	* @param ifgSavePath         差分相位h5文件保存路径
 	* @param b_save_images       是否保存为图片（默认为否）
+	* @param Goldstein_alpha     Goldstein滤波强度（默认为0.8）
 	* @return 成功返回0，否则返回-1
 	*/
 	int generate_interferograms(
@@ -480,7 +483,8 @@ public:
 		int multilook_az,
 		int multilook_rg,
 		const char* ifgSavePath,
-		bool b_save_images = false
+		bool b_save_images = false,
+		double alpha = 0.8
 	);
 	/*@brief 计算时间相关系数（temporal_coherence），评估时间序列估计效果
 	* @param estimated_phase_series              时间序列差分相位估计结果(n×1)
@@ -522,6 +526,21 @@ public:
 		double thresh_c1_to_c2 = 0.7,
 		bool b_normalize = true,
 		bool b_save_images = true
+	);
+	/*@brief 轨道精炼重去平（一阶拟合）
+	* @param unwrapped_phase                       解缠相位
+	* @param mask                                  高相干点掩膜
+	* @param coherence                             相关系数
+	* @param coh_thresh                            选控制点相关系数阈值
+	* @param reference                             参考点序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int refinement_and_reflattening(
+		Mat& unwrapped_phase,
+		Mat& mask,
+		Mat& coherence,
+		double coh_thresh,
+		int reference
 	);
 private:
 	char error_head[256];

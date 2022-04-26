@@ -1072,16 +1072,16 @@ int SBAS::writeDIMACS_spatial(
 		}
 	}
 	int n;
-	if (!b_balanced)
+	if (/*!b_balanced*/true)
 	{
 		n = num_triangle + 1;
 		fprintf(fp, "p min %ld %ld\n", n, num_arcs + boundry_tri * 2);
 	}
-	else
-	{
-		n = num_triangle;
-		fprintf(fp, "p min %ld %ld\n", n, num_arcs);
-	}
+	//else
+	//{
+	//	n = num_triangle;
+	//	fprintf(fp, "p min %ld %ld\n", n, num_arcs);
+	//}
 	fprintf(fp, "c Node descriptor lines\n");
 	positive = 0;
 	negative = 0;
@@ -1102,7 +1102,7 @@ int SBAS::writeDIMACS_spatial(
 		}
 	}
 	//写入大地节点
-	if (!b_balanced)
+	if (/*!b_balanced*/true)
 	{
 		fprintf(fp, "n %d %lf\n", num_triangle + 1, -sum);
 	}
@@ -1183,7 +1183,7 @@ int SBAS::writeDIMACS_spatial(
 		}
 		
 	}
-	if (!b_balanced)
+	if (/*!b_balanced*/true)
 	{
 		//写入边界流费用
 		for (int i = 0; i < num_triangle; i++)
@@ -1567,10 +1567,15 @@ int SBAS::generate_high_coherence_mask(
 		ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "phase", phase);
 		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 		int rows = phase.rows; int cols = phase.cols;
-		ret = util.phase_coherence(phase, wndsize_rg, wndsize_az, coherence);
-		if (return_check(ret, "phase_coherence()", error_head)) return -1;
-		ret = conversion.write_array_to_h5(phaseFiles[i].c_str(), "coherence", coherence);
-		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+		ret = conversion.read_array_from_h5(phaseFiles[i].c_str(), "coherence", coherence);
+		if (ret < 0)
+		{
+			ret = util.phase_coherence(phase, wndsize_rg, wndsize_az, coherence);
+			if (return_check(ret, "phase_coherence()", error_head)) return -1;
+			ret = conversion.write_array_to_h5(phaseFiles[i].c_str(), "coherence", coherence);
+			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+		}
+		
 		if (i == 0)
 		{
 			Mat tmp = Mat::zeros(rows, cols, CV_32S);
@@ -1592,14 +1597,14 @@ int SBAS::generate_high_coherence_mask(
 	{
 		for (int k = 0; k < cols; k++)
 		{
-			if (mask.at<int>(j, k) > count_thresh) mask.at<int>(j, k) = 1;
+			if (mask.at<int>(j, k) > count) mask.at<int>(j, k) = 1;
 			else mask.at<int>(j, k) = 0;
 		}
 	}
 	return 0;
 }
 
-int SBAS::floodFillUnwrap(vector<SBAS_node>& nodes, vector<SBAS_edge>& edges, int start)
+int SBAS::floodFillUnwrap(vector<SBAS_node>& nodes, vector<SBAS_edge>& edges, int start, bool b_zero_start)
 {
 	if (nodes.size() < 3 ||
 		edges.size() < 3 ||
@@ -1616,6 +1621,7 @@ int SBAS::floodFillUnwrap(vector<SBAS_node>& nodes, vector<SBAS_edge>& edges, in
 	int* neigh_edges = NULL;
 	queue<int> node_que;
 	node_que.push(start);
+	if (b_zero_start) nodes[start - 1].phase = 0.0;
 	while (!node_que.empty())
 	{
 		node_ix = node_que.front();
@@ -2069,7 +2075,8 @@ int SBAS::generate_interferograms(
 	int multilook_az,
 	int multilook_rg,
 	const char* ifgSavePath,
-	bool b_save_images
+	bool b_save_images,
+	double alpha
 )
 {
 	if (formation_matrix.type() != CV_32S ||
@@ -2091,7 +2098,7 @@ int SBAS::generate_interferograms(
 	std::string path(ifgSavePath), h5file;
 	std::replace(path.begin(), path.end(), '/', '\\');
 	ComplexMat master, slave;
-	Mat phase;
+	Mat phase, coherence, mapped_lat, mapped_lon;
 	char str[256];
 	int master_ix, slave_ix, offset_row, offset_col;
 	double B_temporal, B_spatial;
@@ -2118,13 +2125,17 @@ int SBAS::generate_interferograms(
 				ret = util.Multilook(master, slave, multilook_rg, multilook_az, phase);
 				if (return_check(ret, "Multilook()", error_head)) return -1;
 				//滤波
-				filter.Goldstein_filter(phase, phase, 0.8, 64, 8);
-
+				ret = filter.Goldstein_filter(phase, phase, alpha, 64, 8);
+				if (return_check(ret, "Goldstein_filter()", error_head)) return -1;
+				//计算相关系数
+				ret = util.phase_coherence(phase, coherence);
+				if (return_check(ret, "phase_coherence()", error_head)) return -1;
 				sprintf(str, "\\%d_%d.h5", i + 1, j + 1);
 				h5file = path + str;
 				ret = conversion.creat_new_h5(h5file.c_str());
 				ret = conversion.write_array_to_h5(h5file.c_str(), "phase", phase);
 				if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+				ret = conversion.write_array_to_h5(h5file.c_str(), "coherence", coherence);
 				ret = conversion.write_int_to_h5(h5file.c_str(), "offset_row", offset_row);
 				if (return_check(ret, "write_int_to_h5()", error_head)) return -1;
 				ret = conversion.write_int_to_h5(h5file.c_str(), "offset_col", offset_col);
@@ -2143,7 +2154,10 @@ int SBAS::generate_interferograms(
 				if (return_check(ret, "write_int_to_h5()", error_head)) return -1;
 				ret = conversion.Copy_para_from_h5_2_h5(SLCH5Files[master_ix - 1].c_str(), h5file.c_str());
 				if (return_check(ret, "Copy_para_from_h5_2_h5()", error_head)) return -1;
-
+				ret = conversion.read_array_from_h5(SLCH5Files[master_ix - 1].c_str(), "mapped_lat", mapped_lat);
+				if(ret == 0) conversion.write_array_to_h5(h5file.c_str(), "mapped_lat", mapped_lat);
+				ret = conversion.read_array_from_h5(SLCH5Files[master_ix - 1].c_str(), "mapped_lon", mapped_lon);
+				if (ret == 0) conversion.write_array_to_h5(h5file.c_str(), "mapped_lon", mapped_lon);
 				//是否保存为图片
 				if (b_save_images)
 				{
@@ -2442,6 +2456,85 @@ int SBAS::adaptive_multilooking(
 		}
 		
 	}
+
+	return 0;
+}
+
+int SBAS::refinement_and_reflattening(Mat& unwrapped_phase, Mat& mask, Mat& coherence, double coh_thresh, int reference)
+{
+	if (unwrapped_phase.size() != mask.size() ||
+		unwrapped_phase.size() != coherence.size() ||
+		unwrapped_phase.empty() ||
+		unwrapped_phase.type() != CV_64F ||
+		mask.type() != CV_32S ||
+		coherence.type() != CV_64F
+		)
+	{
+		fprintf(stderr, "refinement_and_reflattening(): input check failed!\n");
+		return -1;
+	}
+	int mask_count = cv::countNonZero(mask);
+	Mat A(mask_count, 3, CV_64F), b(mask_count, 1, CV_64F);
+	A = 1.0;
+	int count = 0, rows = mask.rows, cols = mask.cols;
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			if (mask.at<int>(i, j) == 1 && coherence.at<double>(i, j) > coh_thresh)
+			{
+				A.at<double>(count, 1) = (double)i;
+				A.at<double>(count, 2) = (double)j;
+				b.at<double>(count, 0) = unwrapped_phase.at<double>(i, j);
+				count++;
+			}
+		}
+	}
+	
+	if (count < 3)
+	{
+		return 0;
+	}
+	A(cv::Range(0, count), cv::Range(0, 3)).copyTo(A);
+	b(cv::Range(0, count), cv::Range(0, 1)).copyTo(b);
+
+	Mat A_t, x;
+	cv::transpose(A, A_t);
+	b = A_t * b;
+	A = A_t * A;
+	if (!cv::solve(A, b, x, cv::DECOMP_NORMAL))
+	{
+		return 0;
+	}
+
+	//找到参考点坐标
+	int ref_i, ref_j;
+	count = 0;
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			if (mask.at<int>(i, j) == 1)
+			{
+				count++;
+				if (count == reference) { ref_i = i; ref_j = j; }
+			}
+		}
+	}
+	double phase_ref = unwrapped_phase.at<double>(ref_i, ref_j);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			double a, b, c;
+			a = x.at<double>(0, 0);
+			b = x.at<double>(1, 0);
+			c = x.at<double>(2, 0);
+			unwrapped_phase.at<double>(i, j) = unwrapped_phase.at<double>(i, j) - (a + b * double(i) + c * double(j));
+		}
+	}
+	unwrapped_phase = unwrapped_phase - (unwrapped_phase.at<double>(ref_i, ref_j) - phase_ref);
 
 	return 0;
 }

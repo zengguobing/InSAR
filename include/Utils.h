@@ -889,14 +889,22 @@ public:
 	* 参数3 待保存相位
 	*/
 	int savephase(const char* filename, const char* colormap, Mat phase);
-	/*@brief 保存干涉相位图
+	/*@brief 保存干涉相位图（掩膜区域为黑色）
 	* @param filename                            目标文件名
 	* @param colormap                            颜色映射（jet/hsv/cool/parula等）
 	* @param phase                               待保存相位
 	* @param mask                                (int型)
 	* @return 成功返回0，否则返回-1
 	*/
-	int savephase(const char* filename, const char* colormap, Mat& phase, Mat& mask);
+	int savephase_black(const char* filename, const char* colormap, Mat& phase, Mat& mask);
+	/*@brief 保存干涉相位图（掩膜区域为白色）
+	* @param filename                            目标文件名
+	* @param colormap                            颜色映射（jet/hsv/cool/parula等）
+	* @param phase                               待保存相位
+	* @param mask                                (int型)
+	* @return 成功返回0，否则返回-1
+	*/
+	int savephase_white(const char* filename, const char* colormap, Mat& phase, Mat& mask);
 	/*图像重采样
 	* 参数1 原图像
 	* 参数2 目标图像
