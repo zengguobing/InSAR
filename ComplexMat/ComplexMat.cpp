@@ -221,14 +221,51 @@ Mat ComplexMat::GetPhase()
 		return Mat::zeros(1, 1, CV_64F);
 	}
 	Mat phase(nr, nc, CV_64F);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr; i++)
+	if (this->type() == CV_64F)
 	{
-		for (int j = 0; j < nc; j++)
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
 		{
-			phase.at <double>(i, j) = atan2(this->im.at<double>(i, j), this->re.at<double>(i, j));
+			for (int j = 0; j < nc; j++)
+			{
+				phase.at <double>(i, j) = atan2(this->im.at<double>(i, j), this->re.at<double>(i, j));
+			}
 		}
 	}
+	else if (this->type() == CV_32F)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				phase.at <double>(i, j) = atan2(this->im.at<float>(i, j), this->re.at<float>(i, j));
+			}
+		}
+	}
+	else if (this->type() == CV_32S)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				phase.at <double>(i, j) = atan2((double)this->im.at<int>(i, j), (double)this->re.at<int>(i, j));
+			}
+		}
+	}
+	else if (this->type() == CV_16S)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				phase.at <double>(i, j) = atan2((double)this->im.at<short>(i, j), (double)this->re.at<short>(i, j));
+			}
+		}
+	}
+
 	return phase;
 }
 

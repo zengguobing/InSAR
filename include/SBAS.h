@@ -532,15 +532,13 @@ public:
 	* @param mask                                  高相干点掩膜
 	* @param coherence                             相关系数
 	* @param coh_thresh                            选控制点相关系数阈值
-	* @param reference                             参考点序号
 	* @return 成功返回0，否则返回-1
 	*/
 	int refinement_and_reflattening(
 		Mat& unwrapped_phase,
 		Mat& mask,
 		Mat& coherence,
-		double coh_thresh,
-		int reference
+		double coh_thresh
 	);
 private:
 	char error_head[256];

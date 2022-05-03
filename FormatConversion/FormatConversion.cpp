@@ -498,9 +498,12 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 	s.append(dataset_name);
 	if (0 == H5Lexists(file_id, dataset_name, H5P_DEFAULT))
 	{
-		fprintf(stderr, "write_subarray_to_h5(): dataset %s doesn't exist!\n", dataset_name);
-		H5Fclose(file_id);
-		return -1;
+		int ret = write_array_to_h5(h5_filename, dataset_name, subarray);
+		if (return_check(ret, "write_array_to_h5()", error_head))
+		{
+			H5Fclose(file_id);
+			return -1;
+		}		
 	}
 	hid_t dataset_id = H5Dopen(file_id, s.c_str(), H5P_DEFAULT);
 	// 读取文件中dataset的dataspace空间
@@ -555,6 +558,18 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 			return -1;
 		}
 	}
+	else if (0 < H5Tequal(type, H5T_NATIVE_INT))
+	{
+		if (subarray.type() != CV_32S)
+		{
+			fprintf(stderr, "write_subarray_to_h5(): datatype mismatch!\n");
+			H5Fclose(file_id);
+			H5Dclose(dataset_id);
+			H5Sclose(dataspace_id);
+			H5Tclose(type);
+			return -1;
+		}
+	}
 	else
 	{
 		fprintf(stderr, "write_subarray_to_h5(): datatype not support yet!\n");
@@ -600,6 +615,10 @@ int FormatConversion::write_subarray_to_h5(const char* h5_filename, const char* 
 	else if (0 < H5Tequal(type, H5T_NATIVE_FLOAT))
 	{
 		H5Dwrite(dataset_id, H5T_NATIVE_FLOAT, memspace_id, dataspace_id, H5P_DEFAULT, subarray.data);
+	}
+	else if (0 < H5Tequal(type, H5T_NATIVE_INT))
+	{
+		H5Dwrite(dataset_id, H5T_NATIVE_INT, memspace_id, dataspace_id, H5P_DEFAULT, subarray.data);
 	}
 	else
 	{

@@ -2102,6 +2102,7 @@ int SBAS::generate_interferograms(
 	char str[256];
 	int master_ix, slave_ix, offset_row, offset_col;
 	double B_temporal, B_spatial;
+	bool b_mappedLatLon_written = false;
 	for (int i = 0; i < n_images; i++)
 	{
 		for (int j = 0; j < i; j++)
@@ -2155,9 +2156,13 @@ int SBAS::generate_interferograms(
 				ret = conversion.Copy_para_from_h5_2_h5(SLCH5Files[master_ix - 1].c_str(), h5file.c_str());
 				if (return_check(ret, "Copy_para_from_h5_2_h5()", error_head)) return -1;
 				ret = conversion.read_array_from_h5(SLCH5Files[master_ix - 1].c_str(), "mapped_lat", mapped_lat);
-				if(ret == 0) conversion.write_array_to_h5(h5file.c_str(), "mapped_lat", mapped_lat);
-				ret = conversion.read_array_from_h5(SLCH5Files[master_ix - 1].c_str(), "mapped_lon", mapped_lon);
-				if (ret == 0) conversion.write_array_to_h5(h5file.c_str(), "mapped_lon", mapped_lon);
+				if (ret == 0 && !b_mappedLatLon_written)
+				{
+					conversion.write_array_to_h5(h5file.c_str(), "mapped_lat", mapped_lat);
+					conversion.read_array_from_h5(SLCH5Files[master_ix - 1].c_str(), "mapped_lon", mapped_lon);
+					conversion.write_array_to_h5(h5file.c_str(), "mapped_lon", mapped_lon);
+					b_mappedLatLon_written = true;
+				}
 				//是否保存为图片
 				if (b_save_images)
 				{
@@ -2460,7 +2465,7 @@ int SBAS::adaptive_multilooking(
 	return 0;
 }
 
-int SBAS::refinement_and_reflattening(Mat& unwrapped_phase, Mat& mask, Mat& coherence, double coh_thresh, int reference)
+int SBAS::refinement_and_reflattening(Mat& unwrapped_phase, Mat& mask, Mat& coherence, double coh_thresh)
 {
 	if (unwrapped_phase.size() != mask.size() ||
 		unwrapped_phase.size() != coherence.size() ||
@@ -2508,20 +2513,20 @@ int SBAS::refinement_and_reflattening(Mat& unwrapped_phase, Mat& mask, Mat& cohe
 	}
 
 	//找到参考点坐标
-	int ref_i, ref_j;
-	count = 0;
-	for (int i = 0; i < rows; i++)
-	{
-		for (int j = 0; j < cols; j++)
-		{
-			if (mask.at<int>(i, j) == 1)
-			{
-				count++;
-				if (count == reference) { ref_i = i; ref_j = j; }
-			}
-		}
-	}
-	double phase_ref = unwrapped_phase.at<double>(ref_i, ref_j);
+	//int ref_i, ref_j;
+	//count = 0;
+	//for (int i = 0; i < rows; i++)
+	//{
+	//	for (int j = 0; j < cols; j++)
+	//	{
+	//		if (mask.at<int>(i, j) == 1)
+	//		{
+	//			count++;
+	//			if (count == reference) { ref_i = i; ref_j = j; }
+	//		}
+	//	}
+	//}
+	//double phase_ref = unwrapped_phase.at<double>(ref_i, ref_j);
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < rows; i++)
 	{
@@ -2534,7 +2539,7 @@ int SBAS::refinement_and_reflattening(Mat& unwrapped_phase, Mat& mask, Mat& cohe
 			unwrapped_phase.at<double>(i, j) = unwrapped_phase.at<double>(i, j) - (a + b * double(i) + c * double(j));
 		}
 	}
-	unwrapped_phase = unwrapped_phase - (unwrapped_phase.at<double>(ref_i, ref_j) - phase_ref);
+	//unwrapped_phase = unwrapped_phase - (unwrapped_phase.at<double>(ref_i, ref_j) - phase_ref);
 
 	return 0;
 }

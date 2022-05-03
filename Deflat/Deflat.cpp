@@ -1803,14 +1803,14 @@ int Deflat::SLCs_deramp(
 	ret = demMapping(dem, mappedDem, mappedLat, mappedLon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
 		prf, rangeSpacing, wavelength, nearRangeTime, start, end, statevec, 20);
 	if (return_check(ret, "demMapping()", error_head)) return -1;
+	ret = conversion.write_array_to_h5(outSLCH5Files[reference - 1].c_str(), "mapped_lat", mappedLat);
+	ret = conversion.write_array_to_h5(outSLCH5Files[reference - 1].c_str(), "mapped_lon", mappedLon);
 	for (int i = 0; i < images_num; i++)
 	{
 		ret = SLC_deramp(slc, mappedDem, mappedLat, mappedLon, SLCH5Files[i].c_str());
 		if (return_check(ret, "SLC_deramp()", error_head)) return -1;
 		ret = conversion.write_slc_to_h5(outSLCH5Files[i].c_str(), slc);
 		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-		ret = conversion.write_array_to_h5(outSLCH5Files[i].c_str(), "mapped_lat", mappedLat);
-		ret = conversion.write_array_to_h5(outSLCH5Files[i].c_str(), "mapped_lon", mappedLon);
 		ret = conversion.Copy_para_from_h5_2_h5(SLCH5Files[i].c_str(), outSLCH5Files[i].c_str());
 		if (return_check(ret, "Copy_para_from_h5_2_h5()", error_head)) return -1;
 		ret = conversion.read_int_from_h5(SLCH5Files[i].c_str(), "offset_row", &offset_row);
