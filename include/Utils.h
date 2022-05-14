@@ -569,17 +569,10 @@ public:
 	* 参数3 计算窗口大小（奇数）
 	*/
 	int phase_derivatives_variance(Mat& phase, Mat& phase_derivatives_variance, int wndsize = 3);
-	/*最大可积距离
-	* 参数1 原始相位
-	* 参数2 最大可积距离（返回值）
-	* 参数3 保守值（最大积分距离不能超过该值）
-	*/
-	int max_integrable_distance(Mat& phase, Mat& max_integrable_distance, double conservative_thresh = 20.0);
 	/*FFTSHIFT
 	 参数1 待fftshift的矩阵（原地进行fftshift操作）
 	*/
 	int fftshift(Mat& matrix);
-
 	/*计算干涉相位图的残差值（点）
 	 参数1 干涉相位
 	 参数2 残差点矩阵（返回值）
@@ -594,7 +587,6 @@ public:
 	*/
 	int residue(triangle* tri, int num_triangle, vector<tri_node>& nodes, tri_edge* edges, int num_edges);
 	/** @brief 计算Delaunay三角网络的残差值（并且标注残差边和残差节点）
-	
 	@param triangle                              Delaunay三角网三角形结构体数组
 	@param nodes                                 Delaunay三角网节点数组
 	@param edges                                 Delaunay三角网边结构体数组
@@ -666,7 +658,6 @@ public:
 	* 参数3 输出
 	*/
 	int cross(Mat& vec1, Mat& vec2, Mat& out);
-
 	/*写入DIMACS文件（描述最小费用问题）
 	 参数1 目标文件名
 	 参数2 残差点矩阵
@@ -1126,46 +1117,6 @@ public:
 		int rows,
 		int cols
 	);
-	/*SAR图像干涉相位序列去平地
-	* 参数1 干涉相位序列（原地操作）
-	* 参数2 干涉组合
-	* 参数3 卫星轨道参数（插值后， n_images×6）
-	* 参数4 地面控制点信息（纬度/经度/高度/行/列, n_gcps × 5）
-	* 参数5 SAR图像左上角在原SAR图像中的行数(可以直接设置为1)
-	* 参数6 SAR图像左上角在原SAR图像中的列数(可以直接设置为1)
-	* 参数7 收发方式（1单发单收， 2单发双收）
-	* 参数8 波长
-	*/
-	int PS_deflat(
-		vector<Mat>& interf_phase,
-		Mat& interf_combination,
-		vector<Mat>& pos,
-		vector<Mat>& gcps,
-		Mat& start_row,
-		Mat& start_col,
-		int mode,
-		double lambda
-	);
-	/*去平地(线性拟合法)
-	* 参数1 干涉相位（原地操作）
-	* 参数2 主星轨道参数（插值后， n_images×6）
-	* 参数3 辅星轨道参数（插值后， n_images×6）
-	* 参数4 地面控制点信息（纬度/经度/高度/行/列, n_gcps × 5）
-	* 参数5 SAR图像左上角在原SAR图像中的行数(可以直接设置为1)
-	* 参数6 SAR图像左上角在原SAR图像中的列数(可以直接设置为1)
-	* 参数7 收发方式（1单发单收， 2单发双收）
-	* 参数8 波长
-	*/
-	int _PS_deflat(
-		Mat& phase,
-		Mat& pos1,
-		Mat& pos2,
-		Mat& gcps,
-		int start_row,
-		int start_col,
-		int mode,
-		double lambda
-	);
 	/** @brief 时序SAR图像联合配准(所有slc同时载入内存)
 	
 	@param SAR_images            时序SAR图像（inplace，原地操作）
@@ -1216,72 +1167,6 @@ public:
 		int interp_times,
 		int blocksize
 	);
-	/*生成干涉图组合
-	* 参数1 SAR图像序列
-	* 参数2 干涉相位序列（返回值）
-	* 参数3 时间基线组合（返回值, 原地操作）
-	* 参数4 空间基线自合（返回值, 原地操作）
-	* 参数5 时间基线阈值（年）
-	* 参数6 空间基线阈值（米）
-	* 参数7 主图像序号(如果小于等于0则按照自由组合方式干涉)
-	* 参数8 干涉组合
-	*/
-	int PS_gen_interferogram(
-		vector<ComplexMat>& SAR_images,
-		vector<Mat>& interf_phase,
-		Mat& time_baseline,
-		Mat& spatial_baseline,
-		double time_thresh,
-		double spatial_thresh,
-		int Mast_index, 
-		Mat& interf_combination
-	);
-	/*空间基线估计
-	* 参数1 卫星轨道参数（插值后位置和速度， 尺寸：n*6）
-	* 参数2 地面控制点信息（纬经高，尺寸：n_gcps * 3）
-	* 参数3 波长
-	* 参数4 基线长度（返回值）
-	*/
-	int PS_spatialbaseline_est(
-		vector<Mat>& pos,
-		Mat gcps,
-		double lambda,
-		Mat& MB_effect
-	);
-	/*Combined Low-pass Adaptive Phase filtering（StaMPS自适应滤波器）
-	* 参数1 差分相位（复数形式）
-	* 参数2 滤波后相位（复数形式）
-	* 参数3 滤波器参数（一般为1）
-	* 参数4 滤波器参数（一般为0.3）
-	* 参数5 窗口大小（必须为偶数）
-	* 参数6 补零长度（必须为偶数）
-	* 参数7 低通滤波器系数(尺寸 = 窗口大小 + 补零长度)
-	*/
-	int Clap(
-		ComplexMat& phase,
-		ComplexMat& phase_filter,
-		double alpha,
-		double beta,
-		int n_win,
-		int n_pad,
-		Mat& lowpass
-	);
-	/*topofit
-	* 参数1 差分相位
-	* 参数2 垂直基线长度
-	* 参数3 num_trial_wraps
-	* 参数4 K0（返回值）
-	* 参数5 C0（返回值）
-	* 参数6 coh0（返回值）
-	* 参数7 残余相位（返回值）
-	*/
-	int PS_topofit(
-		Mat& dif_phase, Mat& bperp,
-		double num_trial_wraps,
-		double* K0, double* C0,
-		double* coh0,
-		Mat& phase_residue
-	);
 	/*hist函数（统计直方图函数）
 	* 参数1 待统计数据
 	* 参数2 统计标准下限区间中心
@@ -1296,163 +1181,6 @@ public:
 		double interval,
 		Mat& out
 	);
-	/*经纬高转换到局部坐标系
-	* 参数1 经纬高坐标
-	* 参数2 局部中心经度
-	* 参数3 局部中心纬度
-	* 参数4 局部坐标（返回值）
-	*/
-	int llh2local(const Mat& llh, double lon0, double lat0, Mat& xy);
-	/*将候选PS点重采样到规则网格上
-	* 参数1 局部坐标系坐标
-	* 参数2 网格间距大小（米）
-	* 参数3 候选PS点在网格中的坐标（返回值）
-	* 参数4 重采样网格点行数
-	* 参数5 重采样网格点列数
-	*/
-	int gen_grid(
-		const Mat& xy,
-		double grid_size,
-		Mat& grid_ij,
-		int* rows,
-		int* cols
-	);
-	/*计算随机相位的时间相干系数概率分布函数
-	* 参数1 随机数个数（建议值30000）
-	* 参数2 差分干涉图幅数
-	* 参数3 垂直基线
-	* 参数4 搜索区间半径
-	* 参数5 概率分布（返回值）
-	* 参数6 概率密度不为零的最小横坐标值
-	*/
-	int gen_CohDistributionOfRandomPhase(
-		int nrand,
-		int n_ifg,
-		const Mat& bperp,
-		double num_trial_wraps,
-		Mat& Nr,
-		int* Nr_max_nz_ix
-	);
-	/*第一次估计PS点的时间相干系数
-	* 参数1/参数2     差分相位（行：PS候选点序号，列：干涉图序号） / 振幅离差指数(按列排)
-	* 参数3/参数4     PS点在重采样网格中的坐标 / 垂直基线（与差分相位同尺寸）
-	* 参数5/参数6     低通滤波器系数 / 随机相位时间相干系数分布（按行排100行1列）
-	* 参数7/参数8     自适应滤波器参数（alpha建议值1.0， beta建议值0.3）
-	* 参数9/参数10    优化搜索区间半径 / 迭代最大次数
-	* 参数11/参数12   Nr参数 / 迭代收敛判断阈值
-	* 参数13/参数14   K_ps / C_ps（返回值）
-	* 参数15/参数16   coh_ps（时间相干系数返回值）/ fft窗口大小
-	*/
-	int PS_est_gamma_quick(
-		const Mat& dif_phase,
-		const Mat& D_A,
-		const Mat& grid_ij,
-		const Mat& bperp_mat,
-		Mat& lowpass,
-		Mat& Nr,
-		double alpha,
-		double beta,
-		double n_trial_wraps,
-		int gamma_max_iterations,
-		int Nr_max_nz_ix,
-		double gamma_change_convergence,
-		Mat& K_ps,
-		Mat& C_ps,
-		Mat& coh_ps,
-		int n_win
-	);
-	/*线性拟合时间相干系数阈值与D_A，并剔除小于阈值的PS候选点
-	* 参数1 D_A（振幅离差, 按列排）
-	* 参数2 PS候选点时间相干系数（按列排）
-	* 参数3 Nr（按行排）
-	* 参数4 拟合阈值（返回值）
-	* 参数5 low_coh_thresh
-	* 参数6 虚警率
-	*/
-	int coh_thresh_fit(
-		const Mat& D_A,
-		Mat& coh_ps,
-		Mat& Nr,
-		Mat& coh_thresh_D_A,
-		int low_coh_thresh,
-		double false_alarm
-	);
-	/*二维网格搜索相邻PS点差分相位模型相干系数最大值点，估计出delta_vel和delta_epsilon
-	* 搜索区间间隔(1mm/y, 2m)
-	* 
-	* 参数1 每个PS_pair的相位序列（按行排开）
-	* 参数2 与时间基线序列相关的参数（4 * pi * T_i / lambda， 与参数1行列相同）
-	* 参数3 与空间基线序列相关的参数（4 * pi * berp_i / lambda / R_i / sin_theta_i， 与参数1行列相同）
-	* 参数4 形变速率差搜索区间半径(mm/y)
-	* 参数5 高程差搜索区间半径(m)
-	* 参数6 MC值（返回值）
-	* 参数7 形变速率差（返回值）
-	* 参数8 高程差（返回值）
-	*/
-	int PS_topovel_fit_search(
-		ComplexMat& ph,
-		Mat& coef_delta_vel,
-		Mat& coef_delta_height,
-		double radius_delta_vel,
-		double radius_delta_height,
-		double* MC,
-		double* delta_vel,
-		double* delta_height
-	);
-	/*二维网格搜索(精搜索)相邻PS点差分相位模型相干系数最大值点，估计出delta_vel和delta_epsilon
-	* 搜索区间间隔(0.1mm/y, 0.2m)
-	* 
-	* 参数1 每个PS_pair的相位序列（按行排开）
-	* 参数2 与时间基线序列相关的参数（4 * pi * T_i / lambda， 与参数1行列相同）
-	* 参数3 与空间基线序列相关的参数（4 * pi * berp_i / lambda / R_i / sin_theta_i， 与参数1行列相同）
-	* 参数4 粗搜索结果（delta_vel）
-	* 参数5 粗搜索结果（delta_height）
-	* 参数6 形变速率差搜索区间半径(mm/y)
-	* 参数7 高程差搜索区间半径(m)
-	* 参数8 MC值（返回值）
-	* 参数9 形变速率差（返回值）
-	* 参数10 高程差（返回值）
-	*/
-	int PS_topovel_fit_search_2(
-		ComplexMat& ph,
-		Mat& coef_delta_vel,
-		Mat& coef_delta_height,
-		double rough_delta_vel_center,
-		double rough_delta_height_center,
-		double radius_delta_vel,
-		double radius_delta_height,
-		double* MC,
-		double* delta_vel,
-		double* delta_height
-	);
-	/*通过模型相干系数（Model Coherence）对PS边进行筛选，小于阈值被丢弃
-	* 参数1 PS节点数组
-	* 参数2 PS边结构体数组
-	* 参数3 PS边结构体数
-	* 参数4 模型相干系数阈值
-	*/
-	int Dump_unqualified_pairnodes(
-		vector<tri_node>& nodes,
-		tri_edge* edges,
-		int num_edges,
-		double MC_thresh
-	);
-	/*增量积分集成（积分获取每个PS点的形变速率和高程误差）
-	* 参数1 PS点数组
-	* 参数2 PS边结构体数组
-	* 参数3 PS边数量
-	* 参数4 PS积分边长阈值（超过此阈值不通过此边积分集成）
-	* 参数5 MC阈值（超过此阈值不通过此边积分集成）
-	*/
-	int PS_topovel_incre(
-		vector<tri_node>& nodes,
-		tri_edge* edges,
-		int num_edges, 
-		double distance_thresh,
-		double MC_thresh
-	);
-
-
 	/*
 	* 卫星轨道插值
 	* 参数1：卫星轨道参数（未插值）
@@ -1679,74 +1407,6 @@ public:
 		double distance_thresh,
 		double quality_thresh
 	);
-	/** @brief 3D相位解缠，1D时间-->2D空间
-	
-	@param mask                          需要解缠的像素点掩膜(int型)
-	@param quality_map                   质量图
-	@param wrapped_phase_series          待解缠相位时间序列
-	@param unwrapped_phase_series        解缠相位时间序列
-	@param delaunay_exe_path             生成Delaunay三角网的可执行程序（delaunay.exe）所在路径
-	@param tmp_file_path                 产生的临时文件储存路径
-	@param distance_thresh               积分解缠距离阈值，超过此阈值不通过该边积分解缠，不能小于1
-	@param quality_thresh                质量阈值，低于此阈值不通过此边积分
-	@return 成功返回0，否则返回-1
-	*/
-	int unwrap_3D(
-		const Mat& mask,
-		const vector<Mat>& quality_map,
-		vector<Mat>& wrapped_phase_series,
-		vector<Mat>& unwrapped_phase_series,
-		const char* delaunay_exe_path,
-		const char* tmp_file_path,
-		double distance_thresh,
-		double quality_thresh
-	);
-	/** @brief 3D相位解缠（Delaunay三角网最小费用流法）
-	
-	@param mask                          需要解缠的像素点掩膜(int型)
-	@param quality_map                   质量图
-	@param wrapped_phase_series          待解缠相位时间序列
-	@param unwrapped_phase_series        解缠相位时间序列
-	@param delaunay_exe_path             生成Delaunay三角网的可执行程序（delaunay.exe）所在路径
-	@param mcf_exe_path                  最小费用流求解器可执行程序（mcf.exe）所在路径
-	@param tmp_file_path                 产生的临时文件储存路径
-	@param distance_thresh               积分解缠距离阈值，超过此阈值不通过该边积分解缠，不能小于1
-	@return 成功返回0，否则返回-1
-	*/
-	int unwrap_3D_mcf(
-		const Mat& mask,
-		const vector<Mat>& quality_map,
-		vector<Mat>& wrapped_phase_series,
-		vector<Mat>& unwrapped_phase_series,
-		const char* delaunay_exe_path,
-		const char* mcf_exe_path,
-		const char* tmp_file_path,
-		double distance_thresh
-	);
-	/** @brief 自适应分块3D相位解缠
-	
-	@param mask                          需要解缠的像素点掩膜(int型)
-	@param quality_map                   质量图
-	@param wrapped_phase_series          待解缠相位时间序列
-	@param unwrapped_phase_series        解缠相位时间序列
-	@param delaunay_exe_path             生成Delaunay三角网的可执行程序（delaunay.exe）所在路径
-	@param mcf_exe_path                  最小费用流求解器可执行程序（mcf.exe）所在路径
-	@param tmp_file_path                 产生的临时文件储存路径
-	@param distance_thresh               积分解缠距离阈值，超过此阈值不通过该边积分解缠，不能小于1
-	@param quality_thresh                质量阈值，低于此阈值不通过此边积分
-	@return 成功返回0，否则返回-1
-	*/
-	int unwrap_3D_adaptive_tiling(
-		const Mat& mask,
-		const vector<Mat>& quality_map,
-		vector<Mat>& wrapped_phase_series,
-		vector<Mat>& unwrapped_phase_series,
-		const char* delaunay_exe_path,
-		const char* mcf_exe_path,
-		const char* tmp_file_path,
-		double distance_thresh,
-		double quality_thresh
-	);
 	/*@brief 根据图像的大小、行列偏移以及行列-->经纬度的转换系数，计算图像的地理边界（最大最小经纬度）
 	* @param lat_coefficient                        地理坐标转换系数（行列-->纬度）
 	* @param lon_coefficient                        地理坐标转换系数（行列-->经度）
@@ -1814,6 +1474,33 @@ public:
 	* @return 成功返回0，否则返回-1
 	*/
 	static int downloadSRTM(const char* name, const char* DEMpath);
+	/*@brief 根据四个角经纬度坐标，将图片叠加到Google Earth上
+	* @param BottomLeft_lon                左下角经度
+	* @param BottomLeft_lat                左下角纬度
+	* @param BottomRight_lon               右下角经度
+	* @param BottomRight_lat               右下角纬度
+	* @param TopRight_lon                  右上角经度
+	* @param TopRight_lat                  右上角纬度
+	* @param TopLeft_lon                   左上角经度
+	* @param TopLeft_lat                   左上角纬度
+	* @param image_file                    图像文件（必须与待写入的KML文件处在同一目录下）
+	* @param KML_file                      待写入KML文件名
+	* @param Legend_file                   图例文件（必须与待写入的KML文件处在同一目录下）
+	* @return 成功返回0，否则返回-1
+	*/
+	static int writeOverlayKML(
+		double BottomLeft_lon,
+		double BottomLeft_lat,
+		double BottomRight_lon,
+		double BottomRight_lat,
+		double TopRight_lon,
+		double TopRight_lat,
+		double TopLeft_lon,
+		double TopLeft_lat,
+		const char* image_file,
+		const char* KML_file,
+		const char* Legend_file = NULL
+	);
 
 private:
 	static constexpr const char* SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
