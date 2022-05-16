@@ -1483,6 +1483,8 @@ public:
 	* @param TopRight_lat                  右上角纬度
 	* @param TopLeft_lon                   左上角经度
 	* @param TopLeft_lat                   左上角纬度
+	* @param Reference_lon                 参考点经度
+	* @param Reference_lat                 参考点纬度
 	* @param image_file                    图像文件（必须与待写入的KML文件处在同一目录下）
 	* @param KML_file                      待写入KML文件名
 	* @param Legend_file                   图例文件（必须与待写入的KML文件处在同一目录下）
@@ -1497,6 +1499,8 @@ public:
 		double TopRight_lat,
 		double TopLeft_lon,
 		double TopLeft_lat,
+		double Reference_lon,
+		double Reference_lat,
 		const char* image_file,
 		const char* KML_file,
 		const char* Legend_file = NULL

@@ -7818,6 +7818,8 @@ int Utils::writeOverlayKML(
 	double TopRight_lat, 
 	double TopLeft_lon,
 	double TopLeft_lat, 
+	double Reference_lon,
+	double Reference_lat,
 	const char* image_file,
 	const char* KML_file, 
 	const char* Legend_file
@@ -7827,10 +7829,12 @@ int Utils::writeOverlayKML(
 		fabs(BottomRight_lat) > 90.0 ||
 		fabs(TopLeft_lat) > 90.0 ||
 		fabs(TopRight_lat) > 90.0 ||
+		fabs(Reference_lat) > 90.0 ||
 		fabs(BottomLeft_lon) > 180.0 ||
 		fabs(BottomRight_lon) > 180.0 ||
 		fabs(TopLeft_lon) > 180.0 ||
 		fabs(TopRight_lon) > 180.0 ||
+		fabs(Reference_lon) > 180.0 ||
 		!image_file ||
 		!KML_file
 		)
@@ -7888,7 +7892,7 @@ int Utils::writeOverlayKML(
 	TiXmlText* content5 = new TiXmlText(coordinates_content);
 	coordinates->LinkEndChild(content5);
 	LatLonQuad->LinkEndChild(coordinates);
-
+	
 	//如果有图例文件
 	if (Legend_file)
 	{
@@ -7944,6 +7948,26 @@ int Utils::writeOverlayKML(
 		size->SetAttribute("yunits", "fraction");
 		ScreenOverlay->LinkEndChild(size);
 	}
+
+	//参考点标记
+	TiXmlElement* Placemark = new TiXmlElement("Placemark");
+	Document->LinkEndChild(Placemark);
+
+	TiXmlElement* name23 = new TiXmlElement("name");
+	TiXmlText* content23 = new TiXmlText("Reference Point");
+	name23->LinkEndChild(content23);
+	Placemark->LinkEndChild(name23);
+
+	TiXmlElement* Point = new TiXmlElement("Point");
+	Placemark->LinkEndChild(Point);
+
+	TiXmlElement* coordinates_ref = new TiXmlElement("coordinates");
+	sprintf(coordinates_content, "%lf,%lf", Reference_lon, Reference_lat);
+	TiXmlText* content55 = new TiXmlText(coordinates_content);
+	coordinates_ref->LinkEndChild(content55);
+	Point->LinkEndChild(coordinates_ref);
+
+
 	if (!doc.SaveFile(KML_file))
 	{
 		fprintf(stderr, "writeOverlayKML(): failed to save %s! \n", KML_file);
