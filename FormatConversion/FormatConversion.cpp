@@ -8149,6 +8149,37 @@ int Sentinel1Utils::computeImageGeoBoundry(
 	return 0;
 }
 
+int Sentinel1Utils::computeImageGeoBoundry(double* lonMin, double* lonMax, double* latMin, double* latMax, int burstIndex)
+{
+	if (!bInitialized || !lonMin || !lonMax || !latMin || !latMax || burstIndex < 1 || burstIndex > this->burstCount)
+	{
+		fprintf(stderr, "computeImageGeoBoundry(): input check failed!");
+		return -1;
+	}
+	*lonMin = 181.0;
+	*lonMax = -181.0;
+	*latMin = 91.0;
+	*latMax = -91.0;
+	int start_row, end_row, cols_num;
+	cols_num = geolocationGridPoint.rows / (this->burstCount + 1);
+	start_row = cols_num * (burstIndex - 1); end_row = start_row + cols_num;
+	for (int i = start_row; i < end_row; i++)
+	{
+		double lon = geolocationGridPoint.at<double>(i, 0);
+		double lat = geolocationGridPoint.at<double>(i, 1);
+		*lonMin = *lonMin > lon ? lon : *lonMin;
+		*lonMax = *lonMax < lon ? lon : *lonMax;
+		*latMin = *latMin > lat ? lat : *latMin;
+		*latMax = *latMax < lat ? lat : *latMax;
+	}
+	double extra = 5.0 / 6000;
+	*lonMin = *lonMin - extra * 50;
+	*lonMax = *lonMax + extra * 50;
+	*latMin = *latMin - extra * 50;
+	*latMax = *latMax + extra * 50;
+	return 0;
+}
+
 int Sentinel1Utils::deburst(const char* outFile)
 {
 	if (!bInitialized || !outFile)
@@ -9640,7 +9671,7 @@ int Sentinel1BackGeocoding::performBilinearResampling(
 			result = tmp * coef_c;
 			offset_cols = result.at<double>(0, 0);
 
-			ii += offset_rows;
+			ii += offset_rows /*+ 0.0053*/;
 			jj += offset_cols;
 
 			mm = (int)floor(ii); nn = (int)floor(jj);

@@ -856,7 +856,7 @@ public:
 	/*DEM路径*/
 	string DEMPath;
 	/*SRTM全球高程url*/
-	string SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
+	string SRTMURL = "http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
 
 	char error_head[512];
 
@@ -1236,6 +1236,21 @@ public:
 		double* lonMax,
 		double* latMin,
 		double* latMax
+	);
+	/*@brief 计算场景地理位置（经纬度）边界
+	* @param lonMin                           最小经度
+	* @param lonMax                           最大经度
+	* @param latMin                           最小纬度
+	* @param latMax                           最大纬度
+	* @param burstIndex                       burst序号（1-based）
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeImageGeoBoundry(
+		double* lonMin,
+		double* lonMax,
+		double* latMin,
+		double* latMax,
+		int burstIndex
 	);
 	/*@brief burst拼接
 	* @param outFile                          deburst输出h5文件
