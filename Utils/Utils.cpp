@@ -2725,8 +2725,8 @@ int Utils::Multilook(
 {
 	if (master.GetRows() != slave.GetRows() ||
 		master.GetCols() != slave.GetCols() ||
-		master.type() != CV_64F ||
-		slave.type() != CV_64F ||
+		(master.type() != CV_64F && master.type() != CV_32F) ||
+		(slave.type() != CV_64F && slave.type() != CV_32F) ||
 		master.GetRows() < 1 ||
 		master.GetCols() < 1 ||
 		multilook_rg < 1 ||
@@ -2752,8 +2752,8 @@ int Utils::Multilook(
 	int nr_new = nr / multilook_az;
 	int nc_new = nc / multilook_rg;
 
-	Mat real = Mat::zeros(nr_new, nc_new, CV_64F);
-	Mat imag = Mat::zeros(nr_new, nc_new, CV_64F);
+	Mat real = Mat::zeros(nr_new, nc_new, CV_32F);
+	Mat imag = Mat::zeros(nr_new, nc_new, CV_32F);
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < nr_new; i++)
 	{
@@ -2764,8 +2764,8 @@ int Utils::Multilook(
 		{
 			left = j * multilook_rg; left = left < 0 ? 0 : left;
 			right = left + multilook_rg; right = right > nc ? nc : right;
-			real.at<double>(i, j) = cv::mean(tmp.re(Range(top, bottom), Range(left, right)))[0];
-			imag.at<double>(i, j) = cv::mean(tmp.im(Range(top, bottom), Range(left, right)))[0];
+			real.at<float>(i, j) = cv::mean(tmp.re(Range(top, bottom), Range(left, right)))[0];
+			imag.at<float>(i, j) = cv::mean(tmp.im(Range(top, bottom), Range(left, right)))[0];
 		}
 	}
 	tmp.SetRe(real);
@@ -5436,6 +5436,90 @@ int Utils::hist(Mat& input, double lowercenter, double uppercenter, double inter
 	}
 	H.at<double>(0, len - 1) = H.at<double>(0, len - 1) + double(nc - k);
 	H.copyTo(out);
+	return 0;
+}
+
+int Utils::hist(Mat& input, double lowerbound, double upperbound, double interval, Mat& out_x, Mat& out_y)
+{
+	if (input.empty() ||
+		input.channels() != 1 ||
+		lowerbound >= upperbound ||
+		interval >= (upperbound - lowerbound)
+		)
+	{
+		fprintf(stderr, "hist(): input check failed!\n");
+		return -1;
+	}
+	int num_bins = (upperbound - lowerbound) / interval + 1;
+	double cmp = lowerbound + interval;
+	out_x.create(1, num_bins, CV_64F);
+	out_y.create(1, num_bins, CV_64F);
+	for (int i = 0; i < num_bins; i++)
+	{
+		out_x.at<double>(i) = lowerbound + interval * (0.5 + i);
+		out_y.at<double>(i) = 0.0;
+	}
+	Mat tmp;
+	input.copyTo(tmp);
+	if (tmp.rows != 1) tmp = tmp.reshape(0, 1);
+	if (tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);
+	int num_element = tmp.cols; int count = 0; int bin_count = 0; int bin_num_count = 0;
+	cv::sort(tmp, tmp, SORT_ASCENDING + SORT_EVERY_ROW);
+	while (count < num_element)
+	{
+		if (tmp.at<double>(count) >= cmp)
+		{
+			out_y.at<double>(bin_count) = bin_num_count;
+			bin_num_count = 0;
+			bin_count++;
+			cmp += interval;
+		}
+		bin_num_count++;
+		count++;
+	}
+	out_y.at<double>(num_bins - 1) = out_y.at<double>(num_bins - 2);
+
+	return 0;
+}
+
+int Utils::gaussian_curve_fit(Mat& input_x, Mat& input_y, double* mu, double* sigma_square, double* scale)
+{
+	if (input_x.empty() ||
+		input_y.size() != input_x.size() ||
+		input_x.type() != CV_64F ||
+		input_y.type() != CV_64F ||
+		!mu || !sigma_square || !scale
+		)
+	{
+		fprintf(stderr, "gaussian_curve_fit(): input check failed!\n");
+		return -1;
+	}
+	if (input_x.rows != 1)
+	{
+		input_x = input_x.reshape(0, 1);
+		input_y = input_y.reshape(0, 1);
+	}
+	int cols = input_x.cols;
+	Mat b(cols, 1, CV_64F), A(cols, 3, CV_64F); A = 1.0;
+	for (int i = 0; i < cols; i++)
+	{
+		b.at<double>(i) = log(input_y.at<double>(i));
+		A.at<double>(i, 1) = input_x.at<double>(i);
+		A.at<double>(i, 2) = input_x.at<double>(i) * input_x.at<double>(i);
+	}
+	Mat A_t;
+	cv::transpose(A, A_t);
+	A = A_t * A;
+	b = A_t * b;
+	Mat x;
+	if (!cv::solve(A, b, x, cv::DECOMP_NORMAL))
+	{
+		fprintf(stderr, "gaussian_curve_fit(): can't solve LS problem!\n");
+		return -1;
+	}
+	*sigma_square = -1.0 / x.at<double>(2) / 2.0;
+	*mu = *sigma_square * x.at<double>(1);
+	*scale = exp(x.at<double>(0) + (*mu) * (*mu) / 2.0 / *sigma_square);
 	return 0;
 }
 

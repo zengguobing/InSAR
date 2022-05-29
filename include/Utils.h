@@ -1181,6 +1181,38 @@ public:
 		double interval,
 		Mat& out
 	);
+	/*@brief 直方图统计函数
+	* @param input                   输入待统计数据
+	* @param lowerbound              区间下界
+	* @param upperbound              区间上界
+	* @param interval                统计区间间隔
+	* @param out_x                   输出结果（横坐标）
+	* @param out_y                   输出结果（纵坐标）
+	* @return 成功返回0，否则返回-1
+	*/
+	int hist(
+		Mat& input,
+		double lowerbound,
+		double upperbound,
+		double interval,
+		Mat& out_x,
+		Mat& out_y
+	);
+	/*@brief 高斯曲线拟合
+	* @param input_x                输入横坐标
+	* @param input_y                输入纵坐标
+	* @param mu                     均值
+	* @param sigma_square           方差
+	* @param scale                  幅度
+	* @return 成功返回0，否则返回-1
+	*/
+	int gaussian_curve_fit(
+		Mat& input_x,
+		Mat& input_y,
+		double* mu,
+		double* sigma_square,
+		double* scale
+	);
 	/*
 	* 卫星轨道插值
 	* 参数1：卫星轨道参数（未插值）
