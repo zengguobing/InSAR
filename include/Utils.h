@@ -819,7 +819,7 @@ public:
 		int multilook_rg,
 		int multilook_az
 	);
-	/** @brief 将相位转换成cos和sin（实部和虚部）
+	/** @brief 将相位转换成cos和sin（实部和虚部，支持double和float）
 	
 	@param phase                     输入相位
 	@param cos                       实部
@@ -1536,6 +1536,39 @@ public:
 		const char* image_file,
 		const char* KML_file,
 		const char* Legend_file = NULL
+	);
+	/*@brief 拼接哨兵一号3个子带干涉相位
+	* @param IW1_h5file                     子带1干涉相位h5文件
+	* @param IW2_h5file                     子带2干涉相位h5文件
+	* @param IW3_h5file                     子带3干涉相位h5文件
+	* @param merged_phase                   拼接后干涉相位
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_subswath_merge(
+		const char* IW1_h5file,
+		const char* IW2_h5file,
+		const char* IW3_h5file,
+		Mat& merged_phase
+	);
+	/*@brief 拼接哨兵一号同一轨道相邻frame的干涉相位
+	* @param h5files                        同一子带不同frame干涉相位h5数据文件
+	* @param merged_phase_h5                拼接后的干涉相位h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_frame_merge(
+		vector<string>& h5files,
+		const char* merged_phase_h5
+	);
+	/*@brief 拼接同一轨道相邻frame的单视复图像
+	* @param frame1_h5                         待拼接frame1的h5文件
+	* @param frame2_h5                         待拼接frame2的h5文件
+	* @param outframe_h5                       拼接frame的h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_frame_merge(
+		const char* frame1_h5,
+		const char* frame2_h5,
+		const char* outframe_h5
 	);
 
 private:

@@ -2121,8 +2121,8 @@ int SBAS::generate_interferograms(
 				if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
 				ret = conversion.read_slc_from_h5(SLCH5Files[slave_ix - 1].c_str(), slave);
 				if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-				if (master.type() != CV_64F) master.convertTo(master, CV_64F);
-				if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+				if (master.type() != CV_32F) master.convertTo(master, CV_32F);
+				if (slave.type() != CV_32F) slave.convertTo(slave, CV_32F);
 				ret = util.Multilook(master, slave, multilook_rg, multilook_az, phase);
 				if (return_check(ret, "Multilook()", error_head)) return -1;
 				//ÂË²¨

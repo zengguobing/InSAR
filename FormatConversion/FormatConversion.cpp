@@ -7663,9 +7663,9 @@ int Sentinel1Utils::init()
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(h5File.c_str(), "fine_state_vec", this->preciseOrbitList);
 	ret = conversion.read_array_from_h5(h5File.c_str(), "antennaPattern_elevationAngle", this->antennaPattern_elevationAngle);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	//if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(h5File.c_str(), "antennaPattern_slantRangeTime", this->antennaPattern_slantRangeTime);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	//if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(h5File.c_str(), "gcps", this->geolocationGridPoint);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 
