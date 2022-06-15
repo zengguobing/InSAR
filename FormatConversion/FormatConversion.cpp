@@ -4669,6 +4669,108 @@ int XMLFile::XMLFile_add_S1_Deburst(const char* dataNode, const char* dataName, 
 	return 0;
 }
 
+int XMLFile::XMLFile_add_geocoding(const char* dataNode, const char* dataName, const char* dataPath, const char* level)
+{
+	if (!dataNode ||
+		!dataName ||
+		!dataPath ||
+		!level
+		)
+	{
+		fprintf(stderr, "XMLFile_add_geocoding(): input check failed!\n");
+		return -1;
+	}
+	TiXmlElement* DataNode = NULL;
+	int ret = find_node_with_attribute(doc.RootElement(), "DataNode", "name", dataNode, DataNode);
+	string tmp;
+	if (!DataNode)
+	{
+		DataNode = new TiXmlElement("DataNode");
+		DataNode->SetAttribute("name", dataNode);
+		int index = 1;
+		TiXmlElement* root = doc.RootElement()->FirstChildElement()->NextSiblingElement();
+		for (; root != NULL; root = root->NextSiblingElement(), index++)
+		{
+
+		}
+		string index_str = int2str(index);
+		DataNode->SetAttribute("index", index_str.c_str());
+		DataNode->SetAttribute("data_count", "1");
+		DataNode->SetAttribute("data_processing", "geocoding");
+		DataNode->SetAttribute("rank", level);
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+		DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(dataName));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText(level));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText("1"));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(dataPath));
+		Data->LinkEndChild(Data_Path);
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(0);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(0);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+
+		TiXmlElement* Data_Processing_Parameters = new TiXmlElement("Data_Processing_Parameters");
+		DataNode->LinkEndChild(Data_Processing_Parameters);
+		TiXmlElement* nill = new TiXmlElement("nill");
+		tmp = int2str(0);
+		nill->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data_Processing_Parameters->LinkEndChild(nill);
+
+
+		doc.RootElement()->LinkEndChild(DataNode);
+	}
+	else
+	{
+		string str = DataNode->Attribute("data_count");
+		int index = str2int(str) + 1;
+		TiXmlElement* p = NULL;
+		tmp = int2str(index);
+		DataNode->SetAttribute("data_count", tmp.c_str());
+		TiXmlElement* LastNode = DataNode->LastChild()->ToElement();
+
+		TiXmlElement* Data = new TiXmlElement("Data");
+
+		int data_count = 0;
+		ret = get_children_count(DataNode, &data_count);
+		//DataNode->LinkEndChild(Data);
+		TiXmlElement* Data_Name = new TiXmlElement("Data_Name");
+		Data_Name->LinkEndChild(new TiXmlText(dataName));
+		Data->LinkEndChild(Data_Name);
+		TiXmlElement* Data_Rank = new TiXmlElement("Data_Rank");
+		Data_Rank->LinkEndChild(new TiXmlText(level));
+		Data->LinkEndChild(Data_Rank);
+		TiXmlElement* Data_Index = new TiXmlElement("Data_Index");
+		Data_Index->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Data_Index);
+		TiXmlElement* Data_Path = new TiXmlElement("Data_Path");
+		Data_Path->LinkEndChild(new TiXmlText(dataPath));
+		Data->LinkEndChild(Data_Path);
+		TiXmlElement* Row_Offset = new TiXmlElement("Row_Offset");
+		tmp = int2str(0);
+		Row_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Row_Offset);
+		TiXmlElement* Col_Offset = new TiXmlElement("Col_Offset");
+		tmp = int2str(0);
+		Col_Offset->LinkEndChild(new TiXmlText(tmp.c_str()));
+		Data->LinkEndChild(Col_Offset);
+		DataNode->InsertBeforeChild(LastNode, *Data);
+	}
+	return 0;
+}
+
 int XMLFile::XMLFile_add_interferometric_phase(const char* datanode_name, const char* node_name, const char* node_path,
 	const char* master_name, const char* rank, int offset_row, int offset_col, int isdeflat, int istopo_removal, int iscoherence,
 	int win_w, int win_h, int multilook_rg, int multilook_az)

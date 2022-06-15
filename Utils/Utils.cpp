@@ -1446,19 +1446,32 @@ int Utils::wrap(Mat& Src, Mat& Dst)
 {
 	int rows = Src.rows;
 	int cols = Src.cols;
-	double pi = 3.1415926535;
-	if (rows < 1 || cols < 1 || Src.type() != CV_64F)
+	if (rows < 1 || cols < 1 || (Src.type() != CV_64F && Src.type() != CV_32F))
 	{
 		fprintf(stderr, "wrap(): input check failed!\n\n");
 		return -1;
 	}
 	Mat tmp = Mat::zeros(rows, cols, CV_64F);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < rows; i++)
+	if (Src.type() == CV_64F)
 	{
-		for (int j = 0; j < cols; j++)
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
 		{
-			tmp.at<double>(i, j) = atan2(sin(Src.at<double>(i, j)), cos(Src.at<double>(i, j)));
+			for (int j = 0; j < cols; j++)
+			{
+				tmp.at<double>(i, j) = atan2(sin(Src.at<double>(i, j)), cos(Src.at<double>(i, j)));
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				tmp.at<double>(i, j) = atan2(sin(Src.at<float>(i, j)), cos(Src.at<float>(i, j)));
+			}
 		}
 	}
 	//Dst = tmp;
@@ -3257,7 +3270,17 @@ int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 		fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
 		return -1;
 	}
-
+	double db = 65.0;
+	min = min < -1.0 ? -1.0 : min;
+	max = min + db;
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr; i++)
+	{
+		for (int j = 0; j < nc; j++)
+		{
+			if (amplitude.at<double>(i, j) >= max) amplitude.at<double>(i, j) = max;
+		}
+	}
 	amplitude = (amplitude - min) / (max - min) * 255.0;
 	amplitude.convertTo(amplitude, CV_8U);
 	bool ret = cv::imwrite(filename, amplitude);
@@ -4607,7 +4630,7 @@ int Utils::std(const Mat& input, double* std)
 	if (input.rows < 1 ||
 		input.cols < 1 ||
 		input.channels() != 1 ||
-		input.type() != CV_64F ||
+		//input.type() != CV_64F ||
 		std == NULL
 		)
 	{
@@ -8131,10 +8154,10 @@ int Utils::S1_subswath_merge(
 	const char* IW1_h5file,
 	const char* IW2_h5file,
 	const char* IW3_h5file, 
-	Mat& phase
+	const char* merged_phase_h5file
 )
 {
-	if (!IW1_h5file || !IW2_h5file || !IW3_h5file)
+	if (!IW1_h5file || !IW2_h5file || !IW3_h5file || !merged_phase_h5file)
 	{
 		fprintf(stderr, "S1_subswath_merge(): input check failed\n");
 		return -1;
@@ -8233,11 +8256,30 @@ int Utils::S1_subswath_merge(
 	int row_offset = (start1 - start2) * prf / (double)mul_az;
 	int total_rows = (((end1 > end2 ? end1 : end2) - (start1 < start2 ? start1 : start2))*prf + 1) / (double)mul_az + 1;
 	Mat phase_tmp(total_rows, total_cols, CV_64F); phase_tmp = 0.0;
-	Mat phase1, phase2;
+	Mat lon_tmp(total_rows, total_cols, CV_32F); lon_tmp = 360.0;
+	Mat lat_tmp(total_rows, total_cols, CV_32F); lat_tmp = 360.0;
+	Mat phase1, phase2, mapped_lon1, mapped_lon2, mapped_lat1, mapped_lat2;
 	ret = conversion.read_array_from_h5(IW1_h5file, "phase", phase1);
 	ret = conversion.read_array_from_h5(IW2_h5file, "phase", phase2);
+	ret = conversion.read_array_from_h5(IW1_h5file, "mapped_lon", mapped_lon1);
+	ret += conversion.read_array_from_h5(IW1_h5file, "mapped_lat", mapped_lat1);
+	ret += conversion.read_array_from_h5(IW2_h5file, "mapped_lon", mapped_lon2);
+	ret += conversion.read_array_from_h5(IW2_h5file, "mapped_lat", mapped_lat2);
+	int temp_ret = ret;
 	if (row_offset < 0)
 	{
+		if (temp_ret == 0)
+		{
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(0, col_end_last)).copyTo
+			(lon_tmp(cv::Range(0, mapped_lon1.rows), cv::Range(0, col_end_last)));
+			mapped_lon2(cv::Range(0, mapped_lon2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lon_tmp(cv::Range(-row_offset, mapped_lon2.rows - row_offset), cv::Range(col_end_last, total_cols)));
+
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(0, col_end_last)).copyTo
+			(lat_tmp(cv::Range(0, mapped_lat1.rows), cv::Range(0, col_end_last)));
+			mapped_lat2(cv::Range(0, mapped_lat2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lat_tmp(cv::Range(-row_offset, mapped_lat2.rows - row_offset), cv::Range(col_end_last, total_cols)));
+		}
 		phase1(cv::Range(0, phase1.rows), cv::Range(0, col_end_last)).copyTo
 		(phase_tmp(cv::Range(0, phase1.rows), cv::Range(0, col_end_last)));
 		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols2)).copyTo
@@ -8245,6 +8287,18 @@ int Utils::S1_subswath_merge(
 	}
 	else
 	{
+		if (temp_ret == 0)
+		{
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(0, col_end_last)).copyTo
+			(lon_tmp(cv::Range(row_offset, mapped_lon1.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lon2(cv::Range(0, mapped_lon2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lon_tmp(cv::Range(0, mapped_lon2.rows), cv::Range(col_end_last, total_cols)));
+
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(0, col_end_last)).copyTo
+			(lat_tmp(cv::Range(row_offset, mapped_lat1.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lat2(cv::Range(0, mapped_lat2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lat_tmp(cv::Range(0, mapped_lat2.rows), cv::Range(col_end_last, total_cols)));
+		}
 		phase1(cv::Range(0, phase1.rows), cv::Range(0, col_end_last)).copyTo
 		(phase_tmp(cv::Range(row_offset, phase1.rows + row_offset), cv::Range(0, col_end_last)));
 		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols2)).copyTo
@@ -8264,9 +8318,26 @@ int Utils::S1_subswath_merge(
 	total_rows = (((end1 > end3 ? end1 : end3) - (start1 < start3 ? start1 : start3)) * prf + 1) / (double)mul_az + 1;
 
 	phase1.create(total_rows, total_cols, CV_64F); phase1 = 0.0;
+	mapped_lat2.create(total_rows, total_cols, CV_32F); mapped_lat2 = 360.0;
+	mapped_lon2.create(total_rows, total_cols, CV_32F); mapped_lon2 = 360.0;
 	ret = conversion.read_array_from_h5(IW3_h5file, "phase", phase2);
+	ret = conversion.read_array_from_h5(IW3_h5file, "mapped_lon", mapped_lon1);
+	ret += conversion.read_array_from_h5(IW3_h5file, "mapped_lat", mapped_lat1);
+	temp_ret += ret;
 	if (row_offset < 0)
 	{
+		if (temp_ret == 0)
+		{
+			lon_tmp(cv::Range(0, lon_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lon2(cv::Range(0, lon_tmp.rows), cv::Range(0, col_end_last)));
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lon2(cv::Range(-row_offset, mapped_lon1.rows - row_offset), cv::Range(col_end_last, total_cols)));
+
+			lat_tmp(cv::Range(0, lat_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lat2(cv::Range(0, lat_tmp.rows), cv::Range(0, col_end_last)));
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lat2(cv::Range(-row_offset, mapped_lat1.rows - row_offset), cv::Range(col_end_last, total_cols)));
+		}
 		phase_tmp(cv::Range(0, phase_tmp.rows), cv::Range(0, col_end_last)).copyTo
 		(phase1(cv::Range(0, phase_tmp.rows), cv::Range(0, col_end_last)));
 		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols3)).copyTo
@@ -8274,12 +8345,55 @@ int Utils::S1_subswath_merge(
 	}
 	else
 	{
+		if (temp_ret == 0)
+		{
+			lon_tmp(cv::Range(0, lon_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lon2(cv::Range(row_offset, lon_tmp.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lon2(cv::Range(0, mapped_lon1.rows), cv::Range(col_end_last, total_cols)));
+
+			lat_tmp(cv::Range(0, lat_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lat2(cv::Range(row_offset, lat_tmp.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lat2(cv::Range(0, mapped_lat1.rows), cv::Range(col_end_last, total_cols)));
+		}
 		phase_tmp(cv::Range(0, phase_tmp.rows), cv::Range(0, col_end_last)).copyTo
 		(phase1(cv::Range(row_offset, phase_tmp.rows + row_offset), cv::Range(0, col_end_last)));
 		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols3)).copyTo
 		(phase1(cv::Range(0, phase2.rows), cv::Range(col_end_last, total_cols)));
 	}
-	phase1.copyTo(phase);
+	ret = conversion.creat_new_h5(merged_phase_h5file);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.write_array_to_h5(merged_phase_h5file, "phase", phase1);
+	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+
+	if (temp_ret == 0)
+	{
+		ret = conversion.write_array_to_h5(merged_phase_h5file, "mapped_lon", mapped_lon2);
+		ret = conversion.write_array_to_h5(merged_phase_h5file, "mapped_lat", mapped_lat2);
+	}
+
+	conversion.write_int_to_h5(merged_phase_h5file, "multilook_az", mul_az);
+	conversion.write_int_to_h5(merged_phase_h5file, "multilook_rg", mul_rg);
+	conversion.write_int_to_h5(merged_phase_h5file, "azimuth_len", phase1.rows);
+	conversion.write_int_to_h5(merged_phase_h5file, "range_len", phase1.cols);
+
+	//写入三个子带的source_1和source_2
+
+	string source_1, source_2;
+	ret = conversion.read_str_from_h5(IW1_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW1", source_1.c_str());
+	ret = conversion.read_str_from_h5(IW1_h5file, "source_2", source_2);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW1", source_2.c_str());
+	ret = conversion.read_str_from_h5(IW2_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW2", source_1.c_str());
+	ret = conversion.read_str_from_h5(IW2_h5file, "source_2", source_2);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW2", source_2.c_str());
+	ret = conversion.read_str_from_h5(IW3_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW3", source_1.c_str());
+	ret = conversion.read_str_from_h5(IW3_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW3", source_2.c_str());
+
 	return 0;
 }
 
@@ -9279,6 +9393,868 @@ int Utils::S1_frame_merge(const char* frame1_h5, const char* frame2_h5, const ch
 		conversion.write_array_to_h5(outframe_h5, "col_coefficient", col_coefficient);
 	}
 	
+	return 0;
+}
+
+int Utils::SAR2UTM(
+	Mat& mapped_lon,
+	Mat& mapped_lat,
+	Mat& phase, 
+	Mat& mapped_phase,
+	int interpolation_method,
+	double* lon_east,
+	double* lon_west,
+	double* lat_north,
+	double* lat_south
+)
+{
+	if (mapped_lat.size() != mapped_lon.size() ||
+		mapped_lat.size() != phase.size() ||
+		phase.rows < 2 ||
+		phase.cols < 2 ||
+		phase.type() != CV_64F ||
+		mapped_lat.type() != CV_32F ||
+		mapped_lon.type() != CV_32F
+		)
+	{
+		fprintf(stderr, "SAR2UTM(): input check failed!\n");
+		return -1;
+	}
+	//确定经纬度覆盖范围
+	double max_lon = -380.0, min_lon = 380.0, max_lat = -380.0, min_lat = 180.0;
+	for (int i = 0; i < mapped_lat.rows; i++)
+	{
+		for (int j = 0; j < mapped_lat.cols; j++)
+		{
+			if (mapped_lat.at<float>(i, j) < 350.0)
+			{
+				min_lat = min_lat > mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : min_lat;
+				max_lat = max_lat < mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : max_lat;
+				min_lon = min_lon > mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : min_lon;
+				max_lon = max_lon < mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : max_lon;
+			}
+		}
+	}
+	//cv::minMaxLoc(mapped_lon, &min_lon, &max_lon);
+	//cv::minMaxLoc(mapped_lat, &min_lat, &max_lat);
+	double west = max_lon - min_lon > 180.0 ? max_lon : min_lon;
+	if (lon_west) *lon_west = west;
+	
+	//确定经纬度采样间隔
+	double lon_interval, lat_interval;
+	Mat temp1, temp2;
+	int rows_start = mapped_lon.rows / 4;
+	int rows_end = rows_start + mapped_lon.rows / 4;
+	mapped_lon(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lon.cols)).copyTo(temp1);
+	mapped_lon(cv::Range(rows_start + 1, rows_end + 1), cv::Range(0, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	lon_interval = cv::mean(temp1)[0];
+	double sigma1, sigma2;
+	std(temp1, &sigma1);
+
+	mapped_lon(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lon.cols - 1)).copyTo(temp1);
+	mapped_lon(cv::Range(rows_start, rows_end), cv::Range(1, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	std(temp1, &sigma2);
+	lon_interval = (cv::mean(temp1)[0] + fabs(lon_interval)) / 2.0;
+	lon_interval = lon_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	mapped_lat(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lat.cols)).copyTo(temp1);
+	mapped_lat(cv::Range(rows_start + 1, rows_end + 1), cv::Range(0, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = cv::mean(temp1)[0];
+	std(temp1, &sigma1);
+
+	mapped_lat(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lat.cols - 1)).copyTo(temp1);
+	mapped_lat(cv::Range(rows_start, rows_end), cv::Range(1, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = (cv::mean(temp1)[0] + lat_interval) / 2.0;
+	std(temp1, &sigma2);
+	lat_interval = lat_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	int rows = phase.rows; int cols = phase.cols;
+	
+
+	//计算UTM坐标系相位尺寸
+	int UTM_rows = (max_lat - min_lat) / lat_interval;
+	UTM_rows += 2;
+	double south = max_lat - (double)(UTM_rows - 1) * lat_interval;
+	double north = max_lat;
+	if (lat_north) *lat_north = north;
+	if (lat_south) *lat_south = south;
+	double max_lon_temp = max_lon - min_lon;
+	max_lon_temp = max_lon_temp > 180.0 ? 360.0 - max_lon_temp : max_lon_temp;
+	int UTM_cols = max_lon_temp / lon_interval;
+	UTM_cols += 2;
+	double east = west + (double)(UTM_cols - 1) * lon_interval;
+	east = east > 180.0 ? east - 360.0 : east;
+	if (lon_east) *lon_east = east;
+	Mat b_filled(UTM_rows, UTM_cols, CV_8U); b_filled = 0;
+	mapped_phase.create(UTM_rows, UTM_cols, CV_64F); mapped_phase = 0.0;
+	//开始地理编码
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			double lon, lat;
+			int row, col;
+			lon = mapped_lon.at<float>(i, j);
+			if (lon > 350.0) continue;
+			lat = mapped_lat.at<float>(i, j);
+			row = (int)round((lat - min_lat) / lat_interval);
+			lon = fabs(lon - west);
+			lon = lon > 180.0 ? 360.0 - lon : lon;
+			col = (int)round(lon / lon_interval);
+			mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
+			b_filled.at<uchar>(row, col) = 1;
+		}
+	}
+
+	//插值
+	if (interpolation_method == 0)
+	{
+		for (int i = 0; i < UTM_rows; i++)
+		{
+			for (int j = 0; j < UTM_cols; j++)
+			{
+				if (b_filled.at<uchar>(i, j) != 0) continue;
+				int up, down, left, right, up_count, down_count, left_count, right_count;
+				double value1, value2, ratio1, ratio2;
+				//寻找上面有值的点
+				up = i;
+				while (true)
+				{
+					up--;
+					if (up < 0) break;
+					if (b_filled.at<uchar>(up, j) != 0) break;
+				}
+				//寻找下面有值的点
+				down = i;
+				while (true)
+				{
+					down++;
+					if (down > UTM_rows - 1) break;
+					if (b_filled.at<uchar>(down, j) != 0) break;
+				}
+				//寻找左边有值的点
+				left = j;
+				while (true)
+				{
+					left--;
+					if (left < 0) break;
+					if (b_filled.at<uchar>(i, left) != 0) break;
+				}
+				//寻找右边有值的点
+				right = j;
+				while (true)
+				{
+					right++;
+					if (right > UTM_cols - 1) break;
+					if (b_filled.at<uchar>(i, right) != 0) break;
+				}
+
+				//上下左右都有值
+				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+				{
+					int x_i = i, x_j = j;
+					int down_distance = down - i;
+					int up_distance = i - up;
+					int left_distance = j - left;
+					int right_distance = right - j;
+					if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+					{
+						x_i = down; x_j = j;
+					}
+					else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+					{
+						x_i = up; x_j = j;
+					}
+					else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+					{
+						x_i = i; x_j = left;
+					}
+					else
+					{
+						x_i = i; x_j = right;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+				//上下有值
+				if (up >= 0 && down <= UTM_rows - 1)
+				{
+					int x_i = i, x_j = j;
+					int down_distance = down - i;
+					int up_distance = i - up;
+					if (down_distance < up_distance)
+					{
+						x_i = down; x_j = j;
+					}
+					else
+					{
+						x_i = down; x_j = j;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+				//左右有值
+				if (left >= 0 && right <= UTM_cols - 1)
+				{
+					int x_i = i, x_j = j;
+					int left_distance = j - left;
+					int right_distance = right - j;
+					if (left_distance < right_distance)
+					{
+						x_i = i; x_j = left;
+					}
+					else
+					{
+						x_i = i; x_j = right;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < UTM_rows; i++)
+		{
+			for (int j = 0; j < UTM_cols; j++)
+			{
+				if (b_filled.at<uchar>(i, j) != 0) continue;
+				int up, down, left, right, up_count, down_count, left_count, right_count;
+				double value1, value2, ratio1, ratio2;
+				//寻找上面有值的点
+				up = i;
+				while (true)
+				{
+					up--;
+					if (up < 0) break;
+					if (b_filled.at<uchar>(up, j) != 0) break;
+				}
+				//寻找下面有值的点
+				down = i;
+				while (true)
+				{
+					down++;
+					if (down > UTM_rows - 1) break;
+					if (b_filled.at<uchar>(down, j) != 0) break;
+				}
+				//寻找左边有值的点
+				left = j;
+				while (true)
+				{
+					left--;
+					if (left < 0) break;
+					if (b_filled.at<uchar>(i, left) != 0) break;
+				}
+				//寻找右边有值的点
+				right = j;
+				while (true)
+				{
+					right++;
+					if (right > UTM_cols - 1) break;
+					if (b_filled.at<uchar>(i, right) != 0) break;
+				}
+
+				//上下左右都有值
+				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+				{
+					
+					ratio1 = double(j - left) / double(right - left);
+					value1 = double(mapped_phase.at<double>(i, left)) +
+						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+					ratio2 = double(i - up) / double(down - up);
+					value2 = double(mapped_phase.at<double>(up, j)) +
+						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+					mapped_phase.at<double>(i, j) = (value1 + value2) / 2.0;
+					continue;
+				}
+				//上下有值
+				if (up >= 0 && down <= UTM_rows - 1)
+				{
+					ratio2 = double(i - up) / double(down - up);
+					value2 = double(mapped_phase.at<double>(up, j)) +
+						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+					mapped_phase.at<double>(i, j) = value2;
+					continue;
+				}
+				//左右有值
+				if (left >= 0 && right <= UTM_cols - 1)
+				{
+					ratio1 = double(j - left) / double(right - left);
+					value1 = double(mapped_phase.at<double>(i, left)) +
+						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+					mapped_phase.at<double>(i, j) = value1;
+					continue;
+				}
+			}
+		}
+	}
+	
+
+	cv::flip(mapped_phase, mapped_phase, 0);
+	return 0;
+}
+
+int Utils::SAR2UTM(
+	Mat& mapped_lon,
+	Mat& mapped_lat,
+	ComplexMat& slc, 
+	ComplexMat& mapped_slc, 
+	int interpolation_method,
+	double* lon_east,
+	double* lon_west,
+	double* lat_north,
+	double* lat_south
+)
+{
+	if (mapped_lat.size() != mapped_lon.size() ||
+		mapped_lat.size() != slc.re.size() ||
+		mapped_lat.size() != slc.im.size() ||
+		slc.GetRows() < 2 ||
+		slc.GetCols() < 2 ||
+		(slc.type() != CV_16S && slc.type() != CV_32F) ||
+		mapped_lat.type() != CV_32F ||
+		mapped_lon.type() != CV_32F
+		)
+	{
+		fprintf(stderr, "SAR2UTM(): input check failed!\n");
+		return -1;
+	}
+	//确定经纬度覆盖范围
+	double max_lon, min_lon, max_lat, min_lat;
+	cv::minMaxLoc(mapped_lon, &min_lon, &max_lon);
+	cv::minMaxLoc(mapped_lat, &min_lat, &max_lat);
+	double west = max_lon - min_lon > 180.0 ? max_lon : min_lon;
+	if (lon_west) *lon_west = west;
+	//确定经纬度采样间隔
+	double lon_interval, lat_interval;
+	Mat temp1, temp2;
+	mapped_lon(cv::Range(0, mapped_lon.rows - 1), cv::Range(0, mapped_lon.cols)).copyTo(temp1);
+	mapped_lon(cv::Range(1, mapped_lon.rows), cv::Range(0, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	lon_interval = cv::mean(temp1)[0];
+	double sigma1, sigma2;
+	std(temp1, &sigma1);
+
+	mapped_lon(cv::Range(0, mapped_lon.rows), cv::Range(0, mapped_lon.cols - 1)).copyTo(temp1);
+	mapped_lon(cv::Range(0, mapped_lon.rows), cv::Range(1, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	std(temp1, &sigma2);
+	lon_interval = (cv::mean(temp1)[0] + fabs(lon_interval)) / 2.0;
+	lon_interval = lon_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	mapped_lat(cv::Range(0, mapped_lat.rows - 1), cv::Range(0, mapped_lat.cols)).copyTo(temp1);
+	mapped_lat(cv::Range(1, mapped_lat.rows), cv::Range(0, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = cv::mean(temp1)[0];
+	std(temp1, &sigma1);
+
+	mapped_lat(cv::Range(0, mapped_lat.rows), cv::Range(0, mapped_lat.cols - 1)).copyTo(temp1);
+	mapped_lat(cv::Range(0, mapped_lat.rows), cv::Range(1, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = (cv::mean(temp1)[0] + lat_interval) / 2.0;
+	std(temp1, &sigma2);
+	lat_interval = lat_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	int rows = slc.GetRows(); int cols = slc.GetCols();
+
+	
+	
+	//计算UTM坐标系相位尺寸
+	int UTM_rows = (max_lat - min_lat) / lat_interval;
+	UTM_rows += 2;
+	double south = max_lat - (double)(UTM_rows - 1) * lat_interval;
+	double north = max_lat;
+	if (lat_north) *lat_north = north;
+	if (lat_south) *lat_south = south;
+	double max_lon_temp = max_lon - min_lon;
+	max_lon_temp = max_lon_temp > 180.0 ? 360.0 - max_lon_temp : max_lon_temp;
+	int UTM_cols = max_lon_temp / lon_interval;
+	UTM_cols += 2;
+	double east = west + (double)(UTM_cols - 1) * lon_interval;
+	east = east > 180.0 ? east - 360.0 : east;
+	if (lon_east) *lon_east = east;
+	Mat b_filled(UTM_rows, UTM_cols, CV_8U); b_filled = 0;
+	mapped_slc.re.create(UTM_rows, UTM_cols, slc.type()); mapped_slc.im.create(UTM_rows, UTM_cols, slc.type());
+	mapped_slc.re = 0;
+	mapped_slc.im = 0;
+	//开始地理编码
+	if (slc.type() == CV_16S)
+	{
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<float>(i, j);
+				lat = mapped_lat.at<float>(i, j);
+				row = (int)round((lat - min_lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_slc.re.at<short>(row, col) = slc.re.at<short>(i, j);
+				mapped_slc.im.at<short>(row, col) = slc.im.at<short>(i, j);
+				b_filled.at<uchar>(row, col) = 1;
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<float>(i, j);
+				lat = mapped_lat.at<float>(i, j);
+				row = (int)round((lat - min_lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_slc.re.at<float>(row, col) = slc.re.at<float>(i, j);
+				mapped_slc.im.at<float>(row, col) = slc.im.at<float>(i, j);
+				b_filled.at<uchar>(row, col) = 1;
+			}
+		}
+	}
+	
+
+	//插值
+	if (interpolation_method == 0)
+	{
+		if (slc.type() == CV_16S)
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+						{
+							x_i = up; x_j = j;
+						}
+						else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<short>(i, j) = mapped_slc.re.at<short>(x_i, x_j);
+						mapped_slc.im.at<short>(i, j) = mapped_slc.im.at<short>(x_i, x_j);
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						if (down_distance < up_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else
+						{
+							x_i = down; x_j = j;
+						}
+						mapped_slc.re.at<short>(i, j) = mapped_slc.re.at<short>(x_i, x_j);
+						mapped_slc.im.at<short>(i, j) = mapped_slc.im.at<short>(x_i, x_j);
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						int x_i = i, x_j = j;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<short>(i, j) = mapped_slc.re.at<short>(x_i, x_j);
+						mapped_slc.im.at<short>(i, j) = mapped_slc.im.at<short>(x_i, x_j);
+						continue;
+					}
+				}
+			}
+		}
+		else
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+						{
+							x_i = up; x_j = j;
+						}
+						else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(x_i, x_j);
+						mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(x_i, x_j);
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						if (down_distance < up_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else
+						{
+							x_i = down; x_j = j;
+						}
+						mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(x_i, x_j);
+						mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(x_i, x_j);
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						int x_i = i, x_j = j;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(x_i, x_j);
+						mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(x_i, x_j);
+						continue;
+					}
+				}
+			}
+		}
+		
+	}
+	else
+	{
+		if (slc.type() == CV_16S)
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<short>(i, left)) +
+							double(mapped_slc.re.at<short>(i, right) - mapped_slc.re.at<short>(i, right)) * ratio1;
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<short>(up, j)) +
+							double(mapped_slc.re.at<short>(down, j) - mapped_slc.re.at<short>(up, j)) * ratio2;
+						mapped_slc.re.at<short>(i, j) = (value1 + value2) / 2.0;
+
+						value1 = double(mapped_slc.im.at<short>(i, left)) +
+							double(mapped_slc.im.at<short>(i, right) - mapped_slc.im.at<short>(i, right)) * ratio1;
+						value2 = double(mapped_slc.im.at<short>(up, j)) +
+							double(mapped_slc.im.at<short>(down, j) - mapped_slc.im.at<short>(up, j)) * ratio2;
+						mapped_slc.im.at<short>(i, j) = (value1 + value2) / 2.0;
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<short>(up, j)) +
+							double(mapped_slc.re.at<short>(down, j) - mapped_slc.re.at<short>(up, j)) * ratio2;
+						mapped_slc.re.at<short>(i, j) = value2;
+
+						value2 = double(mapped_slc.im.at<short>(up, j)) +
+							double(mapped_slc.im.at<short>(down, j) - mapped_slc.im.at<short>(up, j)) * ratio2;
+						mapped_slc.im.at<short>(i, j) = value2;
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<short>(i, left)) +
+							double(mapped_slc.re.at<short>(i, right) - mapped_slc.re.at<short>(i, right)) * ratio1;
+						mapped_slc.re.at<short>(i, j) = value1;
+
+						value1 = double(mapped_slc.im.at<short>(i, left)) +
+							double(mapped_slc.im.at<short>(i, right) - mapped_slc.im.at<short>(i, right)) * ratio1;
+						mapped_slc.im.at<short>(i, j) = value1;
+						continue;
+					}
+				}
+			}
+		}
+		else
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<float>(i, left)) +
+							double(mapped_slc.re.at<float>(i, right) - mapped_slc.re.at<float>(i, right)) * ratio1;
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<float>(up, j)) +
+							double(mapped_slc.re.at<float>(down, j) - mapped_slc.re.at<float>(up, j)) * ratio2;
+						mapped_slc.re.at<float>(i, j) = (value1 + value2) / 2.0;
+
+						value1 = double(mapped_slc.im.at<float>(i, left)) +
+							double(mapped_slc.im.at<float>(i, right) - mapped_slc.im.at<float>(i, right)) * ratio1;
+						value2 = double(mapped_slc.im.at<float>(up, j)) +
+							double(mapped_slc.im.at<float>(down, j) - mapped_slc.im.at<float>(up, j)) * ratio2;
+						mapped_slc.im.at<float>(i, j) = (value1 + value2) / 2.0;
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<float>(up, j)) +
+							double(mapped_slc.re.at<float>(down, j) - mapped_slc.re.at<float>(up, j)) * ratio2;
+						mapped_slc.re.at<float>(i, j) = value2;
+
+						value2 = double(mapped_slc.im.at<float>(up, j)) +
+							double(mapped_slc.im.at<float>(down, j) - mapped_slc.im.at<float>(up, j)) * ratio2;
+						mapped_slc.im.at<float>(i, j) = value2;
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<float>(i, left)) +
+							double(mapped_slc.re.at<float>(i, right) - mapped_slc.re.at<float>(i, right)) * ratio1;
+						mapped_slc.re.at<float>(i, j) = value1;
+
+						value1 = double(mapped_slc.im.at<float>(i, left)) +
+							double(mapped_slc.im.at<float>(i, right) - mapped_slc.im.at<float>(i, right)) * ratio1;
+						mapped_slc.im.at<float>(i, j) = value1;
+						continue;
+					}
+				}
+			}
+		}
+	}
+
+
+	cv::flip(mapped_slc.re, mapped_slc.re, 0);
+	cv::flip(mapped_slc.im, mapped_slc.im, 0);
 	return 0;
 }
 

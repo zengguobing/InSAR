@@ -1541,14 +1541,14 @@ public:
 	* @param IW1_h5file                     子带1干涉相位h5文件
 	* @param IW2_h5file                     子带2干涉相位h5文件
 	* @param IW3_h5file                     子带3干涉相位h5文件
-	* @param merged_phase                   拼接后干涉相位
+	* @param merged_phase_h5file            拼接后干涉相位h5文件（覆盖写入）
 	* @return 成功返回0，否则返回-1
 	*/
 	int S1_subswath_merge(
 		const char* IW1_h5file,
 		const char* IW2_h5file,
 		const char* IW3_h5file,
-		Mat& merged_phase
+		const char* merged_phase_h5file
 	);
 	/*@brief 拼接哨兵一号同一轨道相邻frame的干涉相位
 	* @param h5files                        同一子带不同frame干涉相位h5数据文件
@@ -1562,13 +1562,51 @@ public:
 	/*@brief 拼接同一轨道相邻frame的单视复图像
 	* @param frame1_h5                         待拼接frame1的h5文件
 	* @param frame2_h5                         待拼接frame2的h5文件
-	* @param outframe_h5                       拼接frame的h5文件
+	* @param outframe_h5                       拼接frame的h5文件（覆盖写入）
 	* @return 成功返回0，否则返回-1
 	*/
 	int S1_frame_merge(
 		const char* frame1_h5,
 		const char* frame2_h5,
 		const char* outframe_h5
+	);
+	/*@brief 相位地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param mapped_lon                        相位对应的经度
+	* @param mapped_lat                        相位对应的纬度
+	* @param phase                             SAR图像坐标相位
+	* @param mapped_phase                      墨卡托坐标相位（返回值）
+	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SAR2UTM(
+		Mat& mapped_lon,
+		Mat& mapped_lat,
+		Mat& phase,
+		Mat& mapped_phase,
+		int interpolation_method = 0,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
+	);
+	/*@brief SLC复图像地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param mapped_lon                        SLC对应的经度
+	* @param mapped_lat                        SLC对应的纬度
+	* @param slc                               SAR图像坐标SLC
+	* @param mapped_slc                        墨卡托坐标SLC（返回值）
+	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SAR2UTM(
+		Mat& mapped_lon,
+		Mat& mapped_lat,
+		ComplexMat& slc,
+		ComplexMat& mapped_slc,
+		int interpolation_method = 0,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
 	);
 
 private:

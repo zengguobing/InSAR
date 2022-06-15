@@ -137,6 +137,19 @@ public:
 		const char* dataName,
 		const char* dataPath
 	);
+	/*@brief 添加地理编码节点
+	* @param dataNode            地理编码图像数据节点名
+	* @param dataName            地理编码图像数据名
+	* @param dataPath            地理编码图像数据储存路径（相对路径）
+	* @param level               数据等级
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_geocoding(
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath,
+		const char* level
+	);
 	/** @brief 添加干涉相位生成节点
 
 	@param datanode_node  干涉相位图像节点名
