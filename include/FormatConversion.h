@@ -930,6 +930,94 @@ private:
 
 
 /*------------------------------------------------*/
+/*             COSMO-SkyMed数据读取工具           */
+/*------------------------------------------------*/
+class InSAR_API CSK_reader
+{
+public:
+	CSK_reader(const char* csk_data_file);
+	~CSK_reader();
+	/*@brief 初始化
+	* @param csk_data_file                    COSMO-SkyMed源hdf5数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int init();
+	
+	/*@brief 将数据写入到指定h5文件
+	* @param dst_h5                          指定hdf5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_to_h5(
+		const char* dst_h5
+	);
+
+private:
+
+	/*@brief 从COSMO-SkyMed源hdf5数据L1A产品中读取数据
+	* @param CSK_data_file                    COSMO-SkyMed源hdf5数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_data(
+		const char* CSK_data_file
+	);
+	/*@brief 从COSMO-SkyMed源hdf5数据L1A产品中读取单视复图像
+	* @param CSK_data_file                    COSMO-SkyMed源hdf5数据文件
+	* @param slc                              读出的单视复数据矩阵
+	* @return 成功返回0，否则返回-1
+	*/
+
+	int read_slc(
+		const char* CSK_data_file,
+		ComplexMat& slc
+	);
+	/*@brief 从hdf5文件读取string类型属性
+	* @param object_id                       相应的object
+	* @param attribute_name                  string属性名
+	* @param attribute_value                 string属性值（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int get_str_attribute(
+		hid_t object_id,
+		const char* attribute_name,
+		string& attribute_value
+	);
+	/*@brief 从hdf5文件读取数组类型属性
+	* @param object_id                       相应的object
+	* @param attribute_name                  属性名
+	* @param attribute_value                 属性值（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int get_array_attribute(
+		hid_t object_id,
+		const char* attribute_name,
+		Mat& attribute_value
+	);
+
+private:
+	string csk_data_file;
+	bool b_initialized;
+	string acquisition_start_time;
+	string acquisition_stop_time;
+	double azimuth_resolution;
+	double azimuth_spacing;
+	double carrier_frequency;
+	double prf;
+	double range_resolution;
+	double range_spacing;
+	double slant_range_first_pixel;
+	double slant_range_last_pixel;
+	Mat topleft, topright, bottomleft, bottomright;
+	Mat state_vec, inc_coefficient, lon_coefficient, lat_coefficient, row_coefficient, col_coefficient;
+	string lookside;
+	string sensor;
+	string polarization, orbit_direction;
+	ComplexMat slc;
+
+};
+
+
+
+/*------------------------------------------------*/
 /*               哨兵一号数据读取工具             */
 /*------------------------------------------------*/
 class InSAR_API Sentinel1Reader

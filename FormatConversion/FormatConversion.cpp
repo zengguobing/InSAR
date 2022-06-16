@@ -10181,3 +10181,527 @@ int orbitStateVectors::applyOrbit()
 	isOrbitUpdated = true;
 	return 0;
 }
+
+CSK_reader::CSK_reader(const char* csk_data_file)
+{
+	b_initialized = false;
+	this->csk_data_file = csk_data_file;
+}
+
+CSK_reader::~CSK_reader()
+{
+}
+
+int CSK_reader::init()
+{
+	if (b_initialized) return 0;
+	if (csk_data_file.empty())
+	{
+		fprintf(stderr, "init(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_data(this->csk_data_file.c_str());
+	if (ret < 0)
+	{
+		fprintf(stderr, "init(): read_meta_data failed!\n");
+		return -1;
+	}
+	b_initialized = true;
+	return 0;
+}
+
+int CSK_reader::read_slc(const char* CSK_data_file, ComplexMat& slc)
+{
+	if (CSK_data_file == NULL
+		)
+	{
+		fprintf(stderr, "read_slc(): input check  failed!\n");
+		return -1;
+	}
+	hid_t file_id = H5Fopen(CSK_data_file, H5F_ACC_RDWR, H5P_DEFAULT);
+	if (file_id < 0)
+	{
+		fprintf(stderr, "read_slc(): failed to open %s!\n", CSK_data_file);
+		return -1;
+	}
+	string s = "/S01/IMG";
+	hid_t dataset_id = H5Dopen(file_id, s.c_str(), H5P_DEFAULT);
+	if (dataset_id < 0)
+	{
+		fprintf(stderr, "read_slc(): failed to open dataset %s!\n", s.c_str());
+		H5Fclose(file_id);
+		return -1;
+	}
+	hid_t space_id = H5Dget_space(dataset_id);
+	if (space_id < 0)
+	{
+		fprintf(stderr, "read_slc(): failed to open dataspace of %s!\n", s.c_str());
+		H5Dclose(dataset_id);
+		H5Fclose(file_id);
+		return -1;
+	}
+	hsize_t dims[3];
+	int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+	hid_t type = H5Dget_type(dataset_id);
+	herr_t status;
+	slc.re.create(dims[0], dims[1], CV_32F); slc.re = 0.0;
+	slc.im.create(dims[0], dims[1], CV_32F); slc.im = 0.0;
+	float* data = (float*)malloc(sizeof(float) * 2 * dims[0] * dims[1]);
+	
+	if (!data)
+	{
+		fprintf(stderr, "read_slc(): out of memory!\n");
+		H5Dclose(dataset_id);
+		H5Sclose(space_id);
+		H5Fclose(file_id);
+		H5Tclose(type);
+		return -1;
+	}
+	status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)data);
+
+	if (status < 0)
+	{
+		fprintf(stderr, "read_slc(): failed to read from %s!\n", s.c_str());
+		H5Dclose(dataset_id);
+		H5Sclose(space_id);
+		H5Fclose(file_id);
+		H5Tclose(type);
+		return -1;
+	}
+	float* temp_data = data;
+	for (int i = 0; i < dims[0]; i++)
+	{
+		for (int j = 0; j < dims[1]; j++)
+		{
+			slc.re.at<float>(i, j) = *(temp_data++);
+			slc.im.at<float>(i, j) = *(temp_data++);
+		}
+	}
+	H5Dclose(dataset_id);
+	H5Sclose(space_id);
+	H5Fclose(file_id);
+	H5Tclose(type);
+	if (data) {
+		free(data);
+		data = NULL;
+	}
+	return 0;
+}
+
+int CSK_reader::read_data(const char* CSK_data_file)
+{
+	if (!CSK_data_file)
+	{
+		fprintf(stderr, "read_data(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_slc(csk_data_file.c_str(), slc);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't read slc from %s\n", CSK_data_file);
+		return -1;
+	}
+	hid_t file, dataset;
+	file = H5Fopen(CSK_data_file, H5F_ACC_RDONLY, H5P_DEFAULT);
+	if (file < 0)
+	{
+		fprintf(stderr, "read_data(): can't open %s\n", CSK_data_file);
+		return -1;
+	}
+	
+	string Reference_UTC;
+	double start, stop, ref_time;
+	ret = get_str_attribute(file, "Reference UTC", Reference_UTC);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_meta_data(): can't read Reference UTC\n");
+		H5Fclose(file);
+		return -1;
+	}
+	std::replace(Reference_UTC.begin(), Reference_UTC.end(), ' ', 'T');
+	UTC2GPS(Reference_UTC.c_str(), &ref_time);
+	Mat vel, pos, state_vectors_times; Mat temp;
+	ret = get_array_attribute(file, "ECEF Satellite Position", pos);
+	ret = get_array_attribute(file, "ECEF Satellite Velocity", vel);
+	ret = get_array_attribute(file, "State Vectors Times", state_vectors_times);
+	state_vectors_times = state_vectors_times + ref_time;
+	cv::hconcat(state_vectors_times, pos, this->state_vec);
+	cv::hconcat(this->state_vec, vel, this->state_vec);
+	get_array_attribute(file, "Radar Frequency", temp);
+	this->carrier_frequency = temp.at<double>(0, 0);
+	get_str_attribute(file, "Look Side", lookside);
+	get_str_attribute(file, "Mission ID", sensor);
+	get_str_attribute(file, "Polarization", polarization);
+	get_str_attribute(file, "Orbit Direction", orbit_direction);
+
+	dataset = H5Dopen(file, "/S01/IMG", H5P_DEFAULT);
+	if (dataset < 0)
+	{
+		fprintf(stderr, "read_data(): can't open dataset /S01/IMG!\n");
+		H5Fclose(file);
+		return -1;
+	}
+	
+	int rows, cols;
+	get_array_attribute(dataset, "Zero Doppler Azimuth First Time", temp);
+	start = temp.at<double>(0, 0);
+	string front = Reference_UTC.substr(0, 17);
+	char str[256];
+	sprintf(str, "%.9lf", temp.at<double>(0, 0));
+	this->acquisition_start_time = front + str;
+
+	get_array_attribute(dataset, "Zero Doppler Azimuth Last Time", temp);
+	stop = temp.at<double>(0, 0);
+	front = Reference_UTC.substr(0, 17);
+	sprintf(str, "%.9lf", temp.at<double>(0, 0));
+	this->acquisition_stop_time = front + str;
+
+	get_array_attribute(dataset, "Zero Doppler Range First Time", temp);
+	this->slant_range_first_pixel = temp.at<double>(0, 0) * VEL_C / 2.0;
+
+	get_array_attribute(dataset, "Zero Doppler Range Last Time", temp);
+	this->slant_range_last_pixel = temp.at<double>(0, 0) * VEL_C / 2.0;
+
+	get_array_attribute(dataset, "Column Spacing", temp);
+	this->range_spacing = temp.at<double>(0, 0);
+
+	get_array_attribute(dataset, "Line Spacing", temp);
+	this->azimuth_spacing = temp.at<double>(0, 0);
+
+	get_array_attribute(dataset, "Line Time Interval", temp);
+	this->prf = 1.0 / temp.at<double>(0, 0);
+
+	rows = (int)round((stop - start) * prf) + 1;
+	cols = (int)round((slant_range_last_pixel - slant_range_first_pixel) / range_spacing) + 1;
+
+	get_array_attribute(dataset, "Bottom Left Geodetic Coordinates", bottomleft);
+	get_array_attribute(dataset, "Bottom Right Geodetic Coordinates", bottomright);
+	get_array_attribute(dataset, "Top Left Geodetic Coordinates", topleft);
+	get_array_attribute(dataset, "Top Right Geodetic Coordinates", topright);
+
+	double near_look_angle, far_look_angle;
+	get_array_attribute(dataset, "Near Look Angle", temp);
+	near_look_angle = temp.at<double>(0, 0);
+	get_array_attribute(dataset, "Far Look Angle", temp);
+	far_look_angle = temp.at<double>(0, 0);
+
+	//拟合下视角
+	
+	this->inc_coefficient.create(1, 11, CV_64F); this->inc_coefficient = 0.0;
+	inc_coefficient.at<double>(0, 0) = 0.0;//offset
+	inc_coefficient.at<double>(0, 1) = 1.0;//scale
+	inc_coefficient.at<double>(0, 2) = near_look_angle;
+	inc_coefficient.at<double>(0, 3) = (far_look_angle - near_look_angle) / (double)cols;
+
+	//拟合经度
+	Mat near_edge_geodetic_coordinates, far_edge_geodetic_coordinates;
+	get_array_attribute(file, "Scene Far Edge Geodetic Coordinates", far_edge_geodetic_coordinates);
+	get_array_attribute(file, "Scene Near Edge Geodetic Coordinates", near_edge_geodetic_coordinates);
+	Mat lon, lat, row, col;
+	lon = Mat::zeros(far_edge_geodetic_coordinates.rows + near_edge_geodetic_coordinates.rows, 1, CV_64F);
+	lat = Mat::zeros(lon.rows, 1, CV_64F);
+	col = Mat::zeros(lon.rows, 1, CV_64F);
+	row = Mat::zeros(lon.rows, 1, CV_64F);
+	cv::vconcat(far_edge_geodetic_coordinates, near_edge_geodetic_coordinates, temp);
+	temp(cv::Range(0, lon.rows), cv::Range(0, 1)).copyTo(lat);
+	temp(cv::Range(0, lon.rows), cv::Range(1, 2)).copyTo(lon);
+	for (int i = 0; i < far_edge_geodetic_coordinates.rows; i++)
+	{
+		row.at<double>(i, 0) = i * rows / (double)(far_edge_geodetic_coordinates.rows);
+		col.at<double>(i, 0) = cols;
+	}
+	for (int i = 0; i < far_edge_geodetic_coordinates.rows; i++)
+	{
+		row.at<double>(i + far_edge_geodetic_coordinates.rows, 0) = i * rows / (double)(far_edge_geodetic_coordinates.rows);
+		col.at<double>(i + far_edge_geodetic_coordinates.rows, 0) = 0;
+	}
+	lon_coefficient.create(1, 32, CV_64F); lon_coefficient = 0.0;
+	Mat A(lon.rows, 3, CV_64F); A = 1.0;
+	Mat A_t, b;
+	Mat B, coefficient, error, eye, b_t, a, a_t;
+	double rms;
+	lon.copyTo(b);
+	row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	col.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		//error = b_t * (eye - a * error * a_t) * b;
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		lon_coefficient.at<double>(0, 0) = 0.0;
+		lon_coefficient.at<double>(0, 1) = 1.0;
+		lon_coefficient.at<double>(0, 2) = 0.0;
+		lon_coefficient.at<double>(0, 3) = 1.0;
+		lon_coefficient.at<double>(0, 4) = 0.0;
+		lon_coefficient.at<double>(0, 5) = 1.0;
+		lon_coefficient.at<double>(0, 31) = rms;
+
+		lon_coefficient.at<double>(0, 6) = coefficient.at<double>(0);
+		lon_coefficient.at<double>(0, 7) = coefficient.at<double>(1);
+		lon_coefficient.at<double>(0, 11) = coefficient.at<double>(2);
+	}
+
+
+	//拟合纬度
+	lat_coefficient.create(1, 32, CV_64F); lat_coefficient = 0.0;
+	A = Mat::ones(lon.rows, 3, CV_64F);
+	lat.copyTo(b);
+	row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	col.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		lat_coefficient.at<double>(0, 0) = 0.0;
+		lat_coefficient.at<double>(0, 1) = 1.0;
+		lat_coefficient.at<double>(0, 2) = 0.0;
+		lat_coefficient.at<double>(0, 3) = 1.0;
+		lat_coefficient.at<double>(0, 4) = 0.0;
+		lat_coefficient.at<double>(0, 5) = 1.0;
+		lat_coefficient.at<double>(0, 31) = rms;
+
+		lat_coefficient.at<double>(0, 6) = coefficient.at<double>(0);
+		lat_coefficient.at<double>(0, 7) = coefficient.at<double>(1);
+		lat_coefficient.at<double>(0, 11) = coefficient.at<double>(2);
+	}
+
+	//拟合行坐标
+	row_coefficient.create(1, 32, CV_64F); row_coefficient = 0.0;
+	A = Mat::ones(lon.rows, 3, CV_64F);
+	row.copyTo(b);
+	b = b / (double)rows;
+	lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	lat.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		row_coefficient.at<double>(0, 0) = 0.0;
+		row_coefficient.at<double>(0, 1) = rows;
+		row_coefficient.at<double>(0, 2) = 0.0;
+		row_coefficient.at<double>(0, 3) = 1.0;
+		row_coefficient.at<double>(0, 4) = 0.0;
+		row_coefficient.at<double>(0, 5) = 1.0;
+		row_coefficient.at<double>(0, 31) = rms;
+
+		row_coefficient.at<double>(0, 6) = coefficient.at<double>(0);
+		row_coefficient.at<double>(0, 7) = coefficient.at<double>(1);
+		row_coefficient.at<double>(0, 11) = coefficient.at<double>(2);
+	}
+
+	//拟合列坐标
+	col_coefficient.create(1, 32, CV_64F); col_coefficient = 0.0;
+	A = Mat::ones(lon.rows, 3, CV_64F);
+	col.copyTo(b);
+	b = b / (double)cols;
+	lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+	lat.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+
+	cv::transpose(A, temp);
+	B = temp * b;
+	A.copyTo(a);
+	cv::transpose(a, a_t);
+	A = temp * A;
+	rms = -1.0;
+	if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+	{
+		cv::transpose(b, b_t);
+		error = b_t * b - (b_t * a) * error * (a_t * b);
+		rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+	}
+	if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+	{
+		col_coefficient.at<double>(0, 0) = 0.0;
+		col_coefficient.at<double>(0, 1) = cols;
+		col_coefficient.at<double>(0, 2) = 0.0;
+		col_coefficient.at<double>(0, 3) = 1.0;
+		col_coefficient.at<double>(0, 4) = 0.0;
+		col_coefficient.at<double>(0, 5) = 1.0;
+		col_coefficient.at<double>(0, 31) = rms;
+
+		col_coefficient.at<double>(0, 6) = coefficient.at<double>(0);
+		col_coefficient.at<double>(0, 7) = coefficient.at<double>(1);
+		col_coefficient.at<double>(0, 11) = coefficient.at<double>(2);
+	}
+
+
+
+	H5Fclose(file);
+	H5Dclose(dataset);
+	return 0;
+}
+
+int CSK_reader::write_to_h5(const char* dst_h5)
+{
+	if (!dst_h5)
+	{
+		fprintf(stderr, "write_meta_data(): input check failed!\n");
+		return -1;
+	}
+	int ret;
+	if (!b_initialized)
+	{
+		ret = init();
+		if (ret < 0)
+		{
+			fprintf(stderr, "write_to_h5(): init() failed!\n");
+			return -1;
+		}
+	}
+	FormatConversion conversion;
+	ret = conversion.creat_new_h5(dst_h5);
+	if (ret < 0)
+	{
+		fprintf(stderr, "write_to_h5(): failed to create %s!\n", dst_h5);
+		return -1;
+	}
+	conversion.write_array_to_h5(dst_h5, "col_coefficient", this->col_coefficient);
+	conversion.write_array_to_h5(dst_h5, "row_coefficient", this->row_coefficient);
+	conversion.write_array_to_h5(dst_h5, "lon_coefficient", this->lon_coefficient);
+	conversion.write_array_to_h5(dst_h5, "lat_coefficient", this->lat_coefficient);
+	conversion.write_array_to_h5(dst_h5, "state_vec", this->state_vec);
+	conversion.write_array_to_h5(dst_h5, "inc_coefficient", this->inc_coefficient);
+
+	conversion.write_double_to_h5(dst_h5, "azimuth_spacing", this->azimuth_spacing);
+	conversion.write_double_to_h5(dst_h5, "range_spacing", this->range_spacing);
+	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
+	conversion.write_double_to_h5(dst_h5, "slant_range_last_pixel", this->slant_range_last_pixel);
+	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
+	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
+
+	conversion.write_str_to_h5(dst_h5, "orbit_dir", this->orbit_direction.c_str());
+	conversion.write_str_to_h5(dst_h5, "polarization", this->polarization.c_str());
+	conversion.write_str_to_h5(dst_h5, "sensor", this->sensor.c_str());
+	conversion.write_str_to_h5(dst_h5, "lookside", this->lookside.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_start_time", this->acquisition_start_time.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_stop_time", this->acquisition_stop_time.c_str());
+
+	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
+	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
+	conversion.write_slc_to_h5(dst_h5, slc);
+
+	return 0;
+}
+
+int CSK_reader::get_str_attribute(hid_t object_id, const char* attribute_name, string& attribute_value)
+{
+	if (!attribute_name)
+	{
+		fprintf(stderr, "get_str_attribute(): input check failed!\n");
+		return -1;
+	}
+	hid_t filetype, memtype, space, attr;
+	/* Handles */
+	herr_t      status;
+	hsize_t     dims[1] = { 1 };
+	attr = H5Aopen(object_id, attribute_name, H5P_DEFAULT);
+	filetype = H5Aget_type(attr);
+	size_t sdim = H5Tget_size(filetype) + 1;
+	space = H5Aget_space(attr);
+	int ndims = H5Sget_simple_extent_dims(space, dims, NULL);
+	memtype = H5Tcopy(H5T_C_S1);
+	status = H5Tset_size(memtype, sdim);
+	char* rdata = (char*)malloc(dims[0] * sdim * sizeof(char));
+	status = H5Aread(attr, memtype, rdata);
+	if (status < 0)
+	{
+		fprintf(stderr, "get_str_attribute(): failed to read from attribute %s!\n", attribute_name);
+		H5Sclose(space);
+		H5Tclose(filetype);
+		H5Tclose(memtype);
+		H5Aclose(attr);
+		free(rdata);
+		return -1;
+	}
+	attribute_value = rdata;
+	free(rdata);
+	return 0;
+}
+
+int CSK_reader::get_array_attribute(hid_t object_id, const char* attribute_name, Mat& out_array)
+{
+	if (!attribute_name)
+	{
+		fprintf(stderr, "get_str_attribute(): input check failed!\n");
+		return -1;
+	}
+	hid_t filetype, space, attr;
+	/* Handles */
+	herr_t      status;
+	hsize_t     dims[2] = { 1, 1 };
+	attr = H5Aopen(object_id, attribute_name, H5P_DEFAULT);
+	filetype = H5Aget_type(attr);
+	space = H5Aget_space(attr);
+	int ndims = H5Sget_simple_extent_dims(space, dims, NULL);
+	
+
+	if (H5Tequal(filetype, H5T_NATIVE_INT16) > 0)
+	{
+		out_array.create(dims[0], dims[1], CV_16S);
+		status = H5Aread(attr, H5T_NATIVE_INT16, (void*)out_array.data);
+	}
+	else if (H5Tequal(filetype, H5T_NATIVE_DOUBLE) > 0)
+	{
+		out_array.create(dims[0], dims[1], CV_64F);
+		status = H5Aread(attr, H5T_NATIVE_DOUBLE, (void*)out_array.data);
+	}
+	else if (H5Tequal(filetype, H5T_NATIVE_FLOAT) > 0)
+	{
+		out_array.create(dims[0], dims[1], CV_32F);
+		status = H5Aread(attr, H5T_NATIVE_FLOAT, (void*)out_array.data);
+	}
+	else if (H5Tequal(filetype, H5T_NATIVE_INT) > 0)
+	{
+		out_array.create(dims[0], dims[1], CV_32S);
+		status = H5Aread(attr, H5T_NATIVE_INT, (void*)out_array.data);
+	}
+	else
+	{
+		status = -1;
+	}
+	if (status < 0)
+	{
+		fprintf(stderr, "get_array_attribute(): failed to read from %s!\n", attribute_name);
+		H5Aclose(attr);
+		H5Tclose(filetype);
+		H5Sclose(space);
+		return -1;
+	}
+	H5Aclose(attr);
+	H5Tclose(filetype);
+	H5Sclose(space);
+	return 0;
+}

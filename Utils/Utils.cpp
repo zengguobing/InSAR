@@ -2861,7 +2861,7 @@ int Utils::multilook_SAR(const Mat& amplitude, Mat& outAmplitude, int multilook_
 		amplitude.rows < multilook_rg ||
 		amplitude.cols < multilook_az ||
 		multilook_rg < 1 || multilook_az < 1||
-		amplitude.type() != CV_64F
+		(amplitude.type() != CV_64F && amplitude.type() != CV_32F)
 		)
 	{
 		fprintf(stderr, "multilook_SAR(): input check failed!\n");
@@ -2871,20 +2871,42 @@ int Utils::multilook_SAR(const Mat& amplitude, Mat& outAmplitude, int multilook_
 	int nc = amplitude.cols;
 	int nr_new = (int)((double)nr / (double)multilook_az);
 	int nc_new = (int)((double)nc / (double)multilook_rg);
-	Mat tmp = Mat::zeros(nr_new, nc_new, CV_64F);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr_new; i++)
+	Mat tmp;
+	if (amplitude.type() == CV_64F)
 	{
-		int left, right, bottom, top;
-		top = i * multilook_az; top = top < 0 ? 0 : top;
-		bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
-		for (int j = 0; j < nc_new; j++)
+		tmp = Mat::zeros(nr_new, nc_new, CV_64F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr_new; i++)
 		{
-			left = j * multilook_rg; left = left < 0 ? 0 : left;
-			right = left + multilook_rg; right = right > nc ? nc : right;
-			tmp.at<double>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+			int left, right, bottom, top;
+			top = i * multilook_az; top = top < 0 ? 0 : top;
+			bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
+			for (int j = 0; j < nc_new; j++)
+			{
+				left = j * multilook_rg; left = left < 0 ? 0 : left;
+				right = left + multilook_rg; right = right > nc ? nc : right;
+				tmp.at<double>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+			}
 		}
 	}
+	else
+	{
+		tmp = Mat::zeros(nr_new, nc_new, CV_32F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr_new; i++)
+		{
+			int left, right, bottom, top;
+			top = i * multilook_az; top = top < 0 ? 0 : top;
+			bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
+			for (int j = 0; j < nc_new; j++)
+			{
+				left = j * multilook_rg; left = left < 0 ? 0 : left;
+				right = left + multilook_rg; right = right > nc ? nc : right;
+				tmp.at<float>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+			}
+		}
+	}
+
 	tmp.copyTo(outAmplitude);
 	return 0;
 }
@@ -3085,7 +3107,9 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 	}
 	int nr = mod.rows;
 	int nc = mod.cols;
-	double max, min;
+	double max, min, std;
+	this->std(mod, &std);
+	double mean = cv::mean(mod)[0];
 	if (SLC.type() == CV_64F)
 	{
 #pragma omp parallel for schedule(guided)
@@ -3093,23 +3117,8 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 		{
 			for (int j = 0; j < nc; j++)
 			{
-				mod.at<double>(i, j) = 20 * log10(mod.at<double>(i, j) + 0.000001);
-			}
-		}
-
-		minMaxLoc(mod, &min, &max);
-		if (fabs(max - min) < 0.00000001)
-		{
-			fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
-			return -1;
-		}
-		min = max - db;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < nr; i++)
-		{
-			for (int j = 0; j < nc; j++)
-			{
-				if (mod.at<double>(i, j) <= min) mod.at<double>(i, j) = min;
+				if ((mod.at<double>(i, j) - mean) >= 2.0 * std) mod.at<double>(i, j) = mean + 2.0 * std;
+				if ((mod.at<double>(i, j) - mean) < -2.0 * std) mod.at<double>(i, j) = mean - 2.0 * std;
 			}
 		}
 	}
@@ -3120,25 +3129,16 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 		{
 			for (int j = 0; j < nc; j++)
 			{
-				mod.at<float>(i, j) = 20 * log10(mod.at<float>(i, j) + 0.000001);
+				if ((mod.at<float>(i, j) - mean) >= 2.0 * std) mod.at<float>(i, j) = mean + 2.0 * std;
+				if ((mod.at<float>(i, j) - mean) < -2.0 * std) mod.at<float>(i, j) = mean - 2.0 * std;
 			}
 		}
-
-		minMaxLoc(mod, &min, &max);
-		if (fabs(max - min) < 0.00000001)
-		{
-			fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
-			return -1;
-		}
-		min = max - db;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < nr; i++)
-		{
-			for (int j = 0; j < nc; j++)
-			{
-				if (mod.at<float>(i, j) <= min) mod.at<float>(i, j) = min;
-			}
-		}
+	}
+	cv::minMaxLoc(mod, &min, &max);
+	if (fabs(max - min) < 0.00000001)
+	{
+		fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
+		return -1;
 	}
 	mod = (mod - min) / (max - min) * 255.0;
 	mod.convertTo(mod, CV_8U);
@@ -3246,7 +3246,7 @@ int Utils::SAR_image_quantify(const char* filename, double db, ComplexMat& SLC)
 
 int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 {
-	if (!filename || amplitude.empty() || amplitude.type() != CV_64F)
+	if (!filename || amplitude.empty() || (amplitude.type() != CV_64F && amplitude.type() != CV_32F))
 	{
 		fprintf(stderr, "saveAmplitude(): input check failed!\n");
 		return -1;
@@ -3255,13 +3255,31 @@ int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 	int nr = amplitude.rows;
 	int nc = amplitude.cols;
 	
-	
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr; i++)
+	double mean = cv::mean(amplitude)[0];
+	double std;
+	this->std(amplitude, &std);
+	if (amplitude.type() == CV_64F)
 	{
-		for (int j = 0; j < nc; j++)
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
 		{
-			amplitude.at<double>(i, j) = 20 * log10(amplitude.at<double>(i, j) + 0.001);
+			for (int j = 0; j < nc; j++)
+			{
+				if ((amplitude.at<double>(i, j) - mean) >= 3.0 * std) amplitude.at<double>(i, j) = mean + 3.0 * std;
+				if ((amplitude.at<double>(i, j) - mean) <= -3.0 * std) amplitude.at<double>(i, j) = mean - 3.0 * std;
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				if ((amplitude.at<float>(i, j) - mean) >= 3.0 * std) amplitude.at<float>(i, j) = mean + 3.0 * std;
+				if ((amplitude.at<float>(i, j) - mean) <= -3.0 * std) amplitude.at<float>(i, j) = mean - 3.0 * std;
+			}
 		}
 	}
 	cv::minMaxLoc(amplitude, &min, &max);
@@ -3269,17 +3287,6 @@ int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 	{
 		fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
 		return -1;
-	}
-	double db = 65.0;
-	min = min < -1.0 ? -1.0 : min;
-	max = min + db;
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr; i++)
-	{
-		for (int j = 0; j < nc; j++)
-		{
-			if (amplitude.at<double>(i, j) >= max) amplitude.at<double>(i, j) = max;
-		}
 	}
 	amplitude = (amplitude - min) / (max - min) * 255.0;
 	amplitude.convertTo(amplitude, CV_8U);
