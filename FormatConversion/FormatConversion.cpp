@@ -10395,8 +10395,15 @@ int CSK_reader::read_data(const char* CSK_data_file)
 
 	//ÄâºÏ¾­¶È
 	Mat near_edge_geodetic_coordinates, far_edge_geodetic_coordinates;
-	get_array_attribute(file, "Scene Far Edge Geodetic Coordinates", far_edge_geodetic_coordinates);
-	get_array_attribute(file, "Scene Near Edge Geodetic Coordinates", near_edge_geodetic_coordinates);
+	ret = get_array_attribute(file, "Scene Far Edge Geodetic Coordinates", far_edge_geodetic_coordinates);
+	ret += get_array_attribute(file, "Scene Near Edge Geodetic Coordinates", near_edge_geodetic_coordinates);
+	if (ret != 0)
+	{
+		fprintf(stderr, "read_data(): unknown format!\n");
+		H5Fclose(file);
+		H5Dclose(dataset);
+		return -1;
+	}
 	Mat lon, lat, row, col;
 	lon = Mat::zeros(far_edge_geodetic_coordinates.rows + near_edge_geodetic_coordinates.rows, 1, CV_64F);
 	lat = Mat::zeros(lon.rows, 1, CV_64F);
