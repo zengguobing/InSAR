@@ -2026,6 +2026,7 @@ int SBAS::get_formation_matrix(
 	Mat& spatial,
 	Mat& temporal, 
 	double spatial_thresh,
+	double temporal_thresh_low,
 	double temporal_thresh,
 	Mat& formation_matrix,
 	Mat& spatial_baseline,
@@ -2055,7 +2056,8 @@ int SBAS::get_formation_matrix(
 		for (int j = 0; j < i; j++)
 		{
 			if (fabs(spatial.at<double>(0, j) - spatial.at<double>(0, i)) < spatial_thresh &&
-				fabs((temporal.at<double>(0, j) - temporal.at<double>(0, i)) / 365.0) < temporal_thresh
+				fabs((temporal.at<double>(0, j) - temporal.at<double>(0, i)) / 365.0) < temporal_thresh &&
+				fabs((temporal.at<double>(0, j) - temporal.at<double>(0, i)) / 365.0) > temporal_thresh_low / 365.0
 				)
 			{
 				formation_matrix.at<int>(i, j) = 1;
