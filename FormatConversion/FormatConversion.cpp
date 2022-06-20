@@ -3412,9 +3412,9 @@ int FormatConversion::read_conversion_coefficient_from_ALOS(const char* LED_file
 	}
 	lat_coefficient.at<double>(0, 0) = 0;
 	lat_coefficient.at<double>(0, 1) = 1.0;
-	lat_coefficient.at<double>(0, 2) = strtod(ptr, &ptr);
-	lat_coefficient.at<double>(0, 3) = 1.0;
 	lat_coefficient.at<double>(0, 4) = strtod(ptr, &ptr);
+	lat_coefficient.at<double>(0, 3) = 1.0;
+	lat_coefficient.at<double>(0, 2) = strtod(ptr, &ptr);
 	lat_coefficient.at<double>(0, 5) = 1.0;
 
 	lon_coefficient.at<double>(0, 0) = 0;
@@ -3561,40 +3561,24 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	sensor = str;
 	write_str_to_h5(dst_h5, "sensor", sensor.c_str());
 	//拍摄起始时间
-	string year, month, day, hour, minute, second;
+	string year, month, day, hour, minute, second, temp_string;
 	int h, m; double s;
-	fseek(fp, record_len + data_set_summary_len + 145 - 1, SEEK_SET);
+	fseek(fp, record_len + 69 - 1, SEEK_SET);
 	memset(str, 0, 2048);
-	fread(str, 1, 4, fp);
-	year = str;
+	fread(str, 1, 32, fp);
+	temp_string = str;
+	year = temp_string.substr(0, 4);
+	month = temp_string.substr(4, 2);
+	day = temp_string.substr(6, 2);
+	hour = "00";
+	minute = "00";
+	//PRF
+	fseek(fp, 720 + 935 - 1, SEEK_SET);
 	memset(str, 0, 2048);
-	fread(str, 1, 4, fp);
-	if (str[2] == ' ') str[2] = '0';
-	month = str + 2;
-	memset(str, 0, 2048);
-	fread(str, 1, 4, fp);
-	if (str[2] == ' ') str[2] = '0';
-	day = str + 2;
-	memset(str, 0, 2048);
-	fread(str, 1, 26, fp);
-	s = strtod(str + 4, &ptr);
-	h = (int)floor(s / 3600.0);
-	m = (int)floor((s - h * 3600) / 60.0);
-	s = s - h * 3600.0 - m * 60.0;
-	memset(str, 0, 2048);
-	if (h < 10)sprintf(str, "0%d", h);
-	else sprintf(str, "%d", h);
-	hour = str;
-	memset(str, 0, 2048);
-	if(m < 10) sprintf(str, "0%d", m);
-	else sprintf(str, "%d", m);
-	minute = str;
-	memset(str, 0, 2048);
-	if (s < 10.0)sprintf(str, "%.5lf", s);
-	else sprintf(str, "0%.5lf", s);
-	second = str;
-	string time = year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second;
-	write_str_to_h5(dst_h5, "acquisition_start_time", time.c_str());
+	fread(str, 1, 16, fp);
+	tmp.at<double>(0, 0) = strtod(str, &ptr) / 1000;
+	write_array_to_h5(dst_h5, "prf", tmp);
+	double prf = tmp.at<double>(0, 0);
 	//极化方式
 	FILE* fp1 = NULL;
 	fopen_s(&fp1, IMG_file, "rb");
@@ -3611,6 +3595,27 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 		r = (recv == 0 ? "H" : "V");
 		polarization = r + t;
 		write_str_to_h5(dst_h5, "polarization", polarization.c_str());
+
+		//拍摄起始时间
+		uint64_t micro;
+		fseek(fp1, 720 + 85 - 1, SEEK_SET);
+		fread(&micro, 8, 1, fp1);
+		micro = Big2Little64(micro);
+		double secds = (double)micro * 0.000001;
+		memset(str, 0, 2048);
+		sprintf(str, "%lf", secds);
+		second = str;
+		string time = year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second;
+		write_str_to_h5(dst_h5, "acquisition_start_time", time.c_str());
+
+		secds += (double)(rows - 1) / prf;
+
+		//拍摄结束时间
+		memset(str, 0, 2048);
+		sprintf(str, "%lf", secds);
+		second = str;
+		string end_time = year + "-" + month + "-" + day + "T" + hour + ":" + minute + ":" + second;
+		write_str_to_h5(dst_h5, "acquisition_stop_time", end_time.c_str());
 
 		//左上角经纬度（第一个像素）
 		int lon_topleft, lat_topleft, lon_bottomright, lat_bottomright, center_lat, center_lon, slant_range_first_pixel;
@@ -3710,12 +3715,12 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	fread(str, 1, 8, fp);
 	tmp.at<double>(0, 0) = strtod(str, &ptr);
 	write_array_to_h5(dst_h5, "incidence_center", tmp);
-	//PRF
-	fseek(fp, 720 + 935 - 1, SEEK_SET);
-	memset(str, 0, 2048);
-	fread(str, 1, 16, fp);
-	tmp.at<double>(0, 0) = strtod(str, &ptr) / 1000;
-	write_array_to_h5(dst_h5, "prf", tmp);
+	////PRF
+	//fseek(fp, 720 + 935 - 1, SEEK_SET);
+	//memset(str, 0, 2048);
+	//fread(str, 1, 16, fp);
+	//tmp.at<double>(0, 0) = strtod(str, &ptr) / 1000;
+	//write_array_to_h5(dst_h5, "prf", tmp);
 	//方位向像素点数
 	Mat tmp_int = Mat::zeros(1, 1, CV_32S);
 	tmp_int.at<int>(0, 0) = rows;
