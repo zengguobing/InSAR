@@ -3540,6 +3540,13 @@ int FormatConversion::ALOS2h5(const char* IMG_file, const char* LED_file, const 
 	inc_coefficient_r.at<double>(0, 9) = strtod(ptr, &ptr) * factor;
 	write_array_to_h5(dst_h5, "inc_coefficient_r", inc_coefficient_r);
 
+	//中心下视角
+	fseek(fp, 720 + 485 - 1, SEEK_SET); memset(str, 0, 2048);
+	fread(str, 1, 8, fp);
+	double inc_center;
+	string temp_str = str;
+	sscanf(temp_str.c_str(), "%lf", &inc_center);
+	write_double_to_h5(dst_h5, "inc_center", inc_center);
 	///////////写入其他辅助参数//////////////
 
 	string file_type, sensor, polarization, imaging_mode,
