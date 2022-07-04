@@ -1325,31 +1325,51 @@ int Utils::cross(Mat& vec1, Mat& vec2, Mat& out)
 {
 	if (vec1.cols != 3 ||
 		vec1.rows < 1 ||
-		vec1.type() != CV_64F ||
+		vec1.type() != vec2.type() ||
 		vec1.channels() != 1 ||
 		vec1.cols != vec2.cols ||
 		vec1.rows != vec2.rows ||
 		vec2.channels() != 1 ||
-		vec2.type() != CV_64F
+		(vec2.type() != CV_64F && vec2.type() != CV_32F)
 		)
 	{
 		fprintf(stderr, "cross(): input check failed!\n\n");
 		return -1;
 	}
-	Mat out_tmp = Mat::zeros(vec1.rows, vec1.cols, CV_64F);
-	int rows = vec1.rows;
-	for (int i = 0; i < rows; i++)
+	if (vec2.type() == CV_64F)
 	{
-		out_tmp.at<double>(i, 0) = vec1.at<double>(i, 1) * vec2.at<double>(i, 2) -
-			vec1.at<double>(i, 2) * vec2.at<double>(i, 1);//a(2) * b(3) - a(3) * b(2)
+		Mat out_tmp = Mat::zeros(vec1.rows, vec1.cols, CV_64F);
+		int rows = vec1.rows;
+		for (int i = 0; i < rows; i++)
+		{
+			out_tmp.at<double>(i, 0) = vec1.at<double>(i, 1) * vec2.at<double>(i, 2) -
+				vec1.at<double>(i, 2) * vec2.at<double>(i, 1);//a(2) * b(3) - a(3) * b(2)
 
-		out_tmp.at<double>(i, 1) = vec1.at<double>(i, 2) * vec2.at<double>(i, 0) -
-			vec1.at<double>(i, 0) * vec2.at<double>(i, 2);//a(3) * b(1) - a(1) * b(3)
+			out_tmp.at<double>(i, 1) = vec1.at<double>(i, 2) * vec2.at<double>(i, 0) -
+				vec1.at<double>(i, 0) * vec2.at<double>(i, 2);//a(3) * b(1) - a(1) * b(3)
 
-		out_tmp.at<double>(i, 2) = vec1.at<double>(i, 0) * vec2.at<double>(i, 1) -
-			vec1.at<double>(i, 1) * vec2.at<double>(i, 0);//a(1) * b(2) - a(2) * b(1)
+			out_tmp.at<double>(i, 2) = vec1.at<double>(i, 0) * vec2.at<double>(i, 1) -
+				vec1.at<double>(i, 1) * vec2.at<double>(i, 0);//a(1) * b(2) - a(2) * b(1)
+		}
+		out_tmp.copyTo(out);
 	}
-	out_tmp.copyTo(out);
+	else
+	{
+		Mat out_tmp = Mat::zeros(vec1.rows, vec1.cols, CV_32F);
+		int rows = vec1.rows;
+		for (int i = 0; i < rows; i++)
+		{
+			out_tmp.at<float>(i, 0) = vec1.at<float>(i, 1) * vec2.at<float>(i, 2) -
+				vec1.at<float>(i, 2) * vec2.at<float>(i, 1);//a(2) * b(3) - a(3) * b(2)
+
+			out_tmp.at<float>(i, 1) = vec1.at<float>(i, 2) * vec2.at<float>(i, 0) -
+				vec1.at<float>(i, 0) * vec2.at<float>(i, 2);//a(3) * b(1) - a(1) * b(3)
+
+			out_tmp.at<float>(i, 2) = vec1.at<float>(i, 0) * vec2.at<float>(i, 1) -
+				vec1.at<float>(i, 1) * vec2.at<float>(i, 0);//a(1) * b(2) - a(2) * b(1)
+		}
+		out_tmp.copyTo(out);
+	}
 	return 0;
 }
 
