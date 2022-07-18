@@ -183,6 +183,124 @@ public:
 		ComplexMat& slc4,
 		Mat& GCP
 	);
+	/*@brief 根据轨道和场景DEM以及成像参数参考斜距（单发双收，乒乓模式）
+	* @param stateVec1                                 轨道数据1（主星，信号发射轨道+信号接收轨道）
+	* @param stateVec2                                 轨道数据2（辅星，信号接收轨道）
+	* @param dem                                       场景DEM（来自SRTM）
+	* @param lon_upperleft                             DEM左上角经度
+	* @param lat_upperleft                             DEM左上角维度
+	* @param sceneHeight1                              主图仿真SLC场景高度
+	* @param sceneWidth1                               主图仿真SLC场景宽度
+	* @param nearRange1                                主图最近斜距
+	* @param prf                                       脉冲重复频率
+	* @param wavelength                                波长
+	* @param rangeSpacing                              距离向采样间隔（m）
+	* @param azimuthSpacing                            方位向采样间隔（m）
+	* @param acquisitionStartTime1                     主图方位向起始时间
+	* @param acquisitionStopTime1                      主图方位向结束时间
+	* @param acquisitionStartTime2                     辅图方位向起始时间
+	* @param acquisitionStopTime2                      辅图方位向结束时间
+	* @param R1                                        主星斜距
+	* @param R2                                        辅星斜距
+	* @return 成功返回0，否则返回-1
+	*/
+	int generateSlantrange(
+		Mat& stateVec1,
+		Mat& stateVec2,
+		Mat& dem,
+		double lon_upperleft,
+		double lat_upperleft,
+		int sceneHeight,
+		int sceneWidth,
+		double nearRange,
+		double prf,
+		double wavelength,
+		double rangeSpacing,
+		double azimuthSpacing,
+		double acquisitionStartTime1,
+		double acquisitionStopTime1,
+		double acquisitionStartTime2,
+		double acquisitionStopTime2,
+		Mat& R1,
+		Mat& R2
+	);
+	/*@brief 乒乓模式去参考相位
+	* @param mappedDEM                              配准主图像坐标系DEM
+	* @param mappedLat                              DEM纬度坐标
+	* @param mappedLon                              DEM经度坐标
+	* @param slcH5File1                             配准SLC图像h5文件（主星发主星收）
+	* @param slcH5file2                             配准SLC图像h5文件（辅星发主星收）
+	* @param slcH5file3                             配准SLC图像h5文件（辅星发辅星收）
+	* @param slcH5file4                             配准SLC图像h5文件（主星发辅星收）
+	* @param slcH5File1_out                         配准SLC图像h5文件（主星发主星收，去参考相位返回值）
+	* @param slcH5file2_out                         配准SLC图像h5文件（辅星发主星收，去参考相位返回值）
+	* @param slcH5file3_out                         配准SLC图像h5文件（辅星发辅星收，去参考相位返回值）
+	* @param slcH5file4_out                         配准SLC图像h5文件（主星发辅星收，去参考相位返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SLC_deramp(
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		const char* slcH5File1,
+		const char* slcH5File2,
+		const char* slcH5File3,
+		const char* slcH5File4,
+		const char* slcH5File1_out,
+		const char* slcH5File2_out,
+		const char* slcH5File3_out,
+		const char* slcH5File4_out
+	);
+	/*@brief 乒乓模式重新加入参考相位
+	* @param mappedDEM                              配准主图像坐标系DEM
+	* @param mappedLat                              DEM纬度坐标
+	* @param mappedLon                              DEM经度坐标
+	* @param slcH5File1                             配准SLC图像h5文件（主星发主星收）
+	* @param slcH5file2                             配准SLC图像h5文件（辅星发主星收）
+	* @param slcH5file3                             配准SLC图像h5文件（辅星发辅星收）
+	* @param slcH5file4                             配准SLC图像h5文件（主星发辅星收）
+	* @param slcH5File1_out                         配准SLC图像h5文件（主星发主星收，加参考相位返回值）
+	* @param slcH5file2_out                         配准SLC图像h5文件（辅星发主星收，加参考相位返回值）
+	* @param slcH5file3_out                         配准SLC图像h5文件（辅星发辅星收，加参考相位返回值）
+	* @param slcH5file4_out                         配准SLC图像h5文件（主星发辅星收，加参考相位返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SLC_reramp(
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		const char* slcH5File1,
+		const char* slcH5File2,
+		const char* slcH5File3,
+		const char* slcH5File4,
+		const char* slcH5File1_out,
+		const char* slcH5File2_out,
+		const char* slcH5File3_out,
+		const char* slcH5File4_out
+	);
+	/*@brief 乒乓模式干涉相位估计
+	* @param estimation_wndsize                     估计窗口大小
+	* @param slcH5File1                             配准SLC图像h5文件（主星发主星收）
+	* @param slcH5file2                             配准SLC图像h5文件（辅星发主星收）
+	* @param slcH5file3                             配准SLC图像h5文件（辅星发辅星收）
+	* @param slcH5file4                             配准SLC图像h5文件（主星发辅星收）
+	* @param slcH5File1_out                         配准SLC图像h5文件（主星发主星收，返回值）
+	* @param slcH5file2_out                         配准SLC图像h5文件（辅星发主星收，返回值）
+	* @param slcH5file3_out                         配准SLC图像h5文件（辅星发辅星收，返回值）
+	* @param slcH5file4_out                         配准SLC图像h5文件（主星发辅星收，返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int MB_phase_estimation(
+		int estimation_wndsize,
+		const char* slcH5File1,
+		const char* slcH5File2,
+		const char* slcH5File3,
+		const char* slcH5File4,
+		const char* slcH5File1_out,
+		const char* slcH5file2_out,
+		const char* slcH5file3_out,
+		const char* slcH5file4_out
+	);
 private:
 	char error_head[256];
 

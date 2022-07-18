@@ -562,10 +562,10 @@ int Filter::Goldstein_filter(Mat& phase, Mat& phase_filter, double alpha, int n_
 	Mat cos, sin;
 	int ret;
 	Utils util;
-	ret = util.phase2cos(phase, cos, sin);
-	if (return_check(ret, "util.phase2cos(*, *, *)", error_head)) return -1;
-	ph.SetIm(sin);
-	ph.SetRe(cos);
+	ret = util.phase2cos(phase, ph.re, ph.im);
+	//if (return_check(ret, "util.phase2cos(*, *, *)", error_head)) return -1;
+	//ph.SetIm(sin);
+	//ph.SetRe(cos);
 
 	ComplexMat ph_out(n_i, n_j);
 	int n_inc = floor(n_win / 4);

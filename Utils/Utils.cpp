@@ -2728,8 +2728,8 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 {
 	if (master.GetRows() != slave.GetRows() ||
 		master.GetCols() != slave.GetCols() ||
-		master.type() != CV_64F ||
-		slave.type() != CV_64F ||
+		(master.type() != CV_64F && master.type() != CV_32F) ||
+		slave.type() != master.type() ||
 		master.GetRows() < 1 ||
 		master.GetCols() < 1 ||
 		multilook_rg < 1 ||
@@ -2748,31 +2748,28 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 		return 0;
 	}
 	ComplexMat tmp;
-	ret = master.Mul(slave, tmp, true);
-	if (return_check(ret, "Master.Mul(*, *, *)", error_head)) return -1;
+	tmp.re = master.re.mul(slave.re) + master.im.mul(slave.im);
+	tmp.im = slave.re.mul(master.im) - master.re.mul(slave.im);
 	int nr = tmp.GetRows();
 	int nc = tmp.GetCols();
 	int radius_rg = multilook_rg / 2;
 	int radius_az = multilook_az / 2;
-	Mat real = Mat::zeros(nr, nc, CV_64F);
-	Mat imag = Mat::zeros(nr, nc, CV_64F);
+	phase.create(nr, nc, CV_64F);
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < nr; i++)
 	{
-		int left, right, bottom, top;
+		int left, right, bottom, top; double real, imag;
 		for (int j = 0; j < nc; j++)
 		{
 			left = j - radius_rg; left = left < 0 ? 0 : left;
 			right = left + multilook_rg; right = right > nc - 1 ? nc - 1 : right;
 			top = i - radius_az; top = top < 0 ? 0 : top;
 			bottom = top + multilook_az; bottom = bottom > nr - 1 ? nr - 1 : bottom;
-			real.at<double>(i, j) = cv::mean(tmp.re(Range(top, bottom + 1),Range(left, right + 1)))[0];
-			imag.at<double>(i, j) = cv::mean(tmp.im(Range(top, bottom + 1), Range(left, right + 1)))[0];
+			real = cv::mean(tmp.re(Range(top, bottom + 1),Range(left, right + 1)))[0];
+			imag = cv::mean(tmp.im(Range(top, bottom + 1), Range(left, right + 1)))[0];
+			phase.at<double>(i, j) = atan2(imag, real);
 		}
 	}
-	tmp.SetRe(real);
-	tmp.SetIm(imag);
-	tmp.GetPhase().copyTo(phase);
 	return 0;
 }
 
@@ -6584,7 +6581,7 @@ int Utils::HermitianEVD(const ComplexMat& input, Mat& eigenvalue, ComplexMat& ei
 
 int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, ComplexMat& coherence_matrix, int est_window_width, int est_window_height,  int ref_row, int ref_col, bool b_homogeneous_test, bool b_normalize)
 {
-	if (slc_series.size() < 5||
+	if (slc_series.size() < 4||
 		est_window_width < 3||
 		est_window_height < 3||
 		est_window_height % 2 != 1||
@@ -6706,7 +6703,54 @@ int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, Com
 	}
 	else
 	{
+		//π¿º∆œ‡πÿæÿ’Û
+		int count2 = rows * cols; int count;
+		ComplexMat Covariance;
+		Mat sum(n_images, 1, CV_64F), A(n_images, count2, CV_64F), B(n_images, count2, CV_64F), C, A_t, B_t;
+		double s;
+		for (int k = 0; k < n_images; k++)
+		{
+			s = 0.0;
+			count = 0;
+			for (int i = 0; i < rows; i++)
+			{
+				for (int j = 0; j < cols; j++)
+				{
+					A.at<double>(k, count) = slc_series[k].re.at<double>(i + top, j + left);
+					B.at<double>(k, count) = slc_series[k].im.at<double>(i + top, j + left);
+					count++;
+					s += A.at<double>(k, count - 1) * A.at<double>(k, count - 1)
+						+ B.at<double>(k, count - 1) * B.at<double>(k, count - 1);
+				}
+			}
+			sum.at<double>(k, 0) = s;
+		}
+		cv::transpose(A, A_t); cv::transpose(B, B_t);
+		C = A * A_t + B * B_t;
+		C.copyTo(Covariance.re);
+		C = B * A_t - A * B_t;
+		C.copyTo(Covariance.im);
+		double denum;
+		if (b_normalize)
+		{
 
+			for (int i = 0; i < n_images; i++)
+			{
+				for (int j = 0; j < n_images; j++)
+				{
+					denum = sqrt(sum.at<double>(i, 0) * sum.at<double>(j, 0));
+					Covariance.re.at<double>(i, j) = Covariance.re.at<double>(i, j) / (denum + 1e-10);
+					Covariance.im.at<double>(i, j) = Covariance.im.at<double>(i, j) / (denum + 1e-10);
+				}
+			}
+
+
+		}
+		else
+		{
+			Covariance = Covariance * (1 / (double)count2);
+		}
+		coherence_matrix = Covariance;
 	}
 	return 0;
 }
