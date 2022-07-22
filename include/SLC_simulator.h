@@ -297,9 +297,48 @@ public:
 		const char* slcH5File3,
 		const char* slcH5File4,
 		const char* slcH5File1_out,
-		const char* slcH5file2_out,
-		const char* slcH5file3_out,
-		const char* slcH5file4_out
+		const char* slcH5File2_out,
+		const char* slcH5File3_out,
+		const char* slcH5File4_out
+	);
+	/*@brief 双频乒乓模式干涉相位估计
+	* @param estimation_wndsize                     估计窗口大小
+	* @param slcH5File1                             配准SLC图像h5文件（频率1，主星发主星收）
+	* @param slcH5file2                             配准SLC图像h5文件（频率1，辅星发主星收）
+	* @param slcH5file3                             配准SLC图像h5文件（频率1，辅星发辅星收）
+	* @param slcH5file4                             配准SLC图像h5文件（频率1，主星发辅星收）
+	* @param slcH5File5                             配准SLC图像h5文件（频率2，主星发主星收）
+	* @param slcH5file6                             配准SLC图像h5文件（频率2，辅星发主星收）
+	* @param slcH5file7                             配准SLC图像h5文件（频率2，辅星发辅星收）
+	* @param slcH5file8                             配准SLC图像h5文件（频率2，主星发辅星收）
+	* @param slcH5File1_out                         配准SLC图像h5文件（频率1，主星发主星收，返回值）
+	* @param slcH5file2_out                         配准SLC图像h5文件（频率1，辅星发主星收，返回值）
+	* @param slcH5file3_out                         配准SLC图像h5文件（频率1，辅星发辅星收，返回值）
+	* @param slcH5file4_out                         配准SLC图像h5文件（频率1，主星发辅星收，返回值）
+	* @param slcH5File5_out                         配准SLC图像h5文件（频率2，主星发主星收，返回值）
+	* @param slcH5file6_out                         配准SLC图像h5文件（频率2，辅星发主星收，返回值）
+	* @param slcH5file7_out                         配准SLC图像h5文件（频率2，辅星发辅星收，返回值）
+	* @param slcH5file8_out                         配准SLC图像h5文件（频率2，主星发辅星收，返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int MB_phase_estimation(
+		int estimation_wndsize,
+		const char* slcH5File1,
+		const char* slcH5File2,
+		const char* slcH5File3,
+		const char* slcH5File4,
+		const char* slcH5File5,
+		const char* slcH5File6,
+		const char* slcH5File7,
+		const char* slcH5File8,
+		const char* slcH5File1_out,
+		const char* slcH5File2_out,
+		const char* slcH5File3_out,
+		const char* slcH5File4_out,
+		const char* slcH5File5_out,
+		const char* slcH5File6_out,
+		const char* slcH5File7_out,
+		const char* slcH5File8_out
 	);
 private:
 	char error_head[256];

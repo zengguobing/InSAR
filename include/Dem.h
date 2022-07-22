@@ -62,6 +62,22 @@ public:
 		int mode = 1
 	);
 
+	/** @brief 牛顿迭代法反演高程（测试版）
+	@param unwrapped_phase_file                            解缠相位h5文件
+	@param dem                                             高程反演结果（返回值）
+	@param project_path                                    工程路径
+	@param iter_times                                      迭代次数
+	@param mode                                            收发方式（1自发自收（默认），2单发双收）
+	@return  成功返回0，否则返回-1
+	*/
+	int dem_newton_iter_test(
+		const char* unwrapped_phase_file,
+		Mat& dem,
+		const char* project_path,
+		int iter_times,
+		int mode = 1
+	);
+
 private:
 	char error_head[256];
 	char parallel_error_head[256];

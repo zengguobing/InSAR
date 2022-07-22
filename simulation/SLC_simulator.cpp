@@ -330,7 +330,7 @@ int SLC_simulator::generateSLC(
 	block_rows = rows / num_block_row;
 	block_cols = cols / num_block_col;
 	Utils util;
-	num_block_row = 2;
+	num_block_row = num_block_row;
 	num_block_col = num_block_col;
 	vector<double> GCPs;//控制点信息
 	//初始化轨道类
@@ -340,10 +340,12 @@ int SLC_simulator::generateSLC(
 	double time_interval = 1.0 / prf;
 	double dopplerFrequency = 0.0;
 	uint64 seed = 0;
-	for (int i = 15; i < 17; i++)
+	for (int i = 0; i < num_block_row; i++)
 	{
 		for (int j = 0; j < num_block_col; j++)
 		{
+			bool flag = (i % 3 == 0) && (j % 3 == 0) && i != 0 && j != 0;
+			if (!flag) continue;
 			seed++;
 			int row_start = i * block_rows - 1;
 			row_start = row_start < 0 ? 0 : row_start;
@@ -464,70 +466,67 @@ int SLC_simulator::generateSLC(
 					slant_range.at<double>(ii, jj) = distance;
 				}
 			}
-
-			for (int ii = 0; ii < DEM_rows; ii++)
-			{
-				for (int jj = 0; jj < DEM_cols; jj++)
-				{
-					double zeroDopplerTime = imaging_time.at<double>(ii, jj);
-					double distance = slant_range.at<double>(ii, jj);
-					double real, theta, imaginary;
-					int azimuthIndex = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
-					int rangeIndex = floor((distance - nearRange) / rangeSpacing);
-					if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
-					{
-
-					}
-					else
-					{
-						theta = -4.0 * PI * distance / wavelength + randomAngle.at<float>(ii, jj);
-						real = 1.0 * (cos(theta) + noise_real.at<float>(ii, jj));
-						imaginary = 1.0 * (sin(theta) + noise_imaginary.at<float>(ii, jj));
-						slc.re.at<float>(azimuthIndex, rangeIndex) += real;
-						slc.im.at<float>(azimuthIndex, rangeIndex) += imaginary;
-						
-					}
-				}
-			}
-			
 			//控制点信息
-			if ((i % 5 == 0) && (j % 5 == 0) && i != 0 && j != 0)
+			if ((i % 3 == 0) && (j % 3 == 0) && i != 0 && j != 0)
 			{
 				int gcp_row = DEM_rows / 2;
 				int gcp_col = DEM_cols / 2;
 				double gcp_sigma = 1000.0;
 				double zeroDopplerTime = imaging_time.at<double>(gcp_row, gcp_col);
 				double distance = slant_range.at<double>(gcp_row, gcp_col);
-				int azimuthIndex = round((zeroDopplerTime - acquisitionStartTime) / time_interval);
-				int rangeIndex = round((distance - nearRange) / rangeSpacing);
+				int azimuthIndex = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
+				int rangeIndex = floor((distance - nearRange) / rangeSpacing);
 				if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
 				{
 
 				}
 				else
 				{
-					double lat, lon, height;
-					lat = upper_left_lat - (double)gcp_row * lat_spacing;
-					lon = upper_left_lon + (double)gcp_col * lon_spacing;
-					lon = lon > 180.0 ? (lon - 360.0) : lon;
-					height = dem_temp2.at<float>(gcp_row, gcp_col);
+					double lat, lon, height, lat_total = 0.0, lon_total = 0.0, height_total = 0.0, distance_total = 0.0;
+					int azimuthIndex_tmp, rangeIndex_tmp, pixel_count = 0;
+					for (int ii = 0; ii < DEM_rows; ii++)
+					{
+						for (int jj = 0; jj < DEM_cols; jj++)
+						{
+							zeroDopplerTime = imaging_time.at<double>(ii, jj);
+							distance = slant_range.at<double>(ii, jj);
+							azimuthIndex_tmp = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
+							rangeIndex_tmp = floor((distance - nearRange) / rangeSpacing);
+
+							if (azimuthIndex_tmp == azimuthIndex && rangeIndex_tmp == (rangeIndex - 50))
+							{
+								lat = upper_left_lat - (double)ii * lat_spacing;
+								lon = upper_left_lon + (double)jj * lon_spacing;
+								lon = lon > 180.0 ? (lon - 360.0) : lon;
+								height = dem_temp2.at<float>(ii, jj);
+								pixel_count++;
+								lon_total += lon;
+								lat_total += lat;
+								height_total += height;
+								distance_total += distance;
+							}
+						}
+					}
+					if (pixel_count > 0)
+					{
+						lon_total /= (double)pixel_count;
+						lat_total /= (double)pixel_count;
+						height_total /= (double)pixel_count;
+						distance_total /= (double)pixel_count;
+					}
 					GCPs.push_back(azimuthIndex + 1);
-					GCPs.push_back(rangeIndex + 1);
-					GCPs.push_back(lon);
-					GCPs.push_back(lat);
-					GCPs.push_back(height);
-					GCPs.push_back(distance);
-					GCPs.push_back(distance);
-					double theta = -4.0 * PI * distance / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
-					double real = gcp_sigma * (cos(theta) + noise_real.at<float>(gcp_row, gcp_col));
-					double imaginary = gcp_sigma * (sin(theta) + noise_imaginary.at<float>(gcp_row, gcp_col));
-					slc.re.at<float>(azimuthIndex, rangeIndex) += real;
-					slc.im.at<float>(azimuthIndex, rangeIndex) += imaginary;
+					GCPs.push_back(rangeIndex - 50 + 1);
+					GCPs.push_back(lon_total);
+					GCPs.push_back(lat_total);
+					GCPs.push_back(height_total);
+					GCPs.push_back(distance_total);
+					GCPs.push_back(distance_total);
 				}
 			}
 			
-			fprintf(stdout, "process %lf: %d / %d\n", (double)seed / (double)(num_block_row * num_block_col) * 100.0, seed,
-				num_block_row * num_block_col);
+
+			printf("\rprocess %lf", (double)(i * num_block_col + j + 1) / (double)(num_block_row * num_block_col) * 100.0);
+			fflush(stdout);
 		}
 	}
 
@@ -1253,21 +1252,21 @@ int SLC_simulator::generateSLC(
 			Mat noise_real3(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary3(dem_temp2.rows, dem_temp2.cols, CV_32F);
 			Mat noise_real4(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary4(dem_temp2.rows, dem_temp2.cols, CV_32F);
 			double noise_sigma = sqrt(pow(10.0, -SNR / 10.0) / 2.0);
-			cv::RNG rng2(seed + num_block_row * num_block_col + 1);
+			cv::RNG rng2(seed + 2 * num_block_row * num_block_col + 1);
 			rng2.fill(noise_real, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng3(seed + num_block_row * num_block_col + 2);
+			cv::RNG rng3(seed + 2 * num_block_row * num_block_col + 2);
 			rng3.fill(noise_imaginary, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng4(seed + num_block_row * num_block_col + 3);
+			cv::RNG rng4(seed + 2 * num_block_row * num_block_col + 3);
 			rng4.fill(noise_real2, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng5(seed + num_block_row * num_block_col + 4);
+			cv::RNG rng5(seed + 2 * num_block_row * num_block_col + 4);
 			rng5.fill(noise_imaginary2, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng6(seed + num_block_row * num_block_col + 5);
+			cv::RNG rng6(seed + 2 * num_block_row * num_block_col + 5);
 			rng6.fill(noise_real3, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng7(seed + num_block_row * num_block_col + 6);
+			cv::RNG rng7(seed + 2 * num_block_row * num_block_col + 6);
 			rng7.fill(noise_imaginary3, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng8(seed + num_block_row * num_block_col + 7);
+			cv::RNG rng8(seed + 2 * num_block_row * num_block_col + 7);
 			rng8.fill(noise_real4, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng9(seed + num_block_row * num_block_col + 8);
+			cv::RNG rng9(seed + 2 * num_block_row * num_block_col + 8);
 			rng9.fill(noise_imaginary4, cv::RNG::NORMAL, 0, noise_sigma);
 
 			//计算DEM点的主图像成像卫星位置
@@ -1517,13 +1516,13 @@ int SLC_simulator::generateSLC(
 				double gcp_sigma = 1000.0;
 				double zeroDopplerTime1 = imaging_time1.at<double>(gcp_row, gcp_col);
 				double distance1 = slant_range1.at<double>(gcp_row, gcp_col);
-				int azimuthIndex1 = round((zeroDopplerTime1 - acquisitionStartTime1) / time_interval);
-				int rangeIndex1 = round((distance1 - nearRange1) / rangeSpacing);
+				int azimuthIndex1 = floor((zeroDopplerTime1 - acquisitionStartTime1) / time_interval);
+				int rangeIndex1 = floor((distance1 - nearRange1) / rangeSpacing);
 
 				double zeroDopplerTime2 = imaging_time2.at<double>(gcp_row, gcp_col);
 				double distance2 = slant_range2.at<double>(gcp_row, gcp_col);
-				int azimuthIndex2 = round((zeroDopplerTime2 - acquisitionStartTime2) / time_interval);
-				int rangeIndex2 = round((distance2 - nearRange2) / rangeSpacing);
+				int azimuthIndex2 = floor((zeroDopplerTime2 - acquisitionStartTime2) / time_interval);
+				int rangeIndex2 = floor((distance2 - nearRange2) / rangeSpacing);
 
 				if (azimuthIndex1 < 0 || azimuthIndex1 > sceneHeight1 - 1 || rangeIndex1 < 0 || rangeIndex1 > sceneWidth1 - 1 ||
 					azimuthIndex2 < 0 || azimuthIndex2 > sceneHeight2 - 1 || rangeIndex2 < 0 || rangeIndex2 > sceneWidth2 - 1)
@@ -1717,7 +1716,7 @@ int SLC_simulator::generateSlantrange(
 	block_rows = rows / num_block_row;
 	block_cols = cols / num_block_col;
 	Utils util;
-	num_block_row = 2;
+	num_block_row = num_block_row;
 	num_block_col = num_block_col;
 	vector<double> GCPs;//控制点信息
 	//初始化轨道类
@@ -1730,7 +1729,7 @@ int SLC_simulator::generateSlantrange(
 	double dopplerFrequency = 0.0;
 	uint64 seed = 0;
 	char process[512];
-	for (int i = 10; i < 12; i++)
+	for (int i = 0; i < num_block_row; i++)
 	{
 		for (int j = 0; j < num_block_col; j++)
 		{
@@ -2832,24 +2831,237 @@ int SLC_simulator::MB_phase_estimation(
 	ret = conversion.read_slc_from_h5(slcH5File1, slc);
 	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 	nr = slc.GetRows(); nc = slc.GetCols();
-	ret = conversion.creat_new_h5(slcH5File1_out);
-	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	ret = conversion.creat_new_h5(slcH5File2_out);
-	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	ret = conversion.creat_new_h5(slcH5File3_out);
-	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	ret = conversion.creat_new_h5(slcH5File4_out);
-	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File1_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File2_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File3_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File4_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
 
 
-	ret = conversion.write_slc_to_h5(slcH5File1_out, slc);
-	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	ret = conversion.write_slc_to_h5(slcH5File2_out, slc);
-	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	ret = conversion.write_slc_to_h5(slcH5File3_out, slc);
-	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	ret = conversion.write_slc_to_h5(slcH5File4_out, slc);
-	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File1_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File2_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File3_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File4_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
+	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
+	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
+	else block_num_col = int(floor((double)nc / (double)blocksize_col)) + 1;
+	for (int i = 2; i < block_num_row; i++)
+	{
+		for (int j = 2; j < block_num_col; j++)
+		{
+			top = i * blocksize_row;
+			top_pad = top - homotest_radius; top_pad = top_pad < 0 ? 0 : top_pad;
+			bottom = top + blocksize_row; bottom = bottom > nr ? nr : bottom;
+			bottom_pad = bottom + homotest_radius; bottom_pad = bottom_pad > nr ? nr : bottom_pad;
+			left = j * blocksize_col;
+			left_pad = left - homotest_radius; left_pad = left_pad < 0 ? 0 : left_pad;
+			right = left + blocksize_col; right = right > nc ? nc : right;
+			right_pad = right + homotest_radius; right_pad = right_pad > nc ? nc : right_pad;
+
+			//读取数据
+			for (int k = 0; k < n_images; k++)
+			{
+				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_re",
+					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.re);
+				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_im",
+					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.im);
+				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+				if (slc.type() != CV_64F) slc.convertTo(slc, CV_64F);
+				slc_series.push_back(slc);
+				slc_series_filter.push_back(slc);
+			}
+			phase.create(slc.GetRows(), slc.GetCols(), CV_64F); phase = 0.0;
+			//计算
+#pragma omp parallel for schedule(guided)
+			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
+			{
+				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue; int ret1;
+				Mat real1, imag1, real2, imag2, real, imag;
+				double value1, value2;
+				for (int jj = (left - left_pad); jj < (right - left_pad); jj++)
+				{
+					ret1 = util.coherence_matrix_estimation(slc_series, coherence_matrix, estimation_wndsize, estimation_wndsize, ii, jj, false, true);
+					if (ret1 == 0)
+					{
+						ret1 = util.HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
+						if (!eigenvalue.empty() && ret1 == 0)
+						{
+
+							value1 = eigenvalue.at<double>(0, 0);
+							value2 = eigenvalue.at<double>(1, 0);
+							eigenvector.re(cv::Range(0, n_images), cv::Range(0, 1)).copyTo(real1);
+							eigenvector.im(cv::Range(0, n_images), cv::Range(0, 1)).copyTo(imag1);
+							cv::transpose(real1, real2); cv::transpose(imag1, imag2);
+							real = real1 * real2 + imag1 * imag2; real = real * value1;
+							imag = imag1 * real2 - real1 * imag2; imag = imag * value1;
+
+							/*eigenvector.re(cv::Range(0, n_images), cv::Range(1, 2)).copyTo(real1);
+							eigenvector.im(cv::Range(0, n_images), cv::Range(1, 2)).copyTo(imag1);
+							cv::transpose(real1, real2); cv::transpose(imag1, imag2);
+							real += (real1 * real2 + imag1 * imag2) * value2;
+							imag += (imag1 * real2 - real1 * imag2) * value2;*/
+							coherence_matrix.SetRe(real);
+							coherence_matrix.SetIm(imag);
+							real = coherence_matrix.GetPhase();
+							phase.at<double>(ii, jj) = real.at<double>(0, 2);
+
+							////cout << eigenvalue << endl;
+							//if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
+							//{
+							//	for (int kk = 0; kk < n_images; kk++)
+							//	{
+							//		slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
+							//		slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
+							//	}
+							//}
+							////else
+							////{
+							////	fprintf(stdout, "not processed!\n");
+							////}
+						}
+					}
+
+
+				}
+			}
+			util.savephase("G:\\tmp\\phase_test2.jpg", "jet", phase); return 0;
+			//储存
+			for (int kk = 0; kk < n_images; kk++)
+			{
+				slc_series_filter[kk].re(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
+				ph.convertTo(ph, CV_32F);
+				ret = conversion.write_subarray_to_h5(coregis_slc_files_out[kk].c_str(), "s_re", ph, top, left, bottom - top, right - left);
+				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
+
+				slc_series_filter[kk].im(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
+				ph.convertTo(ph, CV_32F);
+				ret = conversion.write_subarray_to_h5(coregis_slc_files_out[kk].c_str(), "s_im", ph, top, left, bottom - top, right - left);
+				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
+
+			}
+			slc_series.clear();
+			slc_series_filter.clear();
+			printf("\r估计进度：%lf %", double(i * block_num_col + j + 1) / double((block_num_col) * (block_num_row)) * 100.0);
+			fflush(stdout);
+		}
+	}
+
+	return 0;
+}
+
+int SLC_simulator::MB_phase_estimation(
+	int estimation_wndsize,
+	const char* slcH5File1,
+	const char* slcH5File2,
+	const char* slcH5File3,
+	const char* slcH5File4,
+	const char* slcH5File5,
+	const char* slcH5File6,
+	const char* slcH5File7, 
+	const char* slcH5File8,
+	const char* slcH5File1_out,
+	const char* slcH5File2_out,
+	const char* slcH5File3_out,
+	const char* slcH5File4_out,
+	const char* slcH5File5_out,
+	const char* slcH5File6_out,
+	const char* slcH5File7_out,
+	const char* slcH5File8_out
+)
+{
+	if (estimation_wndsize % 2 == 0 || estimation_wndsize < 5 ||
+		!slcH5File1 || !slcH5File1_out || !slcH5File2 ||
+		!slcH5File2_out || !slcH5File3 || !slcH5File3_out ||
+		!slcH5File4 || !slcH5File4_out || !slcH5File5 || !slcH5File5_out || !slcH5File6 ||
+		!slcH5File6_out || !slcH5File7 || !slcH5File7_out ||
+		!slcH5File8 || !slcH5File8_out
+		)
+	{
+		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
+		return -1;
+	}
+	vector<string>coregis_slc_files; vector<string>coregis_slc_files_out;
+	coregis_slc_files.push_back(slcH5File1);
+	coregis_slc_files.push_back(slcH5File2);
+	coregis_slc_files.push_back(slcH5File3);
+	coregis_slc_files.push_back(slcH5File4);
+	coregis_slc_files.push_back(slcH5File5);
+	coregis_slc_files.push_back(slcH5File6);
+	coregis_slc_files.push_back(slcH5File7);
+	coregis_slc_files.push_back(slcH5File8);
+	coregis_slc_files_out.push_back(slcH5File1_out);
+	coregis_slc_files_out.push_back(slcH5File2_out);
+	coregis_slc_files_out.push_back(slcH5File3_out);
+	coregis_slc_files_out.push_back(slcH5File4_out);
+	coregis_slc_files_out.push_back(slcH5File5_out);
+	coregis_slc_files_out.push_back(slcH5File6_out);
+	coregis_slc_files_out.push_back(slcH5File7_out);
+	coregis_slc_files_out.push_back(slcH5File8_out);
+
+	FormatConversion conversion; Utils util;
+	double thresh_c1_to_c2 = 0.9;
+	int master_indx = 1;
+	int n_images = 8, nr, nc, blocksize_row = 1000, blocksize_col = 1000;
+	int homotest_radius = (estimation_wndsize - 1) / 2;
+	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad, ret;
+	vector<ComplexMat> slc_series, slc_series_filter;
+	ComplexMat slc;
+	Mat ph, phase;
+
+	////预先填充
+	ret = conversion.read_slc_from_h5(slcH5File1, slc);
+	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+	nr = slc.GetRows(); nc = slc.GetCols();
+	//ret = conversion.creat_new_h5(slcH5File1_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File2_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File3_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File4_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File5_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File6_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File7_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.creat_new_h5(slcH5File8_out);
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+
+	//ret = conversion.write_slc_to_h5(slcH5File1_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File2_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File3_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File4_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File5_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File6_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File7_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	//ret = conversion.write_slc_to_h5(slcH5File8_out, slc);
+	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+	//phase.create(nr, nc, CV_64F); phase = 0.0;
+	//ret = conversion.creat_new_h5("G:\\tmp\\dual_phase.h5");
+	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//ret = conversion.write_array_to_h5("G:\\tmp\\dual_phase.h5", "phase", phase);
+	//if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
 
 	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
 	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
@@ -2879,14 +3091,17 @@ int SLC_simulator::MB_phase_estimation(
 				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
 				if (slc.type() != CV_64F) slc.convertTo(slc, CV_64F);
 				slc_series.push_back(slc);
-				slc_series_filter.push_back(slc);
+				//slc_series_filter.push_back(slc);
 			}
-
+			phase.create(slc.GetRows(), slc.GetCols(), CV_64F); phase = 0.0;
 			//计算
 #pragma omp parallel for schedule(guided)
 			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
 			{
 				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue; int ret1;
+				Mat real1, imag1, real2, imag2, real, imag; 
+				double value1, value2;
+				double re, im, re1, im1, re2, im2;
 				for (int jj = (left - left_pad); jj < (right - left_pad); jj++)
 				{
 					ret1 = util.coherence_matrix_estimation(slc_series, coherence_matrix, estimation_wndsize, estimation_wndsize, ii, jj, false, true);
@@ -2895,8 +3110,36 @@ int SLC_simulator::MB_phase_estimation(
 						ret1 = util.HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
 						if (!eigenvalue.empty() && ret1 == 0)
 						{
-							//cout << eigenvalue << endl;
-							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
+							//cout << coherence_matrix.GetMod() << endl;
+							//eigenvector * eigenvector;
+							value1 = eigenvalue.at<double>(0, 0);
+							value2 = eigenvalue.at<double>(1, 0);
+							re1 = eigenvector.re.at<double>(0, 0); im1 = eigenvector.im.at<double>(0, 0);
+							re2 = eigenvector.re.at<double>(2, 0); im2 = eigenvector.im.at<double>(2, 0);
+							re = re1 * re2 + im1 * im2; re *= value1;
+							im = im1 * re2 - re1 * im2; im *= value1;
+
+							re1 = eigenvector.re.at<double>(0, 1); im1 = eigenvector.im.at<double>(0, 1);
+							re2 = eigenvector.re.at<double>(2, 1); im2 = eigenvector.im.at<double>(2, 1);
+							re += (re1 * re2 + im1 * im2) * value2;
+							im += (im1 * re2 - re1 * im2) * value2;
+
+							/*eigenvector.re(cv::Range(0, n_images), cv::Range(0, 1)).copyTo(real1);
+							eigenvector.im(cv::Range(0, n_images), cv::Range(0, 1)).copyTo(imag1);
+							cv::transpose(real1, real2); cv::transpose(imag1, imag2);
+							real = real1 * real2 + imag1 * imag2; real = real * value1;
+							imag = imag1 * real2 - real1 * imag2; imag = imag * value1;*/
+
+							/*eigenvector.re(cv::Range(0, n_images), cv::Range(1, 2)).copyTo(real1);
+							eigenvector.im(cv::Range(0, n_images), cv::Range(1, 2)).copyTo(imag1);
+							cv::transpose(real1, real2); cv::transpose(imag1, imag2);
+							real += (real1 * real2 + imag1 * imag2) * value2;
+							imag += (imag1 * real2 - real1 * imag2) * value2;
+							coherence_matrix.SetRe(real);
+							coherence_matrix.SetIm(imag);
+							real = coherence_matrix.GetPhase();*/
+							phase.at<double>(ii, jj) = atan2(im, re);
+							/*if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
 							{
 								for (int kk = 0; kk < n_images; kk++)
 								{
@@ -2904,15 +3147,23 @@ int SLC_simulator::MB_phase_estimation(
 									slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
 								}
 							}
+							else
+							{
+								fprintf(stdout, "not processed!\n");
+							}*/
 						}
 					}
 
 
 				}
 			}
+			//util.cvmat2bin("G:\\tmp\\phase_test.bin", phase); return 0;
+			////储存
+			phase(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
+			ret = conversion.write_subarray_to_h5("G:\\tmp\\dual_phase.h5", "phase", ph, top, left, bottom - top, right - left);
+			if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
 
-			//储存
-			for (int kk = 0; kk < n_images; kk++)
+			/*for (int kk = 0; kk < n_images; kk++)
 			{
 				slc_series_filter[kk].re(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
 				ph.convertTo(ph, CV_32F);
@@ -2923,15 +3174,13 @@ int SLC_simulator::MB_phase_estimation(
 				ph.convertTo(ph, CV_32F);
 				ret = conversion.write_subarray_to_h5(coregis_slc_files_out[kk].c_str(), "s_im", ph, top, left, bottom - top, right - left);
 				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
-
-			}
+			}*/
 			slc_series.clear();
-			slc_series_filter.clear();
+			//slc_series_filter.clear();
 			printf("\r估计进度：%lf %", double(i * block_num_col + j + 1) / double((block_num_col) * (block_num_row)) * 100.0);
 			fflush(stdout);
 		}
 	}
-
 	return 0;
 }
 

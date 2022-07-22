@@ -1090,7 +1090,7 @@ int Deflat::demMapping(
 			{
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(DEM_out.at<short>(i, left)) + 
-					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, right)) * ratio1;
+					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, left)) * ratio1;
 				ratio2 = double(i - up) / double(down - up);
 				value2 = double(DEM_out.at<short>(up, j)) +
 					double(DEM_out.at<short>(down, j) - DEM_out.at<short>(up, j)) * ratio2;
@@ -1111,7 +1111,7 @@ int Deflat::demMapping(
 			{
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(DEM_out.at<short>(i, left)) +
-					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, right)) * ratio1;
+					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, left)) * ratio1;
 				DEM_out.at<short>(i, j) = value1;
 				continue;
 			}
@@ -1362,7 +1362,7 @@ int Deflat::demMapping(
 			{
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(DEM_out.at<short>(i, left)) +
-					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, right)) * ratio1;
+					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, left)) * ratio1;
 				ratio2 = double(i - up) / double(down - up);
 				value2 = double(DEM_out.at<short>(up, j)) +
 					double(DEM_out.at<short>(down, j) - DEM_out.at<short>(up, j)) * ratio2;
@@ -1383,7 +1383,7 @@ int Deflat::demMapping(
 			{
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(DEM_out.at<short>(i, left)) +
-					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, right)) * ratio1;
+					double(DEM_out.at<short>(i, right) - DEM_out.at<short>(i, left)) * ratio1;
 				DEM_out.at<short>(i, j) = value1;
 				continue;
 			}
@@ -1463,7 +1463,7 @@ int Deflat::demMapping(
 			{
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(mappedLat.at<float>(i, left)) +
-					double(mappedLat.at<float>(i, right) - mappedLat.at<float>(i, right)) * ratio1;
+					double(mappedLat.at<float>(i, right) - mappedLat.at<float>(i, left)) * ratio1;
 				ratio2 = double(i - up) / double(down - up);
 				value2 = double(mappedLat.at<float>(up, j)) +
 					double(mappedLat.at<float>(down, j) - mappedLat.at<float>(up, j)) * ratio2;
@@ -1472,7 +1472,7 @@ int Deflat::demMapping(
 
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(mappedLon.at<float>(i, left)) +
-					double(mappedLon.at<float>(i, right) - mappedLon.at<float>(i, right)) * ratio1;
+					double(mappedLon.at<float>(i, right) - mappedLon.at<float>(i, left)) * ratio1;
 				ratio2 = double(i - up) / double(down - up);
 				value2 = double(mappedLon.at<float>(up, j)) +
 					double(mappedLon.at<float>(down, j) - mappedLon.at<float>(up, j)) * ratio2;
@@ -1500,13 +1500,13 @@ int Deflat::demMapping(
 			{
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(mappedLat.at<float>(i, left)) +
-					double(mappedLat.at<float>(i, right) - mappedLat.at<float>(i, right)) * ratio1;
+					double(mappedLat.at<float>(i, right) - mappedLat.at<float>(i, left)) * ratio1;
 				mappedLat.at<float>(i, j) = value1;
 
 
 				ratio1 = double(j - left) / double(right - left);
 				value1 = double(mappedLon.at<float>(i, left)) +
-					double(mappedLon.at<float>(i, right) - mappedLon.at<float>(i, right)) * ratio1;
+					double(mappedLon.at<float>(i, right) - mappedLon.at<float>(i, left)) * ratio1;
 				mappedLon.at<float>(i, j) = value1;
 				continue;
 			}
