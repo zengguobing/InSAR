@@ -2831,32 +2831,32 @@ int SLC_simulator::MB_phase_estimation(
 	ret = conversion.read_slc_from_h5(slcH5File1, slc);
 	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 	nr = slc.GetRows(); nc = slc.GetCols();
-	//ret = conversion.creat_new_h5(slcH5File1_out);
-	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	//ret = conversion.creat_new_h5(slcH5File2_out);
-	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	//ret = conversion.creat_new_h5(slcH5File3_out);
-	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	//ret = conversion.creat_new_h5(slcH5File4_out);
-	//if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.creat_new_h5(slcH5File1_out);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.creat_new_h5(slcH5File2_out);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.creat_new_h5(slcH5File3_out);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.creat_new_h5(slcH5File4_out);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
 
 
-	//ret = conversion.write_slc_to_h5(slcH5File1_out, slc);
-	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	//ret = conversion.write_slc_to_h5(slcH5File2_out, slc);
-	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	//ret = conversion.write_slc_to_h5(slcH5File3_out, slc);
-	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	//ret = conversion.write_slc_to_h5(slcH5File4_out, slc);
-	//if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	ret = conversion.write_slc_to_h5(slcH5File1_out, slc);
+	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	ret = conversion.write_slc_to_h5(slcH5File2_out, slc);
+	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	ret = conversion.write_slc_to_h5(slcH5File3_out, slc);
+	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+	ret = conversion.write_slc_to_h5(slcH5File4_out, slc);
+	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
 
 	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
 	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
 	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
 	else block_num_col = int(floor((double)nc / (double)blocksize_col)) + 1;
-	for (int i = 2; i < block_num_row; i++)
+	for (int i = 0; i < block_num_row; i++)
 	{
-		for (int j = 2; j < block_num_col; j++)
+		for (int j = 0; j < block_num_col; j++)
 		{
 			top = i * blocksize_row;
 			top_pad = top - homotest_radius; top_pad = top_pad < 0 ? 0 : top_pad;
@@ -2880,7 +2880,7 @@ int SLC_simulator::MB_phase_estimation(
 				slc_series.push_back(slc);
 				slc_series_filter.push_back(slc);
 			}
-			phase.create(slc.GetRows(), slc.GetCols(), CV_64F); phase = 0.0;
+			//phase.create(slc.GetRows(), slc.GetCols(), CV_64F); phase = 0.0;
 			//计算
 #pragma omp parallel for schedule(guided)
 			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
@@ -2897,44 +2897,44 @@ int SLC_simulator::MB_phase_estimation(
 						if (!eigenvalue.empty() && ret1 == 0)
 						{
 
-							value1 = eigenvalue.at<double>(0, 0);
+							/*value1 = eigenvalue.at<double>(0, 0);
 							value2 = eigenvalue.at<double>(1, 0);
 							eigenvector.re(cv::Range(0, n_images), cv::Range(0, 1)).copyTo(real1);
 							eigenvector.im(cv::Range(0, n_images), cv::Range(0, 1)).copyTo(imag1);
 							cv::transpose(real1, real2); cv::transpose(imag1, imag2);
 							real = real1 * real2 + imag1 * imag2; real = real * value1;
-							imag = imag1 * real2 - real1 * imag2; imag = imag * value1;
+							imag = imag1 * real2 - real1 * imag2; imag = imag * value1;*/
 
 							/*eigenvector.re(cv::Range(0, n_images), cv::Range(1, 2)).copyTo(real1);
 							eigenvector.im(cv::Range(0, n_images), cv::Range(1, 2)).copyTo(imag1);
 							cv::transpose(real1, real2); cv::transpose(imag1, imag2);
 							real += (real1 * real2 + imag1 * imag2) * value2;
 							imag += (imag1 * real2 - real1 * imag2) * value2;*/
-							coherence_matrix.SetRe(real);
+							/*coherence_matrix.SetRe(real);
 							coherence_matrix.SetIm(imag);
 							real = coherence_matrix.GetPhase();
-							phase.at<double>(ii, jj) = real.at<double>(0, 2);
+							phase.at<double>(ii, jj) = real.at<double>(0, 2);*/
 
 							////cout << eigenvalue << endl;
-							//if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
+							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
+							{
+								for (int kk = 0; kk < n_images; kk++)
+								{
+									slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
+									slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
+								}
+							}
+							//else
 							//{
-							//	for (int kk = 0; kk < n_images; kk++)
-							//	{
-							//		slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
-							//		slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
-							//	}
+							//	fprintf(stdout, "not processed!\n");
 							//}
-							////else
-							////{
-							////	fprintf(stdout, "not processed!\n");
-							////}
 						}
 					}
 
 
 				}
 			}
-			util.savephase("G:\\tmp\\phase_test2.jpg", "jet", phase); return 0;
+			//util.savephase("G:\\tmp\\phase_test2.jpg", "jet", phase); return 0;
 			//储存
 			for (int kk = 0; kk < n_images; kk++)
 			{
@@ -3181,6 +3181,313 @@ int SLC_simulator::MB_phase_estimation(
 			fflush(stdout);
 		}
 	}
+	return 0;
+}
+
+int SLC_simulator::pingpong_MLE(
+	Mat& phase_reference,
+	Mat& wrapped_phase_low,
+	Mat& wrapped_phase_high,
+	Mat& outphase, 
+	Mat& lat_coef,
+	Mat& lon_coef,
+	double wavelength_low,
+	double wavelength_high,
+	double nearRangeTime, 
+	double rangeSpacing,
+	double azimuthSpacing,
+	int offset_row, 
+	int offset_col,
+	double start1,
+	double end1, 
+	double start2,
+	double end2,
+	Mat& statevec1,
+	Mat& statevec2,
+	double prf,
+	string demPath
+)
+{
+	if (phase_reference.size() != wrapped_phase_high.size() ||
+		phase_reference.size() != wrapped_phase_low.size() ||
+		phase_reference.type() != CV_64F ||
+		phase_reference.type() != wrapped_phase_high.type() ||
+		phase_reference.type() != wrapped_phase_low.type() ||
+		wavelength_high <= 0.0 ||
+		wavelength_low <= 0.0 || nearRangeTime <= 0.0 ||
+		rangeSpacing <= 0.0 || azimuthSpacing <= 0.0 || offset_row < 0 || offset_col < 0 || start1 <= 0.0 ||
+		start2 <= 0.0 || end2 <= start2 || end1 <= start1 ||
+		statevec1.type() != CV_64F ||
+		statevec2.type() != CV_64F ||
+		statevec1.cols != 7 || statevec2.cols != 7 ||
+		prf <= 0.0 ||
+		lon_coef.rows != 1 ||
+		lon_coef.cols != 32 ||
+		lon_coef.type() != CV_64F ||
+		lat_coef.rows != 1 ||
+		lat_coef.cols != 32 ||
+		lat_coef.type() != CV_64F || demPath.empty()
+		)
+	{
+		fprintf(stderr, "pingpong_MLE(): input check failed!\n");
+		return -1;
+	}
+	Deflat flat; Utils util;
+	//去参考平面
+	double lonMax, lonMin, latMax, latMin, lon_upperleft, lat_upperleft;
+	Mat dem, mappedDEM, mappedLat, mappedLon;
+	int ret;
+	int sceneHeight = wrapped_phase_low.rows;
+	int sceneWidth = wrapped_phase_low.cols;
+	ret = Utils::computeImageGeoBoundry(lat_coef, lon_coef, sceneHeight, sceneWidth, offset_row, offset_col,
+		&lonMax, &latMax, &lonMin, &latMin);
+	ret = Utils::getSRTMDEM(demPath.c_str(), dem, &lon_upperleft, &lat_upperleft, lonMin, lonMax, latMin, latMax);
+	ret = flat.demMapping(dem, mappedDEM, mappedLat, mappedLon, lon_upperleft, lat_upperleft, offset_row, offset_col, sceneHeight, sceneWidth,
+		prf, rangeSpacing, wavelength_high, nearRangeTime, start1, end1, statevec1, 20);
+	mappedDEM = 0;
+	//计算卫星位置
+	Mat sate1 = Mat::zeros(sceneHeight, 3, CV_64F);
+
+	Mat sate2 = Mat::zeros(sceneHeight, 3, CV_64F);
+
+	orbitStateVectors stateVectors(statevec1, start1, end1);
+	stateVectors.applyOrbit();
+
+	orbitStateVectors stateVectors2(statevec2, start2, end2);
+	stateVectors2.applyOrbit();
+
+	//计算主星成像位置
+	double dopplerFrequency = 0.0;
+	Position groundPosition;
+	double lat, lon, height;
+	lat = mappedLat.at<float>(0, 0);
+	lon = mappedLon.at<float>(0, 0);
+	lon = lon > 180.0 ? (lon - 360.0) : lon;
+	height = mappedDEM.at<short>(0, 0);
+	Utils::ell2xyz(lon, lat, height, groundPosition);
+	int numOrbitVec = stateVectors.newStateVectors.rows;
+	double firstVecTime = 0.0;
+	double secondVecTime = 0.0;
+	double firstVecFreq = 0.0;
+	double secondVecFreq = 0.0;
+	double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+	for (int ii = 0; ii < numOrbitVec; ii++) {
+		Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+			stateVectors.newStateVectors.at<double>(ii, 3));
+		Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+			stateVectors.newStateVectors.at<double>(ii, 6));
+		currentFreq = 0;
+		xdiff = groundPosition.x - orb_pos.x;
+		ydiff = groundPosition.y - orb_pos.y;
+		zdiff = groundPosition.z - orb_pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength_high * distance);
+		if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+			firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+			firstVecFreq = currentFreq;
+		}
+		else {
+			secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+			secondVecFreq = currentFreq;
+			break;
+		}
+	}
+
+	if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+		fprintf(stderr, "SLC_deramp(): orbit mismatch!\n");
+		return -1;
+	}
+
+	double lowerBoundTime = firstVecTime;
+	double upperBoundTime = secondVecTime;
+	double lowerBoundFreq = firstVecFreq;
+	double upperBoundFreq = secondVecFreq;
+	double midTime, midFreq;
+	double diffTime = fabs(upperBoundTime - lowerBoundTime);
+	double absLineTimeInterval = 1.0 / prf;
+
+	int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+	int numIterations = 0; Position pos; Velocity vel;
+	while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+		midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+		stateVectors.getPosition(midTime, pos);
+		stateVectors.getVelocity(midTime, vel);
+		xdiff = groundPosition.x - pos.x;
+		ydiff = groundPosition.y - pos.y;
+		zdiff = groundPosition.z - pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength_high * distance);
+		if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+			lowerBoundTime = midTime;
+			lowerBoundFreq = midFreq;
+		}
+		else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+			upperBoundTime = midTime;
+			upperBoundFreq = midFreq;
+		}
+		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+			zeroDopplerTime = midTime;
+			break;
+		}
+
+		diffTime = fabs(upperBoundTime - lowerBoundTime);
+		numIterations++;
+	}
+	zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		double time = zeroDopplerTime + (double)i * (1.0 / prf);
+		stateVectors.getPosition(time, pos);
+		sate1.at<double>(i, 0) = pos.x;
+		sate1.at<double>(i, 1) = pos.y;
+		sate1.at<double>(i, 2) = pos.z;
+	}
+
+	//计算辅星成像位置
+	numOrbitVec = stateVectors2.newStateVectors.rows;
+	firstVecTime = 0.0;
+	secondVecTime = 0.0;
+	firstVecFreq = 0.0;
+	secondVecFreq = 0.0;
+	currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+	for (int ii = 0; ii < numOrbitVec; ii++) {
+		Position orb_pos(stateVectors2.newStateVectors.at<double>(ii, 1), stateVectors2.newStateVectors.at<double>(ii, 2),
+			stateVectors2.newStateVectors.at<double>(ii, 3));
+		Velocity orb_vel(stateVectors2.newStateVectors.at<double>(ii, 4), stateVectors2.newStateVectors.at<double>(ii, 5),
+			stateVectors2.newStateVectors.at<double>(ii, 6));
+		currentFreq = 0;
+		xdiff = groundPosition.x - orb_pos.x;
+		ydiff = groundPosition.y - orb_pos.y;
+		zdiff = groundPosition.z - orb_pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength_high * distance);
+		if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+			firstVecTime = stateVectors2.newStateVectors.at<double>(ii, 0);
+			firstVecFreq = currentFreq;
+		}
+		else {
+			secondVecTime = stateVectors2.newStateVectors.at<double>(ii, 0);
+			secondVecFreq = currentFreq;
+			break;
+		}
+	}
+
+	if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+		fprintf(stderr, "SLC_deramp(): orbit mismatch!\n");
+		return -1;
+	}
+
+	lowerBoundTime = firstVecTime;
+	upperBoundTime = secondVecTime;
+	lowerBoundFreq = firstVecFreq;
+	upperBoundFreq = secondVecFreq;
+	diffTime = fabs(upperBoundTime - lowerBoundTime);
+	absLineTimeInterval = 1.0 / prf;
+
+	totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+	numIterations = 0;
+	while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+		midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+		stateVectors2.getPosition(midTime, pos);
+		stateVectors2.getVelocity(midTime, vel);
+		xdiff = groundPosition.x - pos.x;
+		ydiff = groundPosition.y - pos.y;
+		zdiff = groundPosition.z - pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength_high * distance);
+		if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+			lowerBoundTime = midTime;
+			lowerBoundFreq = midFreq;
+		}
+		else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+			upperBoundTime = midTime;
+			upperBoundFreq = midFreq;
+		}
+		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+			zeroDopplerTime = midTime;
+			break;
+		}
+
+		diffTime = fabs(upperBoundTime - lowerBoundTime);
+		numIterations++;
+	}
+	zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		double time = zeroDopplerTime + (double)i * (1.0 / prf);
+		stateVectors2.getPosition(time, pos);
+		sate2.at<double>(i, 0) = pos.x;
+		sate2.at<double>(i, 1) = pos.y;
+		sate2.at<double>(i, 2) = pos.z;
+	}
+
+	Mat R1(sceneHeight, sceneWidth, CV_64F), R2(sceneHeight, sceneWidth, CV_64F);
+	Mat phase_reference_deflat(sceneHeight, sceneWidth, CV_64F);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		for (int j = 0; j < sceneWidth; j++)
+		{
+			double r1, r2;
+			Mat XYZ, LLH(1, 3, CV_64F), tt;
+			LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+			LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+			LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+			util.ell2xyz(LLH, XYZ);
+			tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+			R1.at<double>(i, j) = cv::norm(tt, cv::NORM_L2);
+			r1 = R1.at<double>(i, j);
+			tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+			R2.at<double>(i, j) = cv::norm(tt, cv::NORM_L2);
+			r2 = R2.at<double>(i, j);
+			phase_reference_deflat.at<double>(i, j) = phase_reference.at<double>(i, j) + 4 * PI * (r1 - r2) / wavelength_high;
+			wrapped_phase_high.at<double>(i, j) = wrapped_phase_high.at<double>(i, j) + 4 * PI * (r1 - r2) / wavelength_high;
+			wrapped_phase_low.at<double>(i, j) = wrapped_phase_low.at<double>(i, j) + 4 * PI * (r1 - r2) / wavelength_low;
+		}
+	}
+	util.wrap(wrapped_phase_high, wrapped_phase_high);
+	util.wrap(wrapped_phase_low, wrapped_phase_low);
+	wrapped_phase_high.copyTo(outphase);
+	Mat coherence;
+	util.phase_coherence(wrapped_phase_high, 7, 7, coherence);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		for (int j = 0; j < sceneWidth; j++)
+		{
+			double gamma = coherence.at<double>(i, j)/*0.98*/;
+			double gamma_square = gamma * gamma;
+			double sigma = sqrt(1.0 - gamma * gamma) / (gamma * sqrt(2.0 * 1.0));
+			int n_bin = 10000;
+			double delta = 6 * sigma / n_bin;
+			double phi_high, phi_low, ref;
+			phi_high = wrapped_phase_high.at<double>(i, j);
+			phi_low = wrapped_phase_low.at<double>(i, j);
+			ref = phase_reference_deflat.at<double>(i, j);
+			Mat psd(n_bin, 1, CV_64F);
+			 
+			for (int k = 0; k < n_bin; k++)
+			{
+				double reference = ref - 3 * sigma + k * delta;
+				double cos_high = cos(phi_high - reference);
+				double cos_low = cos(phi_low - reference * wavelength_high / wavelength_low);
+				double f_high = 1.0 / (2.0 * PI) * (1.0 - gamma_square) / (1.0 - gamma_square * cos_high * cos_high) *
+					(1.0 + gamma * cos_high * acos(-1.0 * gamma * cos_high) / sqrt(1.0 - gamma_square * cos_high * cos_high));
+				double f_low = 1.0 / (2.0 * PI) * (1.0 - gamma_square) / (1.0 - gamma_square * cos_low * cos_low) *
+					(1.0 + gamma * cos_low * acos(-1.0 * gamma * cos_low) / sqrt(1.0 - gamma_square * cos_low * cos_low));
+				psd.at<double>(k, 0) = f_low * f_high;
+			}
+			cv::Point peak;
+			cv::minMaxLoc(psd, NULL, NULL, NULL, &peak);
+			//util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\psd.bin", psd); return 0;
+			outphase.at<double>(i, j) = ((peak.x + 1) * (peak.y + 1) - 1) * delta + ref - 3 * sigma;
+		}
+	}
+	outphase = outphase - 4 * PI * (R1 - R2) / wavelength_high;
 	return 0;
 }
 

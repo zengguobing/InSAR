@@ -5,6 +5,7 @@
 #include"..\include\tinyxml.h"
 #include"..\include\FormatConversion.h"
 #include"..\include\ComplexMat.h"
+#include"..\include\Utils.h"
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "Utils_d.lib")
@@ -697,7 +698,7 @@ int Dem::dem_newton_iter(const char* unwrapped_phase_file, Mat& dem, const char*
 	double r_main = sqrt(sum((sate1(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground).mul(sate1(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground))[0]);
 	double r_slave = sqrt(sum((sate2(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground).mul(sate2(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground))[0]);
 	double C = mode == 1 ? 4 * PI : 2 * PI;
-	double lambda = 3e8 / (carrier_frequency.at<double>(0, 0) + 1e-10);
+	double lambda = VEL_C / (carrier_frequency.at<double>(0, 0) + 1e-10);
 	double phase_real = (r_slave - r_main) / lambda * C;
 	double K = round((phase_real - unwrapped_phase.at<double>(row, col)) / (2 * PI));
 	unwrapped_phase = unwrapped_phase + K * 2 * PI;//相位校正
@@ -1202,7 +1203,7 @@ int Dem::dem_newton_iter_test(const char* unwrapped_phase_file, Mat& dem, const 
 		}
 	}
 	//控制点绝对相位计算
-	double lambda = 3e8 / (carrier_frequency.at<double>(0, 0) + 1e-10);
+	double lambda = VEL_C / (carrier_frequency.at<double>(0, 0) + 1e-10);
 	double K = 0.0;
 	for (int i = 0; i < valid_row.size(); i++)
 	{
@@ -1220,17 +1221,41 @@ int Dem::dem_newton_iter_test(const char* unwrapped_phase_file, Mat& dem, const 
 		K += ((phase_real - unwrapped_phase.at<double>(rrr - 1, ccc - 1)) / (2 * PI));
 	}
 	K /= (double)valid_row.size();
-	unwrapped_phase = unwrapped_phase + K * 2 * PI;//相位校正
+	unwrapped_phase = unwrapped_phase + round(K) * 2 * PI;//相位校正
+	//conversion.creat_new_h5("G:\\tmp\\unwrapped_phase.h5");
+	//conversion.write_array_to_h5("G:\\tmp\\unwrapped_phase.h5", "phase", unwrapped_phase); return 0;
+
+	//Mat R1, R2;
+	//conversion.read_array_from_h5("G:\\tmp\\R.h5", "R1", R1);
+	//conversion.read_array_from_h5("G:\\tmp\\R.h5", "R2", R2);
+
+	//for (int i = 0; i < nr; i++)
+	//{
+	//	for (int j = 0; j < nc; j++)
+	//	{
+	//		unwrapped_phase.at<double>(i, j) = -4.0 * PI * (R1.at<double>(i + offset_row, j + offset_col) -
+	//			R2.at<double>(i + offset_row, j + offset_col)) / lambda;
+	//	}
+	//}
 
 	/*
 	* 反演高程
 	*/
 
 	Mat R_M(1, nc, CV_64F);
+	//Mat R_M(nr, nc, CV_64F);
 	for (int i = 0; i < nc; i++)
 	{
 		R_M.at<double>(0, i) = nearRange + range_spacing.at<double>(0, 0) * double(i + offset_col);
+		
 	}
+	//for (int i = 0; i < nr; i++)
+	//{
+	//	for (int j = 0; j < nc; j++)
+	//	{
+	//		R_M.at<double>(i, j) = R1.at<double>(i + offset_row, j + offset_col);
+	//	}
+	//}
 	Mat ones = Mat::ones(nr, 1, CV_64F);
 	R_M = ones * R_M;
 	Mat R_F = R_M * 2.0 + lambda * unwrapped_phase / (2 * PI);
@@ -1447,7 +1472,7 @@ int Dem::dem_newton_iter_test(const char* unwrapped_phase_file, Mat& dem, const 
 	volatile bool parallel_flag = true;
 	dem.create(nr, nc, CV_64F);
 	Mat lon, lat;
-	//lon.create(nr, nc, CV_64F); lat.create(nr, nc, CV_64F); 
+	lon.create(nr, nc, CV_64F); lat.create(nr, nc, CV_64F); 
 #pragma omp parallel for schedule(guided) \
 	private(ret)
 	for (int i = 0; i < nr; i++)
@@ -1462,23 +1487,26 @@ int Dem::dem_newton_iter_test(const char* unwrapped_phase_file, Mat& dem, const 
 			xyz.at<double>(0, 2) = P3.at<double>(i, j);
 			ret = util.xyz2ell(xyz, llh);
 			dem.at<double>(i, j) = llh.at<double>(0, 2);
-			//lat.at<double>(i, j) = llh.at<double>(0, 0);
-			//lon.at<double>(i, j) = llh.at<double>(0, 1);
+			lat.at<double>(i, j) = llh.at<double>(0, 0);
+			lon.at<double>(i, j) = llh.at<double>(0, 1);
 		}
 	}
-	if (parallel_check(parallel_flag, "dem_newton_iter()", parallel_error_head)) return -1;
+	//if (parallel_check(parallel_flag, "dem_newton_iter()", parallel_error_head)) return -1;
 	//dem = dem + llh.at<double>(0, 2) - dem.at<double>(row - 1, col - 1);
 	Mat error(valid_row.size(), 3, CV_64F);
 
 	for (int i = 0; i < valid_row.size(); i++)
 	{
 		int r, c;
-		Utils::ell2xyz(gcps.at<double>(valid_row[i], 2), gcps.at<double>(valid_row[i], 3), gcps.at<double>(valid_row[i], 4), pos);
+		//Utils::ell2xyz(gcps.at<double>(valid_row[i], 2), gcps.at<double>(valid_row[i], 3), gcps.at<double>(valid_row[i], 4), pos);
 		r = gcps.at<double>(valid_row[i], 0) - offset_row;
 		c = gcps.at<double>(valid_row[i], 1) - offset_col;
-		error.at<double>(i, 0) = P1.at<double>(r - 1, c - 1) - pos.x;
+		/*error.at<double>(i, 0) = P1.at<double>(r - 1, c - 1) - pos.x;
 		error.at<double>(i, 1) = P2.at<double>(r - 1, c - 1) - pos.y;
-		error.at<double>(i, 2) = P3.at<double>(r - 1, c - 1) - pos.z;
+		error.at<double>(i, 2) = P3.at<double>(r - 1, c - 1) - pos.z;*/
+		error.at<double>(i, 0) = lon.at<double>(r - 1, c - 1) - gcps.at<double>(valid_row[i], 2);
+		error.at<double>(i, 1) = lat.at<double>(r - 1, c - 1) - gcps.at<double>(valid_row[i], 3);
+		error.at<double>(i, 2) = dem.at<double>(r - 1, c - 1) - gcps.at<double>(valid_row[i], 4);
 	}
 	util.cvmat2bin("G:\\tmp\\error.bin", error);
 	return 0;

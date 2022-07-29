@@ -340,6 +340,53 @@ public:
 		const char* slcH5File7_out,
 		const char* slcH5File8_out
 	);
+	/*@brief 乒乓模式双频无模糊最大似然相位估计
+	* @param phase_reference                参考相位（用于最大似然搜索的区间确定）
+	* @param wrapped_phase_low              低频相位
+	* @param wrapped_phase_high             高频相位
+	* @param outphase                       融合相位
+	* @param lat_coef                       纬度转换系数
+	* @param lon_coef                       经度转换系数
+	* @param wavelength_low                 低频波长
+	* @param wavelength_high                高频波长
+	* @param nearRangeTime                  主图最近斜距时间（s）
+	* @param rangeSpacing                   主图距离向采样间隔（m）
+	* @param azimuthSpacing                 主图方位向采样间隔（m）
+	* @param offset_row                     主图像在原图中的行偏移
+	* @param offset_col                     主图像在原图中的列偏移
+	* @param start1                         主图拍摄起始时间 
+	* @param end1                           主图拍摄结束时间
+	* @param start2                         辅图拍摄起始时间
+	* @param end2                           辅图拍摄结束时间
+	* @param statevec1                      主星轨道
+	* @param statevec2                      辅星轨道
+	* @param prf                            脉冲重复频率
+	* @param demPath                        SRTM DEM路径
+	* @return 成功返回0，否则返回-1
+	*/
+	int pingpong_MLE(
+		Mat& phase_reference,
+		Mat& wrapped_phase_low,
+		Mat& wrapped_phase_high,
+		Mat& outphase,
+		Mat& lat_coef,
+		Mat& lon_coef,
+		double wavelength_low,
+		double wavelength_high,
+		double nearRangeTime,
+		double rangeSpacing,
+		double azimuthSpacing,
+		int offset_row,
+		int offset_col,
+		double start1,
+		double end1,
+		double start2,
+		double end2,
+		Mat& statevec1,
+		Mat& statevec2,
+		double prf,
+		string demPath
+	);
 private:
 	char error_head[256];
 
