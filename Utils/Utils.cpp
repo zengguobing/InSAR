@@ -6581,7 +6581,7 @@ int Utils::HermitianEVD(const ComplexMat& input, Mat& eigenvalue, ComplexMat& ei
 
 int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, ComplexMat& coherence_matrix, int est_window_width, int est_window_height,  int ref_row, int ref_col, bool b_homogeneous_test, bool b_normalize)
 {
-	if (slc_series.size() < 4||
+	if (slc_series.size() < 3||
 		est_window_width < 3||
 		est_window_height < 3||
 		est_window_height % 2 != 1||
