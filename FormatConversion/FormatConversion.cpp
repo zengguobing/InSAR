@@ -1581,6 +1581,80 @@ int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filena
 	return 0;
 }
 
+int FormatConversion::TSX2h5(const char* xml_filename, const char* dst_h5_filename, const char* polarization)
+{
+	if (xml_filename == NULL ||
+		dst_h5_filename == NULL)
+	{
+		fprintf(stderr, "TSX2h5(): input check failed!\n");
+		return -1;
+	}
+	string main_xml(xml_filename);
+	std::replace(main_xml.begin(), main_xml.end(), '/', '\\');
+	string folder;
+	if (main_xml.length() > main_xml.rfind("\\") && main_xml.rfind("\\") >= 0)
+	{
+		folder = main_xml.substr(0, main_xml.rfind("\\"));
+	}
+	else if (main_xml.length() > main_xml.rfind("/") && main_xml.rfind("/") >= 0)
+	{
+		folder = main_xml.substr(0, main_xml.rfind("/"));
+	}
+	else
+	{
+		fprintf(stderr, "TSX2h5(): invalide file %s!\n", main_xml.c_str());
+		return -1;
+	}
+	string GEOREF = folder + "\\ANNOTATION\\GEOREF.xml";
+	string COSAR = folder + "\\IMAGEDATA\\";
+	XMLFile xmldoc;
+	int ret = xmldoc.XMLFile_load(xml_filename);
+	if (return_check(ret, "XMLFile_load()", error_head)) return -1;
+	TiXmlElement* pRoot = NULL, * pnode = NULL;
+	ret = xmldoc.find_node("imageData", pRoot);
+	if (return_check(ret, "find_node()", error_head)) return -1;
+	ret = xmldoc._find_node(pRoot, "polLayer", pnode);
+	if (return_check(ret, "_find_node()", error_head)) return -1;
+	if (strcmp(pnode->GetText(), polarization) == 0)
+	{
+		ret = xmldoc._find_node(pRoot, "filename", pnode);
+		if (return_check(ret, "_find_node()", error_head)) return -1;
+		COSAR = COSAR + pnode->GetText();
+	}
+	else
+	{
+		pRoot = pRoot->NextSiblingElement();
+		if (pRoot)
+		{
+			if (strcmp("imageData", pRoot->Value()) == 0)
+			{
+				ret = xmldoc._find_node(pRoot, "filename", pnode);
+				if (return_check(ret, "_find_node()", error_head)) return -1;
+				COSAR = COSAR + pnode->GetText();
+			}
+			else
+			{
+				ret = xmldoc.find_node("imageData", pRoot);
+				if (return_check(ret, "find_node()", error_head)) return -1;
+				ret = xmldoc._find_node(pRoot, "filename", pnode);
+				if (return_check(ret, "_find_node()", error_head)) return -1;
+				COSAR = COSAR + pnode->GetText();
+			}
+		}
+		else
+		{
+			ret = xmldoc.find_node("imageData", pRoot);
+			if (return_check(ret, "find_node()", error_head)) return -1;
+			ret = xmldoc._find_node(pRoot, "filename", pnode);
+			if (return_check(ret, "_find_node()", error_head)) return -1;
+			COSAR = COSAR + pnode->GetText();
+		}
+	}
+	ret = TSX2h5(COSAR.c_str(), xml_filename, GEOREF.c_str(), dst_h5_filename);
+	if (return_check(ret, "TSX2h5()", error_head)) return -1;
+	return 0;
+}
+
 int FormatConversion::read_POD(const char* POD_filename, double start_time, double stop_time, const char* dst_h5_filename)
 {
 	if (POD_filename == NULL ||

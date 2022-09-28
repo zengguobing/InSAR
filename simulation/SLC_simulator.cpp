@@ -1268,7 +1268,14 @@ int SLC_simulator::generateSLC(
 			rng8.fill(noise_real4, cv::RNG::NORMAL, 0, noise_sigma);
 			cv::RNG rng9(seed + 2 * num_block_row * num_block_col + 8);
 			rng9.fill(noise_imaginary4, cv::RNG::NORMAL, 0, noise_sigma);
-
+			//noise_imaginary4 = 0.0;
+			//noise_imaginary3 = 0.0;
+			//noise_imaginary2 = 0.0;
+			//noise_imaginary = 0.0;
+			//noise_real4 = 0.0;
+			//noise_real3 = 0.0;
+			//noise_real2 = 0.0;
+			//noise_real = 0.0;
 			//计算DEM点的主图像成像卫星位置
 			Mat imaging_time1(dem_temp2.rows, dem_temp2.cols, CV_64F), slant_range1(dem_temp2.rows, dem_temp2.cols, CV_64F);
 			Mat imaging_time2(dem_temp2.rows, dem_temp2.cols, CV_64F), slant_range2(dem_temp2.rows, dem_temp2.cols, CV_64F);

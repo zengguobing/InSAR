@@ -410,7 +410,7 @@ public:
 	*/
 	int utc2gps(const char* utc_time, double* gps_time);
 	/** @brief 创建新的h5文件（若文件已存在则覆盖）
-	
+
 	@param filename     文件名
 	*/
 	int creat_new_h5(const char* filename);
@@ -492,7 +492,7 @@ public:
 		Mat& out_array
 	);
 	/** @brief 向已有的H5文件指定数据集矩阵中的指定位置写入子矩阵
-	
+
 	@param h5_filename                   h5文件名
 	@param dataset_name                  数据集名称
 	@param subarray                      子矩阵数据
@@ -550,7 +550,7 @@ public:
 	*/
 	int read_slc_from_TSXcos(const char* filename, ComplexMat& slc);
 	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式
-	
+
 	@param cosar_filename                     TerraSAR-X .cos文件名
 	@param xml_filename                       TerraSAR-X 主xml文件名
 	@param GEOREF_filename                    TerraSAR-X GEOREF.xml文件名
@@ -564,7 +564,7 @@ public:
 		const char* dst_h5_filename
 	);
 	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式
-	
+
 	@param xml_filename                       TerraSAR-X 主xml文件名
 	@param dst_h5_filename                    目标h5文件
 	@return 成功返回0，否则返回-1
@@ -572,6 +572,18 @@ public:
 	int TSX2h5(
 		const char* xml_filename,
 		const char* dst_h5_filename
+	);
+	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式(带极化选项)
+
+	@param xml_filename                       TerraSAR-X 主xml文件名
+	@param dst_h5_filename                    目标h5文件
+	@param polarization                       极化方式(默认为HH极化)
+	@return 成功返回0，否则返回-1
+	*/
+	int TSX2h5(
+		const char* xml_filename,
+		const char* dst_h5_filename,
+		const char* polarization ="HH"
 	);
 
 
