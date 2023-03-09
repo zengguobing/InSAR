@@ -44,6 +44,20 @@ public:
 		const char* node_path,
 		const char* sensor = "unknown"
 	);
+	/*@brief 添加导入原始数据节点(14_project)
+	* @param datanode_node  节点名
+	* @param node_name      图像名
+	* @param node_path      图像路径
+	* @param mode           收发模式（1：单发单收，2：单发双收，3：乒乓，4：双频乒乓）
+	* @param sensor         卫星
+	*/
+	int XMLFile_add_origin_14(
+		const char* datanode_node,
+		const char* node_name,
+		const char* node_path,
+		int mode = 1,
+		const char* sensor = "unknown"
+	);
 	/** @brief 添加裁剪图像节点
 
 	@param datanode_node  裁剪图像节点名
@@ -67,6 +81,30 @@ public:
 		double width, double height,
 		const char* data_rank
 	);
+
+	/** @brief 添加裁剪图像节点
+	@param datanode_node  裁剪图像节点名
+	@param node_name      裁剪图像名
+	@param node_path      裁剪图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param lon            中心经度
+	@param lat            中心纬度
+	@param width          裁剪宽度
+	@param height         裁剪高度
+	@param data_rank      数据等级
+	*/
+	int XMLFile_add_cut_14(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		double lon, double lat,
+		double width, double height,
+		const char* data_rank
+	);
+
 	/** @brief 添加配准图像节点
 
 	@param datanode_node  配准图像节点名

@@ -2,6 +2,7 @@
 #ifndef __COMPLEXMAT__H__
 #define __COMPLEXMAT__H__
 #include"..\include\Package.h"
+#include<complex.h>
 
 using cv::Mat;
 using namespace std;
@@ -26,6 +27,8 @@ public:
 	int type() const;
 	int GetRows() const;
 	int GetCols() const;
+	/*计算复矩阵(共轭)乘法*/
+	int mul(const ComplexMat& Src, ComplexMat& Dst, bool bConj = false);
 	/*计算复数（共轭）点乘*/
 	int Mul(const ComplexMat& Src, ComplexMat& Dst, bool bConj) const;
 	/*计算复数乘积(点乘,elementwise)*/
@@ -46,8 +49,14 @@ public:
 	* 参数1 求和方向（0为沿着每列求和，1为沿着每行求和）
 	*/
 	ComplexMat sum(int dim = 0) const;
+	/*求取复矩阵行列式*/
+	complex<double> determinant() const;
 	/*求取复共轭*/
 	ComplexMat conj() const;
+	/*求取(共轭)转置*/
+	ComplexMat transpose(bool conj=true) const;
+	/*MATLAB式reshape函数*/
+	int reshape(int rows, int cols, ComplexMat& dst);
 	/*计算非零元素个数*/
 	int countNonzero() const;
 	/*数组是否为空*/

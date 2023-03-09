@@ -2922,7 +2922,7 @@ int SLC_simulator::MB_phase_estimation(
 							real = coherence_matrix.GetPhase();
 							phase.at<double>(ii, jj) = real.at<double>(0, 2);*/
 
-							////cout << eigenvalue << endl;
+							//cout << eigenvalue << endl;
 							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
 							{
 								for (int kk = 0; kk < n_images; kk++)

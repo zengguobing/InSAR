@@ -1331,6 +1331,37 @@ public:
 		double* sigma_B_effect = NULL,
 		double* sigma_B_parallel = NULL
 	);
+	/*@brief 相关矩阵法同质检验 + phase linking
+	* @param slc_stack                           待处理SLC数据堆栈（支持32位float型数据类型）
+	* @param slc_stack_filtered                  phase-linking后的结果（返回值）
+	* @param test_wndsize                        同质检验搜索窗口大小（奇数，默认为15）
+	* @param est_wndsize                         相关矩阵估计窗口大小（奇数，默认为3）
+	* @return 成功返回0，否则返回-1
+	*/
+	int homogeneous_selection_and_phase_linking(
+		vector<ComplexMat>& slc_stack,
+		vector<ComplexMat>& slc_stack_filtered,
+		int test_wndsize = 15,
+		int est_wndsize = 3
+	);
+	/*@brief Sum of Kronecker decomposition（SKP分解）
+	* @param inputMat                            待分解矩阵
+	* @param nr1                                 分解参数1
+	* @param nc1                                 分解参数2
+	* @param nr2                                 分解参数3
+	* @param nc2                                 分解参数4
+	* @param outputMat                           分解后矩阵（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SKP_decomposition(
+		ComplexMat& inputMat,
+		int nr1,
+		int nc1, 
+		int nr2,
+		int nc2,
+		vector<ComplexMat>& outputMat1,
+		vector<ComplexMat>& outputMat2
+	);
 	/** @brief 统计同质检验
 	
 	@param pixel1            待检验像元1幅度序列(size: n_images×1)
@@ -1344,6 +1375,25 @@ public:
 		const Mat& pixel1,
 		const Mat& pixel2,
 		int* homo_flag,
+		double alpha = 0.05,
+		const char* method = "KS"
+	);
+	/*@brief 统计同质检验
+	* @param slc_series      待处理SLC数据堆栈
+	* @param windsize_az     窗口大小（方位向）
+	* @param windsize_rg     窗口大小（距离向）
+	* @param homo_num        各点的同质点个数（int型矩阵）
+	* @param homo_index      各点同质点mask矩阵(uint8型矩阵,矩阵大小为（nr×nc）×（windsize_az×windsize_rg）)
+	* @param alpha           显著性水平（可以设定的值为 0.20,0.15,0.10,0.05,0.025,0.01,0.005,0.001。默认为0.05）
+	* @param method          检验方法（"KS":Kolmogorov-Smirnov检验，"AD":Anderson-Darling检验, 默认为KS检验）
+	* @return 成功返回0，否则返回-1
+	*/
+	int homogeneous_test(
+		const vector<ComplexMat>& slc_series,
+		int windsize_az,
+		int windsize_rg,
+		Mat& homo_num,
+		Mat& homo_index,
 		double alpha = 0.05,
 		const char* method = "KS"
 	);
