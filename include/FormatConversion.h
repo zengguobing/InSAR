@@ -128,6 +128,32 @@ public:
 		int master_index, int interp_times, int block_size,
 		const char* temporal_baseline, const char* B_effect, const char* B_parallel
 	);
+
+	/** @brief 添加配准图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓，4：双频乒乓）
+	@param datanode_node  配准图像节点名
+	@param node_name      配准图像名
+	@param node_path      配准图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param master_index   主图像序号
+	@param interp_times   插值倍数（2的n次幂）
+	@param block_size     子块尺寸（2的n次幂）
+	@param temporal_baseline 时间基线估计
+	@param B_effect       垂直基线估计
+	@param B_parallel     水平基线估计
+	*/
+	int XMLFile_add_regis14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		int master_index, int interp_times, int block_size,
+		const char* temporal_baseline, const char* B_effect, const char* B_parallel
+	);
+
 	/*@brief 添加后向地理编码配准节点
 	* @param dataNode            配准图像数据节点名
 	* @param dataName            配准图像数据名
