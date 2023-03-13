@@ -61,6 +61,7 @@ public:
 	/** @brief 添加裁剪图像节点
 
 	@param datanode_node  裁剪图像节点名
+	@param master_index   裁剪节点主图序号（1-based）
 	@param node_name      裁剪图像名
 	@param node_path      裁剪图像路径
 	@param Row_offset     行偏移量
@@ -73,6 +74,7 @@ public:
 	*/
 	int XMLFile_add_cut(
 		const char* datenode_name,
+		int master_index,
 		const char* node_name,
 		const char* node_path,
 		int Row_offset,
@@ -84,6 +86,7 @@ public:
 
 	/** @brief 添加裁剪图像节点
 	@param datanode_node  裁剪图像节点名
+	@param master_index   裁剪节点主图序号（1-based）
 	@param node_name      裁剪图像名
 	@param node_path      裁剪图像路径
 	@param Row_offset     行偏移量
@@ -96,6 +99,7 @@ public:
 	*/
 	int XMLFile_add_cut_14(
 		const char* datanode_name,
+		int master_index,
 		const char* node_name,
 		const char* node_path,
 		int Row_offset,
@@ -180,6 +184,23 @@ public:
 		const char* dataPath,
 		int masterIndex
 	);
+
+	/*@brief 添加单视复图像去参考相位节点
+	* @param mode                收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	* @param dataNode            配准图像数据节点名
+	* @param dataName            配准图像数据名
+	* @param dataPath            配准图像数据储存路径（相对路径）
+	* @param masterIndex         主图像序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_SLC_deramp_14(
+		int mode,
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath,
+		int masterIndex
+	);
+
 	/*@brief 添加小基线集时间序列分析节点
 	* @param dataNode            SBAS时间序列分析数据节点名
 	* @param dataName            SBAS时间序列分析数据名
@@ -371,6 +392,22 @@ public:
 		const char* attribute_name,
 		const char* attribute_value,
 		TiXmlElement*& pnode);
+
+	/*
+	* 按名称及属性值查找节点
+	* @param             节点名
+	* @param             节点属性名
+	* @param             节点属性值
+	* @param             节点指针（返回值）
+	* @return 成功找到返回0， 否则返回-1
+	*/
+	int find_node_with_attribute(
+		const char* node_name,
+		const char* attribute_name,
+		const char* attribute_value,
+		TiXmlElement*& pnode
+	);
+
 	/*
 	* 从XML文件中读出字符串参数
 	* 参数1：参数名（节点名）
