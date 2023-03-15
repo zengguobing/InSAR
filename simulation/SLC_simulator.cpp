@@ -1257,21 +1257,21 @@ int SLC_simulator::generateSLC(
 			Mat noise_real3(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary3(dem_temp2.rows, dem_temp2.cols, CV_32F);
 			Mat noise_real4(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary4(dem_temp2.rows, dem_temp2.cols, CV_32F);
 			double noise_sigma = sqrt(pow(10.0, -SNR / 10.0) / 2.0);
-			cv::RNG rng2(seed + 2 * num_block_row * num_block_col + 1);
+			cv::RNG rng2(seed + 1 * num_block_row * num_block_col + 1);
 			rng2.fill(noise_real, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng3(seed + 2 * num_block_row * num_block_col + 2);
+			cv::RNG rng3(seed + 1 * num_block_row * num_block_col + 2);
 			rng3.fill(noise_imaginary, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng4(seed + 2 * num_block_row * num_block_col + 3);
+			cv::RNG rng4(seed + 1 * num_block_row * num_block_col + 3);
 			rng4.fill(noise_real2, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng5(seed + 2 * num_block_row * num_block_col + 4);
+			cv::RNG rng5(seed + 1 * num_block_row * num_block_col + 4);
 			rng5.fill(noise_imaginary2, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng6(seed + 2 * num_block_row * num_block_col + 5);
+			cv::RNG rng6(seed + 1 * num_block_row * num_block_col + 5);
 			rng6.fill(noise_real3, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng7(seed + 2 * num_block_row * num_block_col + 6);
+			cv::RNG rng7(seed + 1 * num_block_row * num_block_col + 6);
 			rng7.fill(noise_imaginary3, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng8(seed + 2 * num_block_row * num_block_col + 7);
+			cv::RNG rng8(seed + 1 * num_block_row * num_block_col + 7);
 			rng8.fill(noise_real4, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng9(seed + 2 * num_block_row * num_block_col + 8);
+			cv::RNG rng9(seed + 1 * num_block_row * num_block_col + 8);
 			rng9.fill(noise_imaginary4, cv::RNG::NORMAL, 0, noise_sigma);
 			//noise_imaginary4 = 0.0;
 			//noise_imaginary3 = 0.0;
@@ -1670,13 +1670,13 @@ int SLC_simulator::generateSLC(
 
 		for (int i = 0; i < total_rows; i++)
 		{
-			GCP2.at<double>(i, 0) = GCPs[i * 7];
-			GCP2.at<double>(i, 1) = GCPs[i * 7 + 1];
-			GCP2.at<double>(i, 2) = GCPs[i * 7 + 2];
-			GCP2.at<double>(i, 3) = GCPs[i * 7 + 3];
-			GCP2.at<double>(i, 4) = GCPs[i * 7 + 4];
-			GCP2.at<double>(i, 5) = GCPs[i * 7 + 5];
-			GCP2.at<double>(i, 6) = GCPs[i * 7 + 6];
+			GCP2.at<double>(i, 0) = GCPs2[i * 7];
+			GCP2.at<double>(i, 1) = GCPs2[i * 7 + 1];
+			GCP2.at<double>(i, 2) = GCPs2[i * 7 + 2];
+			GCP2.at<double>(i, 3) = GCPs2[i * 7 + 3];
+			GCP2.at<double>(i, 4) = GCPs2[i * 7 + 4];
+			GCP2.at<double>(i, 5) = GCPs2[i * 7 + 5];
+			GCP2.at<double>(i, 6) = GCPs2[i * 7 + 6];
 		}
 	}
 	return 0;
