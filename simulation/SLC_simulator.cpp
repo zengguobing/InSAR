@@ -623,8 +623,10 @@ int SLC_simulator::generateSLC(
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
 	int cols = dem.cols * interp_times_col;
-	int block_rows = 1000;//分块大小
-	int block_cols = 1000;
+	//int block_rows = 1000;//分块大小
+	//int block_cols = 1000;
+	int block_rows = 500;//分块大小
+	int block_cols = 500;
 	Mat dem_interp, dem_temp;
 	dem.convertTo(dem_interp, CV_32F);
 	cv::resize(dem_interp, dem_interp, cv::Size(cols, rows), 0, 0, cv::INTER_CUBIC);
@@ -635,7 +637,7 @@ int SLC_simulator::generateSLC(
 	Utils util;
 	num_block_row = num_block_row;
 	num_block_col = num_block_col;
-	vector<double> GCPs;//控制点信息
+	vector<double> GCPs, GCPs2;//控制点信息
 	//初始化轨道类
 	orbitStateVectors stateVectors1(stateVec1, acquisitionStartTime1, acquisitionStopTime1);
 	stateVectors1.applyOrbit();
@@ -1138,7 +1140,8 @@ int SLC_simulator::generateSLC(
 	ComplexMat& slc2,
 	ComplexMat& slc3, 
 	ComplexMat& slc4, 
-	Mat& GCP
+	Mat& GCP1,
+	Mat& GCP2
 )
 {
 	if (stateVec1.cols != 7 ||
@@ -1197,8 +1200,10 @@ int SLC_simulator::generateSLC(
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
 	int cols = dem.cols * interp_times_col;
-	int block_rows = 1000;//分块大小
-	int block_cols = 1000;
+	//int block_rows = 1000;//分块大小
+	//int block_cols = 1000;
+	int block_rows = 500;//分块大小
+	int block_cols = 500;
 	Mat dem_interp, dem_temp;
 	dem.convertTo(dem_interp, CV_32F);
 	cv::resize(dem_interp, dem_interp, cv::Size(cols, rows), 0, 0, cv::INTER_CUBIC);
@@ -1209,7 +1214,7 @@ int SLC_simulator::generateSLC(
 	Utils util;
 	num_block_row = num_block_row;
 	num_block_col = num_block_col;
-	vector<double> GCPs;//控制点信息
+	vector<double> GCPs, GCPs2;//控制点信息
 	//初始化轨道类
 	orbitStateVectors stateVectors1(stateVec1, acquisitionStartTime1, acquisitionStopTime1);
 	stateVectors1.applyOrbit();
@@ -1550,6 +1555,15 @@ int SLC_simulator::generateSLC(
 					GCPs.push_back(height);
 					GCPs.push_back(distance1);
 					GCPs.push_back(distance2);
+
+					GCPs.push_back(azimuthIndex2 + 1);
+					GCPs.push_back(rangeIndex2 + 1);
+					GCPs.push_back(lon);
+					GCPs.push_back(lat);
+					GCPs.push_back(height);
+					GCPs.push_back(distance2);
+					GCPs.push_back(distance1);
+
 					double theta = -4.0 * PI * distance1 / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
 					double real = gcp_sigma * (cos(theta) + noise_real.at<float>(gcp_row, gcp_col));
 					double imaginary = gcp_sigma * (sin(theta) + noise_imaginary.at<float>(gcp_row, gcp_col));
@@ -1635,17 +1649,34 @@ int SLC_simulator::generateSLC(
 	int total_rows = GCPs.size() / 7;
 	if (total_rows > 0)
 	{
-		GCP.create(total_rows, 7, CV_64F);
+		GCP1.create(total_rows, 7, CV_64F);
 
 		for (int i = 0; i < total_rows; i++)
 		{
-			GCP.at<double>(i, 0) = GCPs[i * 7];
-			GCP.at<double>(i, 1) = GCPs[i * 7 + 1];
-			GCP.at<double>(i, 2) = GCPs[i * 7 + 2];
-			GCP.at<double>(i, 3) = GCPs[i * 7 + 3];
-			GCP.at<double>(i, 4) = GCPs[i * 7 + 4];
-			GCP.at<double>(i, 5) = GCPs[i * 7 + 5];
-			GCP.at<double>(i, 6) = GCPs[i * 7 + 6];
+			GCP1.at<double>(i, 0) = GCPs[i * 7];
+			GCP1.at<double>(i, 1) = GCPs[i * 7 + 1];
+			GCP1.at<double>(i, 2) = GCPs[i * 7 + 2];
+			GCP1.at<double>(i, 3) = GCPs[i * 7 + 3];
+			GCP1.at<double>(i, 4) = GCPs[i * 7 + 4];
+			GCP1.at<double>(i, 5) = GCPs[i * 7 + 5];
+			GCP1.at<double>(i, 6) = GCPs[i * 7 + 6];
+		}
+	}
+
+	total_rows = GCPs2.size() / 7;
+	if (total_rows > 0)
+	{
+		GCP2.create(total_rows, 7, CV_64F);
+
+		for (int i = 0; i < total_rows; i++)
+		{
+			GCP2.at<double>(i, 0) = GCPs[i * 7];
+			GCP2.at<double>(i, 1) = GCPs[i * 7 + 1];
+			GCP2.at<double>(i, 2) = GCPs[i * 7 + 2];
+			GCP2.at<double>(i, 3) = GCPs[i * 7 + 3];
+			GCP2.at<double>(i, 4) = GCPs[i * 7 + 4];
+			GCP2.at<double>(i, 5) = GCPs[i * 7 + 5];
+			GCP2.at<double>(i, 6) = GCPs[i * 7 + 6];
 		}
 	}
 	return 0;
@@ -2667,7 +2698,7 @@ int SLC_simulator::SLC_deramp_14(
 		ret = conversion.read_slc_from_h5(slcH5File1, slc);
 		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
-		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
 
 #pragma omp parallel for schedule(guided)
 		for (int i = 0; i < sceneHeight; i++)
@@ -2682,7 +2713,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2724,7 +2755,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2753,7 +2784,7 @@ int SLC_simulator::SLC_deramp_14(
 		ret = conversion.read_slc_from_h5(slcH5File1, slc);
 		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
-		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
 
 #pragma omp parallel for schedule(guided)
 		for (int i = 0; i < sceneHeight; i++)
@@ -2768,7 +2799,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2812,7 +2843,7 @@ int SLC_simulator::SLC_deramp_14(
 				r = cv::norm(tt, cv::NORM_L2);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r += cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2841,7 +2872,7 @@ int SLC_simulator::SLC_deramp_14(
 		ret = conversion.read_slc_from_h5(slcH5File1, slc);
 		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
-		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
 
 	#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < sceneHeight; i++)
@@ -2856,7 +2887,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2901,7 +2932,7 @@ int SLC_simulator::SLC_deramp_14(
 				r = cv::norm(tt, cv::NORM_L2);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r += cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 2.0 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2942,7 +2973,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -2985,7 +3016,7 @@ int SLC_simulator::SLC_deramp_14(
 				r = cv::norm(tt, cv::NORM_L2);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r += cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 2.0 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -3018,7 +3049,7 @@ int SLC_simulator::SLC_deramp_14(
 		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
 		if (slc2.type() != CV_32F) slc.convertTo(slc2, CV_32F);
-		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
 
 	#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < sceneHeight; i++)
@@ -3033,7 +3064,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -3042,7 +3073,7 @@ int SLC_simulator::SLC_deramp_14(
 				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
 				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
 
-				r = -R.at<float>(i, j) / wavelength2 * 4 * PI;
+				r = -R.at<double>(i, j) / wavelength2 * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
 				real2 = slc2.re.at<float>(i, j);
@@ -3103,7 +3134,7 @@ int SLC_simulator::SLC_deramp_14(
 				r = cv::norm(tt, cv::NORM_L2);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r += cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 2.0 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -3112,7 +3143,7 @@ int SLC_simulator::SLC_deramp_14(
 				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
 				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
 
-				r = -R.at<float>(i, j) / wavelength2 * 2.0 * PI;
+				r = -R.at<double>(i, j) / wavelength2 * 2.0 * PI;
 				real = cos(r);
 				imagine = sin(r);
 				real2 = slc2.re.at<float>(i, j);
@@ -3170,7 +3201,7 @@ int SLC_simulator::SLC_deramp_14(
 				util.ell2xyz(LLH, XYZ);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r = cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -3180,7 +3211,7 @@ int SLC_simulator::SLC_deramp_14(
 				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
 
 
-				r = -R.at<float>(i, j) / wavelength2 * 4 * PI;
+				r = -R.at<double>(i, j) / wavelength2 * 4 * PI;
 				real = cos(r);
 				imagine = sin(r);
 				real2 = slc2.re.at<float>(i, j);
@@ -3240,7 +3271,7 @@ int SLC_simulator::SLC_deramp_14(
 				r = cv::norm(tt, cv::NORM_L2);
 				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
 				r += cv::norm(tt, cv::NORM_L2);
-				R.at<float>(i, j) = r;
+				R.at<double>(i, j) = r;
 				r = -r / wavelength * 2.0 * PI;
 				real = cos(r);
 				imagine = sin(r);
@@ -3249,7 +3280,7 @@ int SLC_simulator::SLC_deramp_14(
 				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
 				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
 
-				r = -R.at<float>(i, j) / wavelength2 * 2.0 * PI;
+				r = -R.at<double>(i, j) / wavelength2 * 2.0 * PI;
 				real = cos(r);
 				imagine = sin(r);
 				real2 = slc2.re.at<float>(i, j);

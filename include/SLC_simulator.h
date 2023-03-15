@@ -153,7 +153,8 @@ public:
 	* @param slc2                                      主星收辅星（返回值）
 	* @param slc3                                      辅星自发自收（返回值）
 	* @param slc4                                      辅星收主星（返回值）
-	* @param GCP                                       控制点信息（返回值，n×5，行/列/经/纬/高）
+	* @param GCP1                                      主图控制点信息（返回值，n×5，行/列/经/纬/高）
+	* @param GCP2                                      辅图控制点信息（返回值，n×5，行/列/经/纬/高）
 	* @return 成功返回0，否则返回-1
 	*/
 	int generateSLC(
@@ -181,7 +182,8 @@ public:
 		ComplexMat& slc2,
 		ComplexMat& slc3,
 		ComplexMat& slc4,
-		Mat& GCP
+		Mat& GCP1, 
+		Mat& GCP2
 	);
 	/*@brief 根据轨道和场景DEM以及成像参数参考斜距（单发双收，乒乓模式）
 	* @param stateVec1                                 轨道数据1（主星，信号发射轨道+信号接收轨道）

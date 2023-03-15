@@ -236,6 +236,31 @@ public:
 		const char* dataPath,
 		const char* level
 	);
+
+	/*@brief 添加干涉相位生成节点
+	* @param datanode_node                 干涉相位图像节点名
+	* @param node_name                     干涉相位图像名
+	* @param node_path                     干涉相位图像路径
+	* @param master_name                   干涉相位主图像
+	* @param rank                          节点等级
+	* @param offset_row                    主图像行偏移量
+	* @param offset_col                    主图像列偏移量
+	* @param multilook_rg                  多视倍数（距离向）
+	* @param multilook_az                  多视倍数（方位向）
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_interferometric_phase_14(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		const char* master_name,
+		const char* rank,
+		int offset_row,
+		int offset_col,
+		int multilook_rg,
+		int multilook_az
+	);
+
 	/** @brief 添加干涉相位生成节点
 
 	@param datanode_node  干涉相位图像节点名
@@ -263,6 +288,37 @@ public:
 		int isdeflat, int istopo_removal, int iscoherence,
 		int win_w, int win_h, int multilook_rg, int multilook_az
 	);
+
+	/** @brief 添加滤波图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	@param datanode_node  滤波图像节点名
+	@param node_name      滤波图像名
+	@param node_path      滤波图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param Slop_win		  斜坡自适应窗口尺寸
+	@param Pre_win		  预窗口尺寸
+	@param Goldstein_win  Goldstein滤波FFT窗口尺寸
+	@param Goldstein_filled_win		Goldstein滤波补零窗口尺寸
+	@param alpha		  Goldstein滤波阈值
+	@param filter_dl_path			深度学习滤波可执行程序路径
+	@param dl_model_file			深度学习滤波模型路径
+	@param tmp_path        深度学习滤波中间文件路径
+	*/
+	int XMLFile_add_denoise_14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		int Slop_win, int Pre_win,
+		int Goldstein_win, int Goldstein_filled_win, double alpha,
+		const char* filter_dl_path, const char* dl_model_file, const char* tmp_path
+	);
+
 	/** @brief 添加滤波图像节点
 
 	@param datanode_node  滤波图像节点名
@@ -310,6 +366,28 @@ public:
 		const char* method,
 		double threshold
 	);
+
+	/** @brief 添加解缠图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	@param datanode_node  解缠图像节点名
+	@param node_name      解缠图像名
+	@param node_path      解缠图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param threshold	  综合法阈值
+	*/
+	int XMLFile_add_unwrap_14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		double threshold
+	);
+
 	/** @brief 添加Dem图像节点
 
 	@param datanode_node  Dem图像节点名
@@ -329,6 +407,28 @@ public:
 		const char* method,
 		int times
 	);
+
+	/** @brief 添加Dem图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	@param datanode_node  Dem图像节点名
+	@param node_name      Dem图像名
+	@param node_path      Dem图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param threshold	  迭代次数
+	*/
+	int XMLFile_add_dem_14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		int times
+	);
+
 	/** @brief 返回字符串
 
 	@param n			输入整数值
