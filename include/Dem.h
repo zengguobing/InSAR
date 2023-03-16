@@ -108,6 +108,36 @@ public:
 		int mode = 1
 	);
 
+	/** @brief 牛顿迭代法反演高程（双频乒乓模式）
+	@param unwrapped_phase_file                            解缠相位h5文件
+	@param dem                                             高程反演结果（高程返回值）
+	@param lon                                             高程反演结果（经度返回值）
+	@param lat                                             高程反演结果（纬度返回值）
+	@param dem_x                                           高程反演结果（X坐标返回值）
+	@param dem_y                                           高程反演结果（Y坐标返回值）
+	@param dem_z                                           高程反演结果（Z坐标返回值）
+	@param error_llh                                       控制点经纬高误差（返回值, n_gcps×3）
+	@param error_xyz                                       控制点XYZ误差（返回值，n_gcps×3）
+	@param project_path                                    工程路径
+	@param iter_times                                      迭代次数
+	@param mode                                            收发方式（1自发自收（默认），2单发双收）
+	@return  成功返回0，否则返回-1
+	*/
+	int dem_newton_iter_14_dualfreqpingpong(
+		const char* unwrapped_phase_file,
+		Mat& dem,
+		Mat& lon,
+		Mat& lat,
+		Mat& dem_x,
+		Mat& dem_y,
+		Mat& dem_z,
+		Mat& error_llh,
+		Mat& error_xyz,
+		const char* project_path,
+		int iter_times,
+		int mode = 1
+	);
+
 private:
 	char error_head[256];
 	char parallel_error_head[256];

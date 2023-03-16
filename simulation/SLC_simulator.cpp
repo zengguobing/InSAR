@@ -1556,13 +1556,13 @@ int SLC_simulator::generateSLC(
 					GCPs.push_back(distance1);
 					GCPs.push_back(distance2);
 
-					GCPs.push_back(azimuthIndex2 + 1);
-					GCPs.push_back(rangeIndex2 + 1);
-					GCPs.push_back(lon);
-					GCPs.push_back(lat);
-					GCPs.push_back(height);
-					GCPs.push_back(distance2);
-					GCPs.push_back(distance1);
+					GCPs2.push_back(azimuthIndex2 + 1);
+					GCPs2.push_back(rangeIndex2 + 1);
+					GCPs2.push_back(lon);
+					GCPs2.push_back(lat);
+					GCPs2.push_back(height);
+					GCPs2.push_back(distance2);
+					GCPs2.push_back(distance1);
 
 					double theta = -4.0 * PI * distance1 / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
 					double real = gcp_sigma * (cos(theta) + noise_real.at<float>(gcp_row, gcp_col));
