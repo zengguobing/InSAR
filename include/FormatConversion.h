@@ -44,9 +44,24 @@ public:
 		const char* node_path,
 		const char* sensor = "unknown"
 	);
+	/*@brief 添加导入原始数据节点(14_project)
+	* @param datanode_node  节点名
+	* @param node_name      图像名
+	* @param node_path      图像路径
+	* @param mode           收发模式（1：单发单收，2：单发双收，3：乒乓，4：双频乒乓）
+	* @param sensor         卫星
+	*/
+	int XMLFile_add_origin_14(
+		const char* datanode_node,
+		const char* node_name,
+		const char* node_path,
+		int mode = 1,
+		const char* sensor = "unknown"
+	);
 	/** @brief 添加裁剪图像节点
 
 	@param datanode_node  裁剪图像节点名
+	@param master_index   裁剪节点主图序号（1-based）
 	@param node_name      裁剪图像名
 	@param node_path      裁剪图像路径
 	@param Row_offset     行偏移量
@@ -59,6 +74,7 @@ public:
 	*/
 	int XMLFile_add_cut(
 		const char* datenode_name,
+		int master_index,
 		const char* node_name,
 		const char* node_path,
 		int Row_offset,
@@ -67,6 +83,32 @@ public:
 		double width, double height,
 		const char* data_rank
 	);
+
+	/** @brief 添加裁剪图像节点
+	@param datanode_node  裁剪图像节点名
+	@param master_index   裁剪节点主图序号（1-based）
+	@param node_name      裁剪图像名
+	@param node_path      裁剪图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param lon            中心经度
+	@param lat            中心纬度
+	@param width          裁剪宽度
+	@param height         裁剪高度
+	@param data_rank      数据等级
+	*/
+	int XMLFile_add_cut_14(
+		const char* datanode_name,
+		int master_index,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		double lon, double lat,
+		double width, double height,
+		const char* data_rank
+	);
+
 	/** @brief 添加配准图像节点
 
 	@param datanode_node  配准图像节点名
@@ -90,6 +132,32 @@ public:
 		int master_index, int interp_times, int block_size,
 		const char* temporal_baseline, const char* B_effect, const char* B_parallel
 	);
+
+	/** @brief 添加配准图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓，4：双频乒乓）
+	@param datanode_node  配准图像节点名
+	@param node_name      配准图像名
+	@param node_path      配准图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param master_index   主图像序号
+	@param interp_times   插值倍数（2的n次幂）
+	@param block_size     子块尺寸（2的n次幂）
+	@param temporal_baseline 时间基线估计
+	@param B_effect       垂直基线估计
+	@param B_parallel     水平基线估计
+	*/
+	int XMLFile_add_regis14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		int master_index, int interp_times, int block_size,
+		const char* temporal_baseline, const char* B_effect, const char* B_parallel
+	);
+
 	/*@brief 添加后向地理编码配准节点
 	* @param dataNode            配准图像数据节点名
 	* @param dataName            配准图像数据名
@@ -116,6 +184,23 @@ public:
 		const char* dataPath,
 		int masterIndex
 	);
+
+	/*@brief 添加单视复图像去参考相位节点
+	* @param mode                收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	* @param dataNode            配准图像数据节点名
+	* @param dataName            配准图像数据名
+	* @param dataPath            配准图像数据储存路径（相对路径）
+	* @param masterIndex         主图像序号
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_SLC_deramp_14(
+		int mode,
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath,
+		int masterIndex
+	);
+
 	/*@brief 添加小基线集时间序列分析节点
 	* @param dataNode            SBAS时间序列分析数据节点名
 	* @param dataName            SBAS时间序列分析数据名
@@ -151,6 +236,31 @@ public:
 		const char* dataPath,
 		const char* level
 	);
+
+	/*@brief 添加干涉相位生成节点
+	* @param datanode_node                 干涉相位图像节点名
+	* @param node_name                     干涉相位图像名
+	* @param node_path                     干涉相位图像路径
+	* @param master_name                   干涉相位主图像
+	* @param rank                          节点等级
+	* @param offset_row                    主图像行偏移量
+	* @param offset_col                    主图像列偏移量
+	* @param multilook_rg                  多视倍数（距离向）
+	* @param multilook_az                  多视倍数（方位向）
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_interferometric_phase_14(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		const char* master_name,
+		const char* rank,
+		int offset_row,
+		int offset_col,
+		int multilook_rg,
+		int multilook_az
+	);
+
 	/** @brief 添加干涉相位生成节点
 
 	@param datanode_node  干涉相位图像节点名
@@ -178,6 +288,37 @@ public:
 		int isdeflat, int istopo_removal, int iscoherence,
 		int win_w, int win_h, int multilook_rg, int multilook_az
 	);
+
+	/** @brief 添加滤波图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	@param datanode_node  滤波图像节点名
+	@param node_name      滤波图像名
+	@param node_path      滤波图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param Slop_win		  斜坡自适应窗口尺寸
+	@param Pre_win		  预窗口尺寸
+	@param Goldstein_win  Goldstein滤波FFT窗口尺寸
+	@param Goldstein_filled_win		Goldstein滤波补零窗口尺寸
+	@param alpha		  Goldstein滤波阈值
+	@param filter_dl_path			深度学习滤波可执行程序路径
+	@param dl_model_file			深度学习滤波模型路径
+	@param tmp_path        深度学习滤波中间文件路径
+	*/
+	int XMLFile_add_denoise_14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		int Slop_win, int Pre_win,
+		int Goldstein_win, int Goldstein_filled_win, double alpha,
+		const char* filter_dl_path, const char* dl_model_file, const char* tmp_path
+	);
+
 	/** @brief 添加滤波图像节点
 
 	@param datanode_node  滤波图像节点名
@@ -225,6 +366,28 @@ public:
 		const char* method,
 		double threshold
 	);
+
+	/** @brief 添加解缠图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	@param datanode_node  解缠图像节点名
+	@param node_name      解缠图像名
+	@param node_path      解缠图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param threshold	  综合法阈值
+	*/
+	int XMLFile_add_unwrap_14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		double threshold
+	);
+
 	/** @brief 添加Dem图像节点
 
 	@param datanode_node  Dem图像节点名
@@ -244,6 +407,28 @@ public:
 		const char* method,
 		int times
 	);
+
+	/** @brief 添加Dem图像节点
+	@param mode           收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	@param datanode_node  Dem图像节点名
+	@param node_name      Dem图像名
+	@param node_path      Dem图像路径
+	@param Row_offset     行偏移量
+	@param Col_offset     列偏移量
+	@param method		  方法名称
+	@param threshold	  迭代次数
+	*/
+	int XMLFile_add_dem_14(
+		int mode,
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path,
+		int Row_offset,
+		int Col_offset,
+		const char* method,
+		int times
+	);
+
 	/** @brief 返回字符串
 
 	@param n			输入整数值
@@ -307,6 +492,22 @@ public:
 		const char* attribute_name,
 		const char* attribute_value,
 		TiXmlElement*& pnode);
+
+	/*
+	* 按名称及属性值查找节点
+	* @param             节点名
+	* @param             节点属性名
+	* @param             节点属性值
+	* @param             节点指针（返回值）
+	* @return 成功找到返回0， 否则返回-1
+	*/
+	int find_node_with_attribute(
+		const char* node_name,
+		const char* attribute_name,
+		const char* attribute_value,
+		TiXmlElement*& pnode
+	);
+
 	/*
 	* 从XML文件中读出字符串参数
 	* 参数1：参数名（节点名）

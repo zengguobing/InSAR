@@ -623,8 +623,10 @@ int SLC_simulator::generateSLC(
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
 	int cols = dem.cols * interp_times_col;
-	int block_rows = 1000;//分块大小
-	int block_cols = 1000;
+	//int block_rows = 1000;//分块大小
+	//int block_cols = 1000;
+	int block_rows = 500;//分块大小
+	int block_cols = 500;
 	Mat dem_interp, dem_temp;
 	dem.convertTo(dem_interp, CV_32F);
 	cv::resize(dem_interp, dem_interp, cv::Size(cols, rows), 0, 0, cv::INTER_CUBIC);
@@ -635,7 +637,7 @@ int SLC_simulator::generateSLC(
 	Utils util;
 	num_block_row = num_block_row;
 	num_block_col = num_block_col;
-	vector<double> GCPs;//控制点信息
+	vector<double> GCPs, GCPs2;//控制点信息
 	//初始化轨道类
 	orbitStateVectors stateVectors1(stateVec1, acquisitionStartTime1, acquisitionStopTime1);
 	stateVectors1.applyOrbit();
@@ -1138,7 +1140,8 @@ int SLC_simulator::generateSLC(
 	ComplexMat& slc2,
 	ComplexMat& slc3, 
 	ComplexMat& slc4, 
-	Mat& GCP
+	Mat& GCP1,
+	Mat& GCP2
 )
 {
 	if (stateVec1.cols != 7 ||
@@ -1197,8 +1200,10 @@ int SLC_simulator::generateSLC(
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
 	int cols = dem.cols * interp_times_col;
-	int block_rows = 1000;//分块大小
-	int block_cols = 1000;
+	//int block_rows = 1000;//分块大小
+	//int block_cols = 1000;
+	int block_rows = 500;//分块大小
+	int block_cols = 500;
 	Mat dem_interp, dem_temp;
 	dem.convertTo(dem_interp, CV_32F);
 	cv::resize(dem_interp, dem_interp, cv::Size(cols, rows), 0, 0, cv::INTER_CUBIC);
@@ -1209,7 +1214,7 @@ int SLC_simulator::generateSLC(
 	Utils util;
 	num_block_row = num_block_row;
 	num_block_col = num_block_col;
-	vector<double> GCPs;//控制点信息
+	vector<double> GCPs, GCPs2;//控制点信息
 	//初始化轨道类
 	orbitStateVectors stateVectors1(stateVec1, acquisitionStartTime1, acquisitionStopTime1);
 	stateVectors1.applyOrbit();
@@ -1252,21 +1257,21 @@ int SLC_simulator::generateSLC(
 			Mat noise_real3(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary3(dem_temp2.rows, dem_temp2.cols, CV_32F);
 			Mat noise_real4(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary4(dem_temp2.rows, dem_temp2.cols, CV_32F);
 			double noise_sigma = sqrt(pow(10.0, -SNR / 10.0) / 2.0);
-			cv::RNG rng2(seed + 2 * num_block_row * num_block_col + 1);
+			cv::RNG rng2(seed + 1 * num_block_row * num_block_col + 1);
 			rng2.fill(noise_real, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng3(seed + 2 * num_block_row * num_block_col + 2);
+			cv::RNG rng3(seed + 1 * num_block_row * num_block_col + 2);
 			rng3.fill(noise_imaginary, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng4(seed + 2 * num_block_row * num_block_col + 3);
+			cv::RNG rng4(seed + 1 * num_block_row * num_block_col + 3);
 			rng4.fill(noise_real2, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng5(seed + 2 * num_block_row * num_block_col + 4);
+			cv::RNG rng5(seed + 1 * num_block_row * num_block_col + 4);
 			rng5.fill(noise_imaginary2, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng6(seed + 2 * num_block_row * num_block_col + 5);
+			cv::RNG rng6(seed + 1 * num_block_row * num_block_col + 5);
 			rng6.fill(noise_real3, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng7(seed + 2 * num_block_row * num_block_col + 6);
+			cv::RNG rng7(seed + 1 * num_block_row * num_block_col + 6);
 			rng7.fill(noise_imaginary3, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng8(seed + 2 * num_block_row * num_block_col + 7);
+			cv::RNG rng8(seed + 1 * num_block_row * num_block_col + 7);
 			rng8.fill(noise_real4, cv::RNG::NORMAL, 0, noise_sigma);
-			cv::RNG rng9(seed + 2 * num_block_row * num_block_col + 8);
+			cv::RNG rng9(seed + 1 * num_block_row * num_block_col + 8);
 			rng9.fill(noise_imaginary4, cv::RNG::NORMAL, 0, noise_sigma);
 			//noise_imaginary4 = 0.0;
 			//noise_imaginary3 = 0.0;
@@ -1550,6 +1555,15 @@ int SLC_simulator::generateSLC(
 					GCPs.push_back(height);
 					GCPs.push_back(distance1);
 					GCPs.push_back(distance2);
+
+					GCPs2.push_back(azimuthIndex2 + 1);
+					GCPs2.push_back(rangeIndex2 + 1);
+					GCPs2.push_back(lon);
+					GCPs2.push_back(lat);
+					GCPs2.push_back(height);
+					GCPs2.push_back(distance2);
+					GCPs2.push_back(distance1);
+
 					double theta = -4.0 * PI * distance1 / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
 					double real = gcp_sigma * (cos(theta) + noise_real.at<float>(gcp_row, gcp_col));
 					double imaginary = gcp_sigma * (sin(theta) + noise_imaginary.at<float>(gcp_row, gcp_col));
@@ -1635,17 +1649,34 @@ int SLC_simulator::generateSLC(
 	int total_rows = GCPs.size() / 7;
 	if (total_rows > 0)
 	{
-		GCP.create(total_rows, 7, CV_64F);
+		GCP1.create(total_rows, 7, CV_64F);
 
 		for (int i = 0; i < total_rows; i++)
 		{
-			GCP.at<double>(i, 0) = GCPs[i * 7];
-			GCP.at<double>(i, 1) = GCPs[i * 7 + 1];
-			GCP.at<double>(i, 2) = GCPs[i * 7 + 2];
-			GCP.at<double>(i, 3) = GCPs[i * 7 + 3];
-			GCP.at<double>(i, 4) = GCPs[i * 7 + 4];
-			GCP.at<double>(i, 5) = GCPs[i * 7 + 5];
-			GCP.at<double>(i, 6) = GCPs[i * 7 + 6];
+			GCP1.at<double>(i, 0) = GCPs[i * 7];
+			GCP1.at<double>(i, 1) = GCPs[i * 7 + 1];
+			GCP1.at<double>(i, 2) = GCPs[i * 7 + 2];
+			GCP1.at<double>(i, 3) = GCPs[i * 7 + 3];
+			GCP1.at<double>(i, 4) = GCPs[i * 7 + 4];
+			GCP1.at<double>(i, 5) = GCPs[i * 7 + 5];
+			GCP1.at<double>(i, 6) = GCPs[i * 7 + 6];
+		}
+	}
+
+	total_rows = GCPs2.size() / 7;
+	if (total_rows > 0)
+	{
+		GCP2.create(total_rows, 7, CV_64F);
+
+		for (int i = 0; i < total_rows; i++)
+		{
+			GCP2.at<double>(i, 0) = GCPs2[i * 7];
+			GCP2.at<double>(i, 1) = GCPs2[i * 7 + 1];
+			GCP2.at<double>(i, 2) = GCPs2[i * 7 + 2];
+			GCP2.at<double>(i, 3) = GCPs2[i * 7 + 3];
+			GCP2.at<double>(i, 4) = GCPs2[i * 7 + 4];
+			GCP2.at<double>(i, 5) = GCPs2[i * 7 + 5];
+			GCP2.at<double>(i, 6) = GCPs2[i * 7 + 6];
 		}
 	}
 	return 0;
@@ -2387,6 +2418,911 @@ int SLC_simulator::SLC_deramp(
 	return 0;
 }
 
+int SLC_simulator::SLC_deramp_14(
+	vector<string>& slcH5FilesList,
+	vector<string>& slcH5FilesListOut,
+	int master_index,
+	Mat& mappedDEM,
+	Mat& mappedLat,
+	Mat& mappedLon, 
+	int mode
+)
+{
+	if (mappedDEM.rows != mappedLat.rows ||
+		mappedDEM.rows != mappedLon.rows ||
+		mappedDEM.cols != mappedLat.cols ||
+		mappedDEM.cols != mappedLon.cols ||
+		mappedDEM.type() != CV_16S ||
+		mappedLat.type() != CV_32F ||
+		mappedLon.type() != CV_32F ||
+		mappedDEM.empty() ||
+		slcH5FilesList.size() != slcH5FilesListOut.size() ||
+		slcH5FilesList.size() < 2 || slcH5FilesList.size() > 8 ||
+		mode < 1 || mode > 4
+		)
+	{
+		fprintf(stderr, "SLC_deramp_14(): input check failed!\n");
+		return -1;
+	}
+	FormatConversion conversion; Deflat flat; Utils util;
+	ComplexMat slc, slc2;
+	int ret;
+	double lonMax, lonMin, latMax, latMin, lon_upperleft, lat_upperleft, rangeSpacing,
+		nearRangeTime, wavelength, wavelength2, prf, start, end, start2, end2;
+	int sceneHeight, sceneWidth, sceneHeight2, sceneWidth2, offset_row = 0, offset_col = 0;
+	Mat lon_coef, lat_coef, statevec, statevec2;
+	string start_time, end_time;
+	const char* slcH5File1 = NULL, *slcH5File3 = NULL;
+	//单发单收/单发双收模式
+	if (mode == 1 || mode == 2)
+	{
+		slcH5File1 = slcH5FilesList[0].c_str();
+		slcH5File3 = slcH5FilesList[1].c_str();
+	}
+	else if (mode == 3)//乒乓模式
+	{
+		slcH5File1 = slcH5FilesList[0].c_str();
+		slcH5File3 = slcH5FilesList[3].c_str();
+	}
+	else//双频乒乓模式
+	{
+		slcH5File1 = slcH5FilesList[0].c_str();
+		slcH5File3 = slcH5FilesList[7].c_str();
+	}
+
+	ret = conversion.read_int_from_h5(slcH5File1, "range_len", &sceneWidth);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(slcH5File1, "azimuth_len", &sceneHeight);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(slcH5File3, "range_len", &sceneWidth2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(slcH5File3, "azimuth_len", &sceneHeight2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_double_from_h5(slcH5File1, "prf", &prf);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_double_from_h5(slcH5File1, "carrier_frequency", &wavelength);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	wavelength = VEL_C / wavelength;
+	ret = conversion.read_double_from_h5(slcH5File3, "carrier_frequency", &wavelength2);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	wavelength2 = VEL_C / wavelength2;
+
+	ret = conversion.read_str_from_h5(slcH5File1, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time.c_str(), &start);
+	ret = conversion.read_str_from_h5(slcH5File1, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(end_time.c_str(), &end);
+	ret = conversion.read_array_from_h5(slcH5File1, "state_vec", statevec);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_str_from_h5(slcH5File3, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time.c_str(), &start2);
+	ret = conversion.read_str_from_h5(slcH5File3, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(end_time.c_str(), &end2);
+	ret = conversion.read_array_from_h5(slcH5File3, "state_vec", statevec2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(slcH5FilesList[master_index - 1].c_str(), "offset_row", &offset_row);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(slcH5FilesList[master_index - 1].c_str(), "offset_col", &offset_col);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+
+	Mat sate1 = Mat::zeros(sceneHeight, 3, CV_64F);
+
+	Mat sate2 = Mat::zeros(sceneHeight2, 3, CV_64F);
+
+	orbitStateVectors stateVectors(statevec, start, end);
+	stateVectors.applyOrbit();
+
+	orbitStateVectors stateVectors2(statevec2, start2, end2);
+	stateVectors2.applyOrbit();
+
+	//计算主星成像位置
+	double dopplerFrequency = 0.0;
+	Position groundPosition;
+	double lat, lon, height;
+	lat = mappedLat.at<float>(0, 0);
+	lon = mappedLon.at<float>(0, 0);
+	lon = lon > 180.0 ? (lon - 360.0) : lon;
+	height = mappedDEM.at<short>(0, 0);
+	Utils::ell2xyz(lon, lat, height, groundPosition);
+	int numOrbitVec = stateVectors.newStateVectors.rows;
+	double firstVecTime = 0.0;
+	double secondVecTime = 0.0;
+	double firstVecFreq = 0.0;
+	double secondVecFreq = 0.0;
+	double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+	for (int ii = 0; ii < numOrbitVec; ii++) {
+		Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+			stateVectors.newStateVectors.at<double>(ii, 3));
+		Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+			stateVectors.newStateVectors.at<double>(ii, 6));
+		currentFreq = 0;
+		xdiff = groundPosition.x - orb_pos.x;
+		ydiff = groundPosition.y - orb_pos.y;
+		zdiff = groundPosition.z - orb_pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+		if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+			firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+			firstVecFreq = currentFreq;
+		}
+		else {
+			secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+			secondVecFreq = currentFreq;
+			break;
+		}
+	}
+
+	if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+		fprintf(stderr, "SLC_deramp(): orbit mismatch!\n");
+		return -1;
+	}
+
+	double lowerBoundTime = firstVecTime;
+	double upperBoundTime = secondVecTime;
+	double lowerBoundFreq = firstVecFreq;
+	double upperBoundFreq = secondVecFreq;
+	double midTime, midFreq;
+	double diffTime = fabs(upperBoundTime - lowerBoundTime);
+	double absLineTimeInterval = 1.0 / prf;
+
+	int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+	int numIterations = 0; Position pos; Velocity vel;
+	while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+		midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+		stateVectors.getPosition(midTime, pos);
+		stateVectors.getVelocity(midTime, vel);
+		xdiff = groundPosition.x - pos.x;
+		ydiff = groundPosition.y - pos.y;
+		zdiff = groundPosition.z - pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+		if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+			lowerBoundTime = midTime;
+			lowerBoundFreq = midFreq;
+		}
+		else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+			upperBoundTime = midTime;
+			upperBoundFreq = midFreq;
+		}
+		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+			zeroDopplerTime = midTime;
+			break;
+		}
+
+		diffTime = fabs(upperBoundTime - lowerBoundTime);
+		numIterations++;
+	}
+	zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		double time = zeroDopplerTime + (double)i * (1.0 / prf);
+		stateVectors.getPosition(time, pos);
+		sate1.at<double>(i, 0) = pos.x;
+		sate1.at<double>(i, 1) = pos.y;
+		sate1.at<double>(i, 2) = pos.z;
+	}
+
+	//计算辅星成像位置
+	numOrbitVec = stateVectors2.newStateVectors.rows;
+	firstVecTime = 0.0;
+	secondVecTime = 0.0;
+	firstVecFreq = 0.0;
+	secondVecFreq = 0.0;
+	currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+	for (int ii = 0; ii < numOrbitVec; ii++) {
+		Position orb_pos(stateVectors2.newStateVectors.at<double>(ii, 1), stateVectors2.newStateVectors.at<double>(ii, 2),
+			stateVectors2.newStateVectors.at<double>(ii, 3));
+		Velocity orb_vel(stateVectors2.newStateVectors.at<double>(ii, 4), stateVectors2.newStateVectors.at<double>(ii, 5),
+			stateVectors2.newStateVectors.at<double>(ii, 6));
+		currentFreq = 0;
+		xdiff = groundPosition.x - orb_pos.x;
+		ydiff = groundPosition.y - orb_pos.y;
+		zdiff = groundPosition.z - orb_pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+		if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+			firstVecTime = stateVectors2.newStateVectors.at<double>(ii, 0);
+			firstVecFreq = currentFreq;
+		}
+		else {
+			secondVecTime = stateVectors2.newStateVectors.at<double>(ii, 0);
+			secondVecFreq = currentFreq;
+			break;
+		}
+	}
+
+	if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+		fprintf(stderr, "SLC_deramp(): orbit mismatch!\n");
+		return -1;
+	}
+
+	lowerBoundTime = firstVecTime;
+	upperBoundTime = secondVecTime;
+	lowerBoundFreq = firstVecFreq;
+	upperBoundFreq = secondVecFreq;
+	diffTime = fabs(upperBoundTime - lowerBoundTime);
+	absLineTimeInterval = 1.0 / prf;
+
+	totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+	numIterations = 0;
+	while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+		midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+		stateVectors2.getPosition(midTime, pos);
+		stateVectors2.getVelocity(midTime, vel);
+		xdiff = groundPosition.x - pos.x;
+		ydiff = groundPosition.y - pos.y;
+		zdiff = groundPosition.z - pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+		if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+			lowerBoundTime = midTime;
+			lowerBoundFreq = midFreq;
+		}
+		else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+			upperBoundTime = midTime;
+			upperBoundFreq = midFreq;
+		}
+		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+			zeroDopplerTime = midTime;
+			break;
+		}
+
+		diffTime = fabs(upperBoundTime - lowerBoundTime);
+		numIterations++;
+	}
+	zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+
+	for (int i = 0; i < sceneHeight2; i++)
+	{
+		double time = zeroDopplerTime + (double)i * (1.0 / prf);
+		stateVectors2.getPosition(time, pos);
+		sate2.at<double>(i, 0) = pos.x;
+		sate2.at<double>(i, 1) = pos.y;
+		sate2.at<double>(i, 2) = pos.z;
+	}
+
+	if (mode == 1)//单发单收模式
+	{
+		//主星图像去参考
+		ret = conversion.read_slc_from_h5(slcH5File1, slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
+
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[0].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[0].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[0].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File1, slcH5FilesListOut[0].c_str());
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "azimuth_len", sceneHeight);
+
+		//辅星去参考
+		R = 0.00;
+		ret = conversion.read_slc_from_h5(slcH5File3, slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[1].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[1].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[1].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File3, slcH5FilesListOut[1].c_str());
+		ret = conversion.read_int_from_h5(slcH5File3, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File3, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "azimuth_len", sceneHeight);
+	}
+	else if (mode == 2)//单发双收模式
+	{
+		//主星图像去参考
+		ret = conversion.read_slc_from_h5(slcH5File1, slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
+
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[0].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[0].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[0].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File1, slcH5FilesListOut[0].c_str());
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "azimuth_len", sceneHeight);
+
+		//辅星去参考
+		R = 0.00;
+		ret = conversion.read_slc_from_h5(slcH5File3, slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r += cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[1].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[1].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[1].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File3, slcH5FilesListOut[1].c_str());
+		ret = conversion.read_int_from_h5(slcH5File3, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File3, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "azimuth_len", sceneHeight);
+	}
+	else if (mode == 3)//乒乓模式
+	{
+		//主星发主星收图像去参考
+		ret = conversion.read_slc_from_h5(slcH5File1, slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
+
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[0].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[0].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[0].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File1, slcH5FilesListOut[0].c_str());
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "azimuth_len", sceneHeight);
+
+
+		//辅星发主星收图像去参考
+		R = 0.0;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[1].c_str(), slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r += cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 2.0 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[1].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[1].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[1].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[1].c_str(), slcH5FilesListOut[1].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[1].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[1].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "azimuth_len", sceneHeight);
+		//辅星发辅星收图像去参考
+		R = 0.0;
+		ret = conversion.read_slc_from_h5(slcH5File3, slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[3].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[3].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[3].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File3, slcH5FilesListOut[3].c_str());
+		ret = conversion.read_int_from_h5(slcH5File3, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File3, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "azimuth_len", sceneHeight);
+		//主星发辅星收图像去参考
+		R = 0.0;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[2].c_str(), slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r += cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 2.0 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[2].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[2].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[2].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[2].c_str(), slcH5FilesListOut[2].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[2].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[2].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "azimuth_len", sceneHeight);
+	}
+	else //双频乒乓模式
+	{
+		//主星发主星收图像去参考
+		ret = conversion.read_slc_from_h5(slcH5FilesList[0].c_str(), slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[4].c_str(), slc2);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		if (slc2.type() != CV_32F) slc.convertTo(slc2, CV_32F);
+		Mat R = Mat::zeros(sceneHeight, sceneWidth, CV_64F);
+
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+
+				r = -R.at<double>(i, j) / wavelength2 * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc2.re.at<float>(i, j);
+				imagine2 = slc2.im.at<float>(i, j);
+				slc2.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc2.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[0].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.creat_new_h5(slcH5FilesListOut[4].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[0].c_str(), "slantRange", R);
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[4].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[0].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[4].c_str(), slc2);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5File1, slcH5FilesListOut[0].c_str());
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5File1, "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[0].c_str(), "azimuth_len", sceneHeight);
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[4].c_str(), slcH5FilesListOut[4].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[4].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[4].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[4].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[4].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[4].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[4].c_str(), "azimuth_len", sceneHeight);
+
+		//辅星发主星收图像去参考
+		R = 0.0;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[1].c_str(), slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[5].c_str(), slc2);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		if (slc2.type() != CV_32F) slc.convertTo(slc2, CV_32F);
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r += cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 2.0 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+
+				r = -R.at<double>(i, j) / wavelength2 * 2.0 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc2.re.at<float>(i, j);
+				imagine2 = slc2.im.at<float>(i, j);
+				slc2.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc2.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[1].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.creat_new_h5(slcH5FilesListOut[5].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[1].c_str(), "slantRange", R);
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[5].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[1].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[5].c_str(), slc2);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[1].c_str(), slcH5FilesListOut[1].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[1].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[1].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[1].c_str(), "azimuth_len", sceneHeight);
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[5].c_str(), slcH5FilesListOut[5].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[5].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[5].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[5].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[5].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[5].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[5].c_str(), "azimuth_len", sceneHeight);
+		//辅星发辅星收图像去参考
+		R = 0.0;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[3].c_str(), slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[7].c_str(), slc2);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		if (slc2.type() != CV_32F) slc.convertTo(slc2, CV_32F);
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+
+
+				r = -R.at<double>(i, j) / wavelength2 * 4 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc2.re.at<float>(i, j);
+				imagine2 = slc2.im.at<float>(i, j);
+				slc2.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc2.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[3].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.creat_new_h5(slcH5FilesListOut[7].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[3].c_str(), "slantRange", R);
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[7].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[3].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[7].c_str(), slc2);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[3].c_str(), slcH5FilesListOut[3].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[3].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[3].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[3].c_str(), "azimuth_len", sceneHeight);
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[7].c_str(), slcH5FilesListOut[7].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[7].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[7].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[7].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[7].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[7].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[7].c_str(), "azimuth_len", sceneHeight);
+		//主星发辅星收图像去参考
+		R = 0.0;
+		ret = conversion.read_slc_from_h5(slcH5FilesList[2].c_str(), slc);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
+		ret = conversion.read_slc_from_h5(slcH5FilesList[6].c_str(), slc2);
+		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+		if (slc2.type() != CV_32F) slc.convertTo(slc2, CV_32F);
+	#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < sceneHeight; i++)
+		{
+			for (int j = 0; j < sceneWidth; j++)
+			{
+				double r, real, imagine, real2, imagine2;
+				Mat XYZ, LLH(1, 3, CV_64F), tt;
+				LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
+				LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+				LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+				util.ell2xyz(LLH, XYZ);
+				tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
+				r = cv::norm(tt, cv::NORM_L2);
+				tt = XYZ - sate2(cv::Range(i, i + 1), cv::Range(0, 3));
+				r += cv::norm(tt, cv::NORM_L2);
+				R.at<double>(i, j) = r;
+				r = -r / wavelength * 2.0 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc.re.at<float>(i, j);
+				imagine2 = slc.im.at<float>(i, j);
+				slc.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+
+				r = -R.at<double>(i, j) / wavelength2 * 2.0 * PI;
+				real = cos(r);
+				imagine = sin(r);
+				real2 = slc2.re.at<float>(i, j);
+				imagine2 = slc2.im.at<float>(i, j);
+				slc2.re.at<float>(i, j) = real * real2 + imagine * imagine2;
+				slc2.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
+			}
+		}
+		ret = conversion.creat_new_h5(slcH5FilesListOut[2].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+		ret = conversion.creat_new_h5(slcH5FilesListOut[6].c_str());
+		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+
+
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[2].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[2].c_str(), slc);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+		ret = conversion.write_array_to_h5(slcH5FilesListOut[6].c_str(), "slantRange", R);
+		ret = conversion.write_slc_to_h5(slcH5FilesListOut[6].c_str(), slc2);
+		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[2].c_str(), slcH5FilesListOut[2].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[2].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[2].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[2].c_str(), "azimuth_len", sceneHeight);
+
+		ret = conversion.Copy_para_from_h5_2_h5(slcH5FilesList[6].c_str(), slcH5FilesListOut[6].c_str());
+		ret = conversion.read_int_from_h5(slcH5FilesList[6].c_str(), "offset_row", &offset_row);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[6].c_str(), "offset_row", offset_row);
+		ret = conversion.read_int_from_h5(slcH5FilesList[6].c_str(), "offset_col", &offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[6].c_str(), "offset_col", offset_col);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[6].c_str(), "range_len", sceneWidth);
+		ret = conversion.write_int_to_h5(slcH5FilesListOut[6].c_str(), "azimuth_len", sceneHeight);
+	}
+	return 0;
+}
+
 int SLC_simulator::SLC_reramp(
 	Mat& mappedDEM,
 	Mat& mappedLat,
@@ -2922,7 +3858,7 @@ int SLC_simulator::MB_phase_estimation(
 							real = coherence_matrix.GetPhase();
 							phase.at<double>(ii, jj) = real.at<double>(0, 2);*/
 
-							////cout << eigenvalue << endl;
+							//cout << eigenvalue << endl;
 							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
 							{
 								for (int kk = 0; kk < n_images; kk++)

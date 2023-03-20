@@ -153,7 +153,8 @@ public:
 	* @param slc2                                      主星收辅星（返回值）
 	* @param slc3                                      辅星自发自收（返回值）
 	* @param slc4                                      辅星收主星（返回值）
-	* @param GCP                                       控制点信息（返回值，n×5，行/列/经/纬/高）
+	* @param GCP1                                      主图控制点信息（返回值，n×5，行/列/经/纬/高）
+	* @param GCP2                                      辅图控制点信息（返回值，n×5，行/列/经/纬/高）
 	* @return 成功返回0，否则返回-1
 	*/
 	int generateSLC(
@@ -181,7 +182,8 @@ public:
 		ComplexMat& slc2,
 		ComplexMat& slc3,
 		ComplexMat& slc4,
-		Mat& GCP
+		Mat& GCP1, 
+		Mat& GCP2
 	);
 	/*@brief 根据轨道和场景DEM以及成像参数参考斜距（单发双收，乒乓模式）
 	* @param stateVec1                                 轨道数据1（主星，信号发射轨道+信号接收轨道）
@@ -250,6 +252,25 @@ public:
 		const char* slcH5File2_out,
 		const char* slcH5File3_out,
 		const char* slcH5File4_out
+	);
+	/*@brief 去参考相位
+	* @param master_index                           主图序列号（1-based）
+	* @param mappedDEM                              配准主图像坐标系DEM
+	* @param mappedLat                              DEM纬度坐标
+	* @param mappedLon                              DEM经度坐标
+	* @param mode                                   收发模式（1：单发单收，2：单发双收，3：乒乓模式，4：双频乒乓模式）
+	* @param slcH5FilesList                         配准h5文件数组
+	* @param slcH5FileListOut                       去参考后h5文件数组
+	* @return 成功返回0，否则返回-1
+	*/
+	int SLC_deramp_14(
+		vector<string>& slcH5FilesList,
+		vector<string>& slcH5FilesListOut,
+		int master_index,
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		int mode
 	);
 	/*@brief 乒乓模式重新加入参考相位
 	* @param mappedDEM                              配准主图像坐标系DEM

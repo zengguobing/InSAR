@@ -1,9 +1,5 @@
-// ComplexMat.cpp : 定义 DLL 应用程序的导出函数。
-//
-
-
 #include"stdafx.h"
-
+#include"Eigen/Dense"
 #include"..\include\ComplexMat.h"
 
 ComplexMat::ComplexMat()
@@ -291,6 +287,31 @@ int ComplexMat::GetCols() const
 	return this->re.cols;
 }
 
+int ComplexMat::mul(const ComplexMat& Src, ComplexMat& Dst, bool bConj)
+{
+	if (Src.isempty() ||
+		this->isempty() ||
+		Src.type() != this->type() ||
+		this->GetCols() != Src.GetRows()
+		)
+	{
+		fprintf(stderr, "ComplexMat::mul(): input check failed!\n");
+		return -1;
+	}
+	if (!bConj)
+	{
+		Dst.re = this->re * Src.re - this->im * Src.im;
+		Dst.im = this->re * Src.im + this->im * Src.re;
+	}
+	else
+	{
+		Dst.re = this->re * Src.re + this->im * Src.im;
+		Dst.im = this->im * Src.re - this->re * Src.im;
+	}
+
+	return 0;
+}
+
 int ComplexMat::GetRows() const
 {
 	if (re.rows != im.rows) return -1;
@@ -378,6 +399,41 @@ ComplexMat ComplexMat::sum(int dim) const
 	return out;
 }
 
+complex<double> ComplexMat::determinant() const
+{
+	int nr, nc;
+	nr = this->GetRows();
+	nc = this->GetCols();
+	Eigen::MatrixXcd x(nr, nc);
+	complex<double> d;
+	if (this->type() == CV_32F)
+	{
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				d.real(this->re.at<float>(i, j));
+				d.imag(this->im.at<float>(i, j));
+				x(i, j) = d;
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				d.real(this->re.at<double>(i, j));
+				d.imag(this->im.at<double>(i, j));
+				x(i, j) = d;
+			}
+		}
+	}
+	
+	return x.determinant();
+}
+
 ComplexMat ComplexMat::conj() const
 {
 	ComplexMat out;
@@ -388,6 +444,37 @@ ComplexMat ComplexMat::conj() const
 	out.SetRe(re);
 	out.SetIm(im);
 	return out;
+}
+
+ComplexMat ComplexMat::transpose(bool conj) const
+{
+	ComplexMat out;
+	Mat im, re;
+	this->re.copyTo(re);
+	this->im.copyTo(im);
+	if (conj) im = -im;
+	cv::transpose(re, re);
+	cv::transpose(im, im);
+	out.SetRe(re);
+	out.SetIm(im);
+	return out;
+}
+
+int ComplexMat::reshape(int rows, int cols, ComplexMat& dst)
+{
+	if (rows * cols != this->GetCols() * this->GetRows())
+	{
+		fprintf(stderr, "ComplexMat::reshape(): input check failed!\n");
+		return -1;
+	}
+	Mat real, imagine;
+	cv::transpose(this->re, real);
+	cv::transpose(this->im, imagine);
+	real = real.reshape(1, rows);
+	imagine = imagine.reshape(1, rows);
+	real.copyTo(dst.re);
+	imagine.copyTo(dst.im);
+	return 0;
 }
 
 int ComplexMat::countNonzero() const
