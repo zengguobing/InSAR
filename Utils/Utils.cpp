@@ -10194,8 +10194,8 @@ int Utils::SAR2UTM(
 		phase.rows < 2 ||
 		phase.cols < 2 ||
 		phase.type() != CV_64F ||
-		mapped_lat.type() != CV_32F ||
-		mapped_lon.type() != CV_32F
+		mapped_lat.type() != mapped_lon.type() ||
+		(mapped_lon.type() != CV_32F && mapped_lon.type() != CV_64F)
 		)
 	{
 		fprintf(stderr, "SAR2UTM(): input check failed!\n");
@@ -10203,16 +10203,35 @@ int Utils::SAR2UTM(
 	}
 	//确定经纬度覆盖范围
 	double max_lon = -380.0, min_lon = 380.0, max_lat = -380.0, min_lat = 180.0;
-	for (int i = 0; i < mapped_lat.rows; i++)
+	if (mapped_lat.type() == CV_32F)
 	{
-		for (int j = 0; j < mapped_lat.cols; j++)
+		for (int i = 0; i < mapped_lat.rows; i++)
 		{
-			if (mapped_lat.at<float>(i, j) < 350.0)
+			for (int j = 0; j < mapped_lat.cols; j++)
 			{
-				min_lat = min_lat > mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : min_lat;
-				max_lat = max_lat < mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : max_lat;
-				min_lon = min_lon > mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : min_lon;
-				max_lon = max_lon < mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : max_lon;
+				if (mapped_lat.at<float>(i, j) < 350.0)
+				{
+					min_lat = min_lat > mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : min_lat;
+					max_lat = max_lat < mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : max_lat;
+					min_lon = min_lon > mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : min_lon;
+					max_lon = max_lon < mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : max_lon;
+				}
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < mapped_lat.rows; i++)
+		{
+			for (int j = 0; j < mapped_lat.cols; j++)
+			{
+				if (mapped_lat.at<double>(i, j) < 350.0)
+				{
+					min_lat = min_lat > mapped_lat.at<double>(i, j) ? mapped_lat.at<double>(i, j) : min_lat;
+					max_lat = max_lat < mapped_lat.at<double>(i, j) ? mapped_lat.at<double>(i, j) : max_lat;
+					min_lon = min_lon > mapped_lon.at<double>(i, j) ? mapped_lon.at<double>(i, j) : min_lon;
+					max_lon = max_lon < mapped_lon.at<double>(i, j) ? mapped_lon.at<double>(i, j) : max_lon;
+				}
 			}
 		}
 	}
@@ -10283,23 +10302,47 @@ int Utils::SAR2UTM(
 	Mat b_filled(UTM_rows, UTM_cols, CV_8U); b_filled = 0;
 	mapped_phase.create(UTM_rows, UTM_cols, CV_64F); mapped_phase = 0.0;
 	//开始地理编码
-	for (int i = 0; i < rows; i++)
+	if (mapped_lat.type() == CV_32F)
 	{
-		for (int j = 0; j < cols; j++)
+		for (int i = 0; i < rows; i++)
 		{
-			double lon, lat;
-			int row, col;
-			lon = mapped_lon.at<float>(i, j);
-			if (lon > 350.0) continue;
-			lat = mapped_lat.at<float>(i, j);
-			row = (int)round((lat - min_lat) / lat_interval);
-			lon = fabs(lon - west);
-			lon = lon > 180.0 ? 360.0 - lon : lon;
-			col = (int)round(lon / lon_interval);
-			mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
-			b_filled.at<uchar>(row, col) = 1;
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<float>(i, j);
+				if (lon > 350.0) continue;
+				lat = mapped_lat.at<float>(i, j);
+				row = (int)round((lat - min_lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
+				b_filled.at<uchar>(row, col) = 1;
+			}
 		}
 	}
+	else
+	{
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<double>(i, j);
+				if (lon > 350.0) continue;
+				lat = mapped_lat.at<double>(i, j);
+				row = (int)round((lat - min_lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
+				b_filled.at<uchar>(row, col) = 1;
+			}
+		}
+	}
+	
 
 	//插值
 	if (interpolation_method == 0)
