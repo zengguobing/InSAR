@@ -220,14 +220,42 @@ int Utils::generate_phase(const ComplexMat& Master, const ComplexMat& Slave, Mat
 	if (Master.GetRows() < 1 ||
 		Master.GetCols() < 1 ||
 		Slave.GetRows() != Master.GetRows() ||
-		Slave.GetCols() != Master.GetCols())
+		Slave.GetCols() != Master.GetCols() ||
+		Master.type() != Slave.type() ||
+		(Master.type() != CV_64F && Master.type() != CV_32F))
 	{
 		fprintf(stderr, "generate_phase(): input check failed!\n\n");
 		return -1;
 	}
-	ComplexMat tmp;
-	int ret = Master.Mul(Slave, tmp, true);
-	phase = tmp.GetPhase();
+	int rows = Master.GetRows();
+	int cols = Master.GetCols();
+	phase.create(rows, cols, CV_64F);
+	if (Master.type() == CV_64F)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double real = Master.re.at<double>(i, j) * Slave.re.at<double>(i, j) + Master.im.at<double>(i, j) * Slave.im.at<double>(i, j);
+				double imag = Slave.re.at<double>(i, j) * Master.im.at<double>(i, j) - Master.re.at<double>(i, j) * Slave.im.at<double>(i, j);
+				phase.at<double>(i, j) = atan2(imag, real);
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double real = Master.re.at<float>(i, j) * Slave.re.at<float>(i, j) + Master.im.at<float>(i, j) * Slave.im.at<float>(i, j);
+				double imag = Slave.re.at<float>(i, j) * Master.im.at<float>(i, j) - Master.re.at<float>(i, j) * Slave.im.at<float>(i, j);
+				phase.at<double>(i, j) = atan2(imag, real);
+			}
+		}
+	}
 	return 0;
 }
 
@@ -1297,31 +1325,51 @@ int Utils::cross(Mat& vec1, Mat& vec2, Mat& out)
 {
 	if (vec1.cols != 3 ||
 		vec1.rows < 1 ||
-		vec1.type() != CV_64F ||
+		vec1.type() != vec2.type() ||
 		vec1.channels() != 1 ||
 		vec1.cols != vec2.cols ||
 		vec1.rows != vec2.rows ||
 		vec2.channels() != 1 ||
-		vec2.type() != CV_64F
+		(vec2.type() != CV_64F && vec2.type() != CV_32F)
 		)
 	{
 		fprintf(stderr, "cross(): input check failed!\n\n");
 		return -1;
 	}
-	Mat out_tmp = Mat::zeros(vec1.rows, vec1.cols, CV_64F);
-	int rows = vec1.rows;
-	for (int i = 0; i < rows; i++)
+	if (vec2.type() == CV_64F)
 	{
-		out_tmp.at<double>(i, 0) = vec1.at<double>(i, 1) * vec2.at<double>(i, 2) -
-			vec1.at<double>(i, 2) * vec2.at<double>(i, 1);//a(2) * b(3) - a(3) * b(2)
+		Mat out_tmp = Mat::zeros(vec1.rows, vec1.cols, CV_64F);
+		int rows = vec1.rows;
+		for (int i = 0; i < rows; i++)
+		{
+			out_tmp.at<double>(i, 0) = vec1.at<double>(i, 1) * vec2.at<double>(i, 2) -
+				vec1.at<double>(i, 2) * vec2.at<double>(i, 1);//a(2) * b(3) - a(3) * b(2)
 
-		out_tmp.at<double>(i, 1) = vec1.at<double>(i, 2) * vec2.at<double>(i, 0) -
-			vec1.at<double>(i, 0) * vec2.at<double>(i, 2);//a(3) * b(1) - a(1) * b(3)
+			out_tmp.at<double>(i, 1) = vec1.at<double>(i, 2) * vec2.at<double>(i, 0) -
+				vec1.at<double>(i, 0) * vec2.at<double>(i, 2);//a(3) * b(1) - a(1) * b(3)
 
-		out_tmp.at<double>(i, 2) = vec1.at<double>(i, 0) * vec2.at<double>(i, 1) -
-			vec1.at<double>(i, 1) * vec2.at<double>(i, 0);//a(1) * b(2) - a(2) * b(1)
+			out_tmp.at<double>(i, 2) = vec1.at<double>(i, 0) * vec2.at<double>(i, 1) -
+				vec1.at<double>(i, 1) * vec2.at<double>(i, 0);//a(1) * b(2) - a(2) * b(1)
+		}
+		out_tmp.copyTo(out);
 	}
-	out_tmp.copyTo(out);
+	else
+	{
+		Mat out_tmp = Mat::zeros(vec1.rows, vec1.cols, CV_32F);
+		int rows = vec1.rows;
+		for (int i = 0; i < rows; i++)
+		{
+			out_tmp.at<float>(i, 0) = vec1.at<float>(i, 1) * vec2.at<float>(i, 2) -
+				vec1.at<float>(i, 2) * vec2.at<float>(i, 1);//a(2) * b(3) - a(3) * b(2)
+
+			out_tmp.at<float>(i, 1) = vec1.at<float>(i, 2) * vec2.at<float>(i, 0) -
+				vec1.at<float>(i, 0) * vec2.at<float>(i, 2);//a(3) * b(1) - a(1) * b(3)
+
+			out_tmp.at<float>(i, 2) = vec1.at<float>(i, 0) * vec2.at<float>(i, 1) -
+				vec1.at<float>(i, 1) * vec2.at<float>(i, 0);//a(1) * b(2) - a(2) * b(1)
+		}
+		out_tmp.copyTo(out);
+	}
 	return 0;
 }
 
@@ -1418,19 +1466,32 @@ int Utils::wrap(Mat& Src, Mat& Dst)
 {
 	int rows = Src.rows;
 	int cols = Src.cols;
-	double pi = 3.1415926535;
-	if (rows < 1 || cols < 1 || Src.type() != CV_64F)
+	if (rows < 1 || cols < 1 || (Src.type() != CV_64F && Src.type() != CV_32F))
 	{
 		fprintf(stderr, "wrap(): input check failed!\n\n");
 		return -1;
 	}
 	Mat tmp = Mat::zeros(rows, cols, CV_64F);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < rows; i++)
+	if (Src.type() == CV_64F)
 	{
-		for (int j = 0; j < cols; j++)
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
 		{
-			tmp.at<double>(i, j) = atan2(sin(Src.at<double>(i, j)), cos(Src.at<double>(i, j)));
+			for (int j = 0; j < cols; j++)
+			{
+				tmp.at<double>(i, j) = atan2(sin(Src.at<double>(i, j)), cos(Src.at<double>(i, j)));
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				tmp.at<double>(i, j) = atan2(sin(Src.at<float>(i, j)), cos(Src.at<float>(i, j)));
+			}
 		}
 	}
 	//Dst = tmp;
@@ -2667,8 +2728,8 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 {
 	if (master.GetRows() != slave.GetRows() ||
 		master.GetCols() != slave.GetCols() ||
-		master.type() != CV_64F ||
-		slave.type() != CV_64F ||
+		(master.type() != CV_64F && master.type() != CV_32F) ||
+		slave.type() != master.type() ||
 		master.GetRows() < 1 ||
 		master.GetCols() < 1 ||
 		multilook_rg < 1 ||
@@ -2687,31 +2748,28 @@ int Utils::multilook(const ComplexMat& master, const ComplexMat& slave, int mult
 		return 0;
 	}
 	ComplexMat tmp;
-	ret = master.Mul(slave, tmp, true);
-	if (return_check(ret, "Master.Mul(*, *, *)", error_head)) return -1;
+	tmp.re = master.re.mul(slave.re) + master.im.mul(slave.im);
+	tmp.im = slave.re.mul(master.im) - master.re.mul(slave.im);
 	int nr = tmp.GetRows();
 	int nc = tmp.GetCols();
 	int radius_rg = multilook_rg / 2;
 	int radius_az = multilook_az / 2;
-	Mat real = Mat::zeros(nr, nc, CV_64F);
-	Mat imag = Mat::zeros(nr, nc, CV_64F);
+	phase.create(nr, nc, CV_64F);
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < nr; i++)
 	{
-		int left, right, bottom, top;
+		int left, right, bottom, top; double real, imag;
 		for (int j = 0; j < nc; j++)
 		{
 			left = j - radius_rg; left = left < 0 ? 0 : left;
 			right = left + multilook_rg; right = right > nc - 1 ? nc - 1 : right;
 			top = i - radius_az; top = top < 0 ? 0 : top;
 			bottom = top + multilook_az; bottom = bottom > nr - 1 ? nr - 1 : bottom;
-			real.at<double>(i, j) = cv::mean(tmp.re(Range(top, bottom + 1),Range(left, right + 1)))[0];
-			imag.at<double>(i, j) = cv::mean(tmp.im(Range(top, bottom + 1), Range(left, right + 1)))[0];
+			real = cv::mean(tmp.re(Range(top, bottom + 1),Range(left, right + 1)))[0];
+			imag = cv::mean(tmp.im(Range(top, bottom + 1), Range(left, right + 1)))[0];
+			phase.at<double>(i, j) = atan2(imag, real);
 		}
 	}
-	tmp.SetRe(real);
-	tmp.SetIm(imag);
-	tmp.GetPhase().copyTo(phase);
 	return 0;
 }
 
@@ -2725,8 +2783,8 @@ int Utils::Multilook(
 {
 	if (master.GetRows() != slave.GetRows() ||
 		master.GetCols() != slave.GetCols() ||
-		master.type() != CV_64F ||
-		slave.type() != CV_64F ||
+		(master.type() != CV_64F && master.type() != CV_32F) ||
+		(slave.type() != CV_64F && slave.type() != CV_32F) ||
 		master.GetRows() < 1 ||
 		master.GetCols() < 1 ||
 		multilook_rg < 1 ||
@@ -2745,48 +2803,72 @@ int Utils::Multilook(
 		return 0;
 	}
 	ComplexMat tmp;
-	ret = master.Mul(slave, tmp, true);
-	if (return_check(ret, "Master.Mul(*, *, *)", error_head)) return -1;
+	tmp.re = master.re.mul(slave.re) + master.im.mul(slave.im);
+	tmp.im = slave.re.mul(master.im) - master.re.mul(slave.im);
+	//ret = master.Mul(slave, tmp, true);
+	//if (return_check(ret, "Master.Mul(*, *, *)", error_head)) return -1;
 	int nr = tmp.GetRows();
 	int nc = tmp.GetCols();
 	int nr_new = nr / multilook_az;
 	int nc_new = nc / multilook_rg;
 
-	Mat real = Mat::zeros(nr_new, nc_new, CV_64F);
-	Mat imag = Mat::zeros(nr_new, nc_new, CV_64F);
+	//Mat real = Mat::zeros(nr_new, nc_new, CV_32F);
+	//Mat imag = Mat::zeros(nr_new, nc_new, CV_32F);
+	phase.create(nr_new, nc_new, CV_64F);
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < nr_new; i++)
 	{
-		int left, right, bottom, top;
+		int left, right, bottom, top; double real, imag;
 		top = i * multilook_az; top = top < 0 ? 0 : top;
 		bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
 		for (int j = 0; j < nc_new; j++)
 		{
 			left = j * multilook_rg; left = left < 0 ? 0 : left;
 			right = left + multilook_rg; right = right > nc ? nc : right;
-			real.at<double>(i, j) = cv::mean(tmp.re(Range(top, bottom), Range(left, right)))[0];
-			imag.at<double>(i, j) = cv::mean(tmp.im(Range(top, bottom), Range(left, right)))[0];
+			real = cv::mean(tmp.re(Range(top, bottom), Range(left, right)))[0];
+			imag = cv::mean(tmp.im(Range(top, bottom), Range(left, right)))[0];
+			phase.at<double>(i, j) = atan2(imag, real);
 		}
 	}
-	tmp.SetRe(real);
-	tmp.SetIm(imag);
-	tmp.GetPhase().copyTo(phase);
+	//tmp.SetRe(real);
+	//tmp.SetIm(imag);
+	//tmp.GetPhase().copyTo(phase);
 	return 0;
 }
 
 int Utils::multilook(const Mat& phase, Mat& outPhase, int multi_rg, int multi_az)
 {
-	ComplexMat slc, slc2;
+	if (multi_rg <= 1 && multi_az <= 1)
+	{
+		phase.copyTo(outPhase);
+		return 0;
+	}
+	ComplexMat slc;
 	int ret;
-	outPhase = 0.5 * phase;
+	phase.copyTo(outPhase);
+	outPhase.convertTo(outPhase, CV_32F);//节省内存
 	ret = phase2cos(outPhase, slc.re, slc.im);
 	if (return_check(ret, "phase2cos()", error_head)) return -1;
-	outPhase = -0.5 * phase;
-	ret = phase2cos(outPhase, slc2.re, slc2.im);
-	if (return_check(ret, "phase2cos()", error_head)) return -1;
-	ret = Multilook(slc, slc2, multi_rg, multi_az, outPhase);
-	if (return_check(ret, "Multilook()", error_head)) return -1;
-
+	int nr = slc.GetRows();
+	int nc = slc.GetCols();
+	int nr_new = nr / multi_az;
+	int nc_new = nc / multi_rg;
+	outPhase.create(nr_new, nc_new, CV_64F);
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr_new; i++)
+	{
+		int left, right, bottom, top; double real, imag;
+		top = i * multi_az; top = top < 0 ? 0 : top;
+		bottom = top + multi_az; bottom = bottom > nr ? nr : bottom;
+		for (int j = 0; j < nc_new; j++)
+		{
+			left = j * multi_rg; left = left < 0 ? 0 : left;
+			right = left + multi_rg; right = right > nc ? nc : right;
+			real = cv::mean(slc.re(Range(top, bottom), Range(left, right)))[0];
+			imag = cv::mean(slc.im(Range(top, bottom), Range(left, right)))[0];
+			outPhase.at<double>(i, j) = atan2(imag, real);
+		}
+	}
 	return 0;
 }
 
@@ -2796,7 +2878,7 @@ int Utils::multilook_SAR(const Mat& amplitude, Mat& outAmplitude, int multilook_
 		amplitude.rows < multilook_rg ||
 		amplitude.cols < multilook_az ||
 		multilook_rg < 1 || multilook_az < 1||
-		amplitude.type() != CV_64F
+		(amplitude.type() != CV_64F && amplitude.type() != CV_32F)
 		)
 	{
 		fprintf(stderr, "multilook_SAR(): input check failed!\n");
@@ -2806,20 +2888,42 @@ int Utils::multilook_SAR(const Mat& amplitude, Mat& outAmplitude, int multilook_
 	int nc = amplitude.cols;
 	int nr_new = (int)((double)nr / (double)multilook_az);
 	int nc_new = (int)((double)nc / (double)multilook_rg);
-	Mat tmp = Mat::zeros(nr_new, nc_new, CV_64F);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr_new; i++)
+	Mat tmp;
+	if (amplitude.type() == CV_64F)
 	{
-		int left, right, bottom, top;
-		top = i * multilook_az; top = top < 0 ? 0 : top;
-		bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
-		for (int j = 0; j < nc_new; j++)
+		tmp = Mat::zeros(nr_new, nc_new, CV_64F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr_new; i++)
 		{
-			left = j * multilook_rg; left = left < 0 ? 0 : left;
-			right = left + multilook_rg; right = right > nc ? nc : right;
-			tmp.at<double>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+			int left, right, bottom, top;
+			top = i * multilook_az; top = top < 0 ? 0 : top;
+			bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
+			for (int j = 0; j < nc_new; j++)
+			{
+				left = j * multilook_rg; left = left < 0 ? 0 : left;
+				right = left + multilook_rg; right = right > nc ? nc : right;
+				tmp.at<double>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+			}
 		}
 	}
+	else
+	{
+		tmp = Mat::zeros(nr_new, nc_new, CV_32F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr_new; i++)
+		{
+			int left, right, bottom, top;
+			top = i * multilook_az; top = top < 0 ? 0 : top;
+			bottom = top + multilook_az; bottom = bottom > nr ? nr : bottom;
+			for (int j = 0; j < nc_new; j++)
+			{
+				left = j * multilook_rg; left = left < 0 ? 0 : left;
+				right = left + multilook_rg; right = right > nc ? nc : right;
+				tmp.at<float>(i, j) = cv::mean(amplitude(Range(top, bottom), Range(left, right)))[0];
+			}
+		}
+	}
+
 	tmp.copyTo(outAmplitude);
 	return 0;
 }
@@ -2828,7 +2932,7 @@ int Utils::phase2cos(const Mat& phase, Mat& cos, Mat& sin)
 {
 	if (phase.rows < 1 ||
 		phase.cols < 1 ||
-		phase.type() != CV_64F ||
+		(phase.type() != CV_64F && phase.type() != CV_32F) ||
 		phase.channels() != 1)
 	{
 		fprintf(stderr, "phase2cos(): input check failed!\n\n");
@@ -2836,19 +2940,34 @@ int Utils::phase2cos(const Mat& phase, Mat& cos, Mat& sin)
 	}
 	int nr = phase.rows;
 	int nc = phase.cols;
-	Mat Cos(nr, nc, CV_64F);
-	Mat Sin(nr, nc, CV_64F);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr; i++)
+	if (phase.type() == CV_32F)
 	{
-		for (int j = 0; j < nc; j++)
+		cos.create(nr, nc, CV_32F);
+		sin.create(nr, nc, CV_32F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
 		{
-			Cos.at<double>(i, j) = std::cos(phase.at<double>(i, j));
-			Sin.at<double>(i, j) = std::sin(phase.at<double>(i, j));
+			for (int j = 0; j < nc; j++)
+			{
+				cos.at<float>(i, j) = std::cos(phase.at<float>(i, j));
+				sin.at<float>(i, j) = std::sin(phase.at<float>(i, j));
+			}
 		}
 	}
-	Cos.copyTo(cos);
-	Sin.copyTo(sin);
+	else
+	{
+		cos.create(nr, nc, CV_64F);
+		sin.create(nr, nc, CV_64F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				cos.at<double>(i, j) = std::cos(phase.at<double>(i, j));
+				sin.at<double>(i, j) = std::sin(phase.at<double>(i, j));
+			}
+		}
+	}
 	return 0;
 }
 
@@ -3005,7 +3124,9 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 	}
 	int nr = mod.rows;
 	int nc = mod.cols;
-	double max, min;
+	double max, min, std;
+	this->std(mod, &std);
+	double mean = cv::mean(mod)[0];
 	if (SLC.type() == CV_64F)
 	{
 #pragma omp parallel for schedule(guided)
@@ -3013,23 +3134,8 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 		{
 			for (int j = 0; j < nc; j++)
 			{
-				mod.at<double>(i, j) = 20 * log10(mod.at<double>(i, j) + 0.000001);
-			}
-		}
-
-		minMaxLoc(mod, &min, &max);
-		if (fabs(max - min) < 0.00000001)
-		{
-			fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
-			return -1;
-		}
-		min = max - db;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < nr; i++)
-		{
-			for (int j = 0; j < nc; j++)
-			{
-				if (mod.at<double>(i, j) <= min) mod.at<double>(i, j) = min;
+				if ((mod.at<double>(i, j) - mean) >= 2.0 * std) mod.at<double>(i, j) = mean + 2.0 * std;
+				if ((mod.at<double>(i, j) - mean) < -2.0 * std) mod.at<double>(i, j) = mean - 2.0 * std;
 			}
 		}
 	}
@@ -3040,25 +3146,16 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 		{
 			for (int j = 0; j < nc; j++)
 			{
-				mod.at<float>(i, j) = 20 * log10(mod.at<float>(i, j) + 0.000001);
+				if ((mod.at<float>(i, j) - mean) >= 2.0 * std) mod.at<float>(i, j) = mean + 2.0 * std;
+				if ((mod.at<float>(i, j) - mean) < -2.0 * std) mod.at<float>(i, j) = mean - 2.0 * std;
 			}
 		}
-
-		minMaxLoc(mod, &min, &max);
-		if (fabs(max - min) < 0.00000001)
-		{
-			fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
-			return -1;
-		}
-		min = max - db;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < nr; i++)
-		{
-			for (int j = 0; j < nc; j++)
-			{
-				if (mod.at<float>(i, j) <= min) mod.at<float>(i, j) = min;
-			}
-		}
+	}
+	cv::minMaxLoc(mod, &min, &max);
+	if (fabs(max - min) < 0.00000001)
+	{
+		fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
+		return -1;
 	}
 	mod = (mod - min) / (max - min) * 255.0;
 	mod.convertTo(mod, CV_8U);
@@ -3166,7 +3263,7 @@ int Utils::SAR_image_quantify(const char* filename, double db, ComplexMat& SLC)
 
 int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 {
-	if (!filename || amplitude.empty() || amplitude.type() != CV_64F)
+	if (!filename || amplitude.empty() || (amplitude.type() != CV_64F && amplitude.type() != CV_32F))
 	{
 		fprintf(stderr, "saveAmplitude(): input check failed!\n");
 		return -1;
@@ -3175,13 +3272,31 @@ int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 	int nr = amplitude.rows;
 	int nc = amplitude.cols;
 	
-	
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < nr; i++)
+	double mean = cv::mean(amplitude)[0];
+	double std;
+	this->std(amplitude, &std);
+	if (amplitude.type() == CV_64F)
 	{
-		for (int j = 0; j < nc; j++)
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
 		{
-			amplitude.at<double>(i, j) = 20 * log10(amplitude.at<double>(i, j) + 0.001);
+			for (int j = 0; j < nc; j++)
+			{
+				if ((amplitude.at<double>(i, j) - mean) >= 3.0 * std) amplitude.at<double>(i, j) = mean + 3.0 * std;
+				if ((amplitude.at<double>(i, j) - mean) <= -3.0 * std) amplitude.at<double>(i, j) = mean - 3.0 * std;
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				if ((amplitude.at<float>(i, j) - mean) >= 3.0 * std) amplitude.at<float>(i, j) = mean + 3.0 * std;
+				if ((amplitude.at<float>(i, j) - mean) <= -3.0 * std) amplitude.at<float>(i, j) = mean - 3.0 * std;
+			}
 		}
 	}
 	cv::minMaxLoc(amplitude, &min, &max);
@@ -3190,7 +3305,6 @@ int Utils::saveAmplitude(const char* filename, Mat& amplitude)
 		fprintf(stderr, "SLC image intensity is the same for every pixel\n\n");
 		return -1;
 	}
-
 	amplitude = (amplitude - min) / (max - min) * 255.0;
 	amplitude.convertTo(amplitude, CV_8U);
 	bool ret = cv::imwrite(filename, amplitude);
@@ -4540,7 +4654,7 @@ int Utils::std(const Mat& input, double* std)
 	if (input.rows < 1 ||
 		input.cols < 1 ||
 		input.channels() != 1 ||
-		input.type() != CV_64F ||
+		//input.type() != CV_64F ||
 		std == NULL
 		)
 	{
@@ -5436,6 +5550,90 @@ int Utils::hist(Mat& input, double lowercenter, double uppercenter, double inter
 	}
 	H.at<double>(0, len - 1) = H.at<double>(0, len - 1) + double(nc - k);
 	H.copyTo(out);
+	return 0;
+}
+
+int Utils::hist(Mat& input, double lowerbound, double upperbound, double interval, Mat& out_x, Mat& out_y)
+{
+	if (input.empty() ||
+		input.channels() != 1 ||
+		lowerbound >= upperbound ||
+		interval >= (upperbound - lowerbound)
+		)
+	{
+		fprintf(stderr, "hist(): input check failed!\n");
+		return -1;
+	}
+	int num_bins = (upperbound - lowerbound) / interval + 1;
+	double cmp = lowerbound + interval;
+	out_x.create(1, num_bins, CV_64F);
+	out_y.create(1, num_bins, CV_64F);
+	for (int i = 0; i < num_bins; i++)
+	{
+		out_x.at<double>(i) = lowerbound + interval * (0.5 + i);
+		out_y.at<double>(i) = 0.0;
+	}
+	Mat tmp;
+	input.copyTo(tmp);
+	if (tmp.rows != 1) tmp = tmp.reshape(0, 1);
+	if (tmp.type() != CV_64F) tmp.convertTo(tmp, CV_64F);
+	int num_element = tmp.cols; int count = 0; int bin_count = 0; int bin_num_count = 0;
+	cv::sort(tmp, tmp, SORT_ASCENDING + SORT_EVERY_ROW);
+	while (count < num_element)
+	{
+		if (tmp.at<double>(count) >= cmp)
+		{
+			out_y.at<double>(bin_count) = bin_num_count;
+			bin_num_count = 0;
+			bin_count++;
+			cmp += interval;
+		}
+		bin_num_count++;
+		count++;
+	}
+	out_y.at<double>(num_bins - 1) = out_y.at<double>(num_bins - 2);
+
+	return 0;
+}
+
+int Utils::gaussian_curve_fit(Mat& input_x, Mat& input_y, double* mu, double* sigma_square, double* scale)
+{
+	if (input_x.empty() ||
+		input_y.size() != input_x.size() ||
+		input_x.type() != CV_64F ||
+		input_y.type() != CV_64F ||
+		!mu || !sigma_square || !scale
+		)
+	{
+		fprintf(stderr, "gaussian_curve_fit(): input check failed!\n");
+		return -1;
+	}
+	if (input_x.rows != 1)
+	{
+		input_x = input_x.reshape(0, 1);
+		input_y = input_y.reshape(0, 1);
+	}
+	int cols = input_x.cols;
+	Mat b(cols, 1, CV_64F), A(cols, 3, CV_64F); A = 1.0;
+	for (int i = 0; i < cols; i++)
+	{
+		b.at<double>(i) = log(input_y.at<double>(i));
+		A.at<double>(i, 1) = input_x.at<double>(i);
+		A.at<double>(i, 2) = input_x.at<double>(i) * input_x.at<double>(i);
+	}
+	Mat A_t;
+	cv::transpose(A, A_t);
+	A = A_t * A;
+	b = A_t * b;
+	Mat x;
+	if (!cv::solve(A, b, x, cv::DECOMP_NORMAL))
+	{
+		fprintf(stderr, "gaussian_curve_fit(): can't solve LS problem!\n");
+		return -1;
+	}
+	*sigma_square = -1.0 / x.at<double>(2) / 2.0;
+	*mu = *sigma_square * x.at<double>(1);
+	*scale = exp(x.at<double>(0) + (*mu) * (*mu) / 2.0 / *sigma_square);
 	return 0;
 }
 
@@ -6383,7 +6581,7 @@ int Utils::HermitianEVD(const ComplexMat& input, Mat& eigenvalue, ComplexMat& ei
 
 int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, ComplexMat& coherence_matrix, int est_window_width, int est_window_height,  int ref_row, int ref_col, bool b_homogeneous_test, bool b_normalize)
 {
-	if (slc_series.size() < 5||
+	if (slc_series.size() < 3||
 		est_window_width < 3||
 		est_window_height < 3||
 		est_window_height % 2 != 1||
@@ -6505,7 +6703,54 @@ int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, Com
 	}
 	else
 	{
+		//估计相关矩阵
+		int count2 = rows * cols; int count;
+		ComplexMat Covariance;
+		Mat sum(n_images, 1, CV_64F), A(n_images, count2, CV_64F), B(n_images, count2, CV_64F), C, A_t, B_t;
+		double s;
+		for (int k = 0; k < n_images; k++)
+		{
+			s = 0.0;
+			count = 0;
+			for (int i = 0; i < rows; i++)
+			{
+				for (int j = 0; j < cols; j++)
+				{
+					A.at<double>(k, count) = slc_series[k].re.at<double>(i + top, j + left);
+					B.at<double>(k, count) = slc_series[k].im.at<double>(i + top, j + left);
+					count++;
+					s += A.at<double>(k, count - 1) * A.at<double>(k, count - 1)
+						+ B.at<double>(k, count - 1) * B.at<double>(k, count - 1);
+				}
+			}
+			sum.at<double>(k, 0) = s;
+		}
+		cv::transpose(A, A_t); cv::transpose(B, B_t);
+		C = A * A_t + B * B_t;
+		C.copyTo(Covariance.re);
+		C = B * A_t - A * B_t;
+		C.copyTo(Covariance.im);
+		double denum;
+		if (b_normalize)
+		{
 
+			for (int i = 0; i < n_images; i++)
+			{
+				for (int j = 0; j < n_images; j++)
+				{
+					denum = sqrt(sum.at<double>(i, 0) * sum.at<double>(j, 0));
+					Covariance.re.at<double>(i, j) = Covariance.re.at<double>(i, j) / (denum + 1e-10);
+					Covariance.im.at<double>(i, j) = Covariance.im.at<double>(i, j) / (denum + 1e-10);
+				}
+			}
+
+
+		}
+		else
+		{
+			Covariance = Covariance * (1 / (double)count2);
+		}
+		coherence_matrix = Covariance;
 	}
 	return 0;
 }
@@ -7818,6 +8063,8 @@ int Utils::writeOverlayKML(
 	double TopRight_lat, 
 	double TopLeft_lon,
 	double TopLeft_lat, 
+	double Reference_lon,
+	double Reference_lat,
 	const char* image_file,
 	const char* KML_file, 
 	const char* Legend_file
@@ -7827,10 +8074,12 @@ int Utils::writeOverlayKML(
 		fabs(BottomRight_lat) > 90.0 ||
 		fabs(TopLeft_lat) > 90.0 ||
 		fabs(TopRight_lat) > 90.0 ||
+		fabs(Reference_lat) > 90.0 ||
 		fabs(BottomLeft_lon) > 180.0 ||
 		fabs(BottomRight_lon) > 180.0 ||
 		fabs(TopLeft_lon) > 180.0 ||
 		fabs(TopRight_lon) > 180.0 ||
+		fabs(Reference_lon) > 180.0 ||
 		!image_file ||
 		!KML_file
 		)
@@ -7888,7 +8137,7 @@ int Utils::writeOverlayKML(
 	TiXmlText* content5 = new TiXmlText(coordinates_content);
 	coordinates->LinkEndChild(content5);
 	LatLonQuad->LinkEndChild(coordinates);
-
+	
 	//如果有图例文件
 	if (Legend_file)
 	{
@@ -7944,11 +8193,2139 @@ int Utils::writeOverlayKML(
 		size->SetAttribute("yunits", "fraction");
 		ScreenOverlay->LinkEndChild(size);
 	}
+
+	//参考点标记
+	TiXmlElement* Placemark = new TiXmlElement("Placemark");
+	Document->LinkEndChild(Placemark);
+
+	TiXmlElement* name23 = new TiXmlElement("name");
+	TiXmlText* content23 = new TiXmlText("Reference Point");
+	name23->LinkEndChild(content23);
+	Placemark->LinkEndChild(name23);
+
+	TiXmlElement* Point = new TiXmlElement("Point");
+	Placemark->LinkEndChild(Point);
+
+	TiXmlElement* coordinates_ref = new TiXmlElement("coordinates");
+	sprintf(coordinates_content, "%lf,%lf", Reference_lon, Reference_lat);
+	TiXmlText* content55 = new TiXmlText(coordinates_content);
+	coordinates_ref->LinkEndChild(content55);
+	Point->LinkEndChild(coordinates_ref);
+
+
 	if (!doc.SaveFile(KML_file))
 	{
 		fprintf(stderr, "writeOverlayKML(): failed to save %s! \n", KML_file);
 		return -1;
 	}
+	return 0;
+}
+
+int Utils::S1_subswath_merge(
+	const char* IW1_h5file,
+	const char* IW2_h5file,
+	const char* IW3_h5file, 
+	const char* merged_phase_h5file
+)
+{
+	if (!IW1_h5file || !IW2_h5file || !IW3_h5file || !merged_phase_h5file)
+	{
+		fprintf(stderr, "S1_subswath_merge(): input check failed\n");
+		return -1;
+	}
+	double start1, start2, start3, end1, end2, end3, first_pixel1, first_pixel2, first_pixel3,
+		range_spacing, prf;
+	int mul_az, mul_rg, mul_az1, mul_rg1, rows1, rows2, rows3, cols1, cols2, cols3;
+	FormatConversion conversion;
+	string start_time, end_time;
+	int ret;
+	ret = conversion.read_double_from_h5(IW1_h5file, "prf", &prf);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(IW1_h5file, "slant_range_first_pixel", &first_pixel1);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(IW2_h5file, "slant_range_first_pixel", &first_pixel2);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(IW3_h5file, "slant_range_first_pixel", &first_pixel3);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	if (first_pixel1 >= first_pixel2 || first_pixel2 >= first_pixel3)
+	{
+		fprintf(stderr, "S1_subswath_merge(): please rearrange input swath order!\n");
+		return -1;
+	}
+	ret = conversion.read_double_from_h5(IW3_h5file, "range_spacing", &range_spacing);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(IW1_h5file, "multilook_az", &mul_az);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW1_h5file, "multilook_rg", &mul_rg);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(IW2_h5file, "multilook_az", &mul_az1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW2_h5file, "multilook_rg", &mul_rg1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	if (mul_az != mul_az1 || mul_rg != mul_rg1)
+	{
+		fprintf(stderr, "S1_subswath_merge(): multilook times disagree!\n");
+		return -1;
+	}
+	ret = conversion.read_int_from_h5(IW3_h5file, "multilook_az", &mul_az1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW3_h5file, "multilook_rg", &mul_rg1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	if (mul_az != mul_az1 || mul_rg != mul_rg1)
+	{
+		fprintf(stderr, "S1_subswath_merge(): multilook times disagree!\n");
+		return -1;
+	}
+	
+	ret = conversion.read_int_from_h5(IW1_h5file, "range_len", &cols1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW1_h5file, "azimuth_len", &rows1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(IW2_h5file, "range_len", &cols2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW2_h5file, "azimuth_len", &rows2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(IW3_h5file, "range_len", &cols3);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW3_h5file, "azimuth_len", &rows3);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+
+
+	ret = conversion.read_str_from_h5(IW1_h5file, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW1_h5file, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(start_time.c_str(), &start1);
+	conversion.utc2gps(end_time.c_str(), &end1);
+
+	ret = conversion.read_str_from_h5(IW2_h5file, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW2_h5file, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(start_time.c_str(), &start2);
+	conversion.utc2gps(end_time.c_str(), &end2);
+
+	ret = conversion.read_str_from_h5(IW3_h5file, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW3_h5file, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(start_time.c_str(), &start3);
+	conversion.utc2gps(end_time.c_str(), &end3);
+
+	//IW1和IW2拼接
+
+	int x = (double(cols1 * mul_rg) - round((first_pixel2 - first_pixel1) / range_spacing)) / 2.0;
+	int tmp = x + (int)round((first_pixel2 - first_pixel1) / range_spacing);
+	int col_end_last = tmp / mul_rg;
+	int col_start_next = (col_end_last * mul_rg - round((first_pixel2 - first_pixel1) / range_spacing)) / mul_rg;
+	int total_cols = col_end_last + (cols2 - col_start_next);
+	int row_offset = (start1 - start2) * prf / (double)mul_az;
+	int total_rows = (((end1 > end2 ? end1 : end2) - (start1 < start2 ? start1 : start2))*prf + 1) / (double)mul_az + 1;
+	Mat phase_tmp(total_rows, total_cols, CV_64F); phase_tmp = 0.0;
+	Mat lon_tmp(total_rows, total_cols, CV_32F); lon_tmp = 360.0;
+	Mat lat_tmp(total_rows, total_cols, CV_32F); lat_tmp = 360.0;
+	Mat phase1, phase2, mapped_lon1, mapped_lon2, mapped_lat1, mapped_lat2;
+	ret = conversion.read_array_from_h5(IW1_h5file, "phase", phase1);
+	ret = conversion.read_array_from_h5(IW2_h5file, "phase", phase2);
+	ret = conversion.read_array_from_h5(IW1_h5file, "mapped_lon", mapped_lon1);
+	ret += conversion.read_array_from_h5(IW1_h5file, "mapped_lat", mapped_lat1);
+	ret += conversion.read_array_from_h5(IW2_h5file, "mapped_lon", mapped_lon2);
+	ret += conversion.read_array_from_h5(IW2_h5file, "mapped_lat", mapped_lat2);
+	int temp_ret = ret;
+	if (row_offset < 0)
+	{
+		if (temp_ret == 0)
+		{
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(0, col_end_last)).copyTo
+			(lon_tmp(cv::Range(0, mapped_lon1.rows), cv::Range(0, col_end_last)));
+			mapped_lon2(cv::Range(0, mapped_lon2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lon_tmp(cv::Range(-row_offset, mapped_lon2.rows - row_offset), cv::Range(col_end_last, total_cols)));
+
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(0, col_end_last)).copyTo
+			(lat_tmp(cv::Range(0, mapped_lat1.rows), cv::Range(0, col_end_last)));
+			mapped_lat2(cv::Range(0, mapped_lat2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lat_tmp(cv::Range(-row_offset, mapped_lat2.rows - row_offset), cv::Range(col_end_last, total_cols)));
+		}
+		phase1(cv::Range(0, phase1.rows), cv::Range(0, col_end_last)).copyTo
+		(phase_tmp(cv::Range(0, phase1.rows), cv::Range(0, col_end_last)));
+		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols2)).copyTo
+		(phase_tmp(cv::Range(-row_offset, phase2.rows - row_offset), cv::Range(col_end_last, total_cols)));
+	}
+	else
+	{
+		if (temp_ret == 0)
+		{
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(0, col_end_last)).copyTo
+			(lon_tmp(cv::Range(row_offset, mapped_lon1.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lon2(cv::Range(0, mapped_lon2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lon_tmp(cv::Range(0, mapped_lon2.rows), cv::Range(col_end_last, total_cols)));
+
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(0, col_end_last)).copyTo
+			(lat_tmp(cv::Range(row_offset, mapped_lat1.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lat2(cv::Range(0, mapped_lat2.rows), cv::Range(col_start_next, cols2)).copyTo
+			(lat_tmp(cv::Range(0, mapped_lat2.rows), cv::Range(col_end_last, total_cols)));
+		}
+		phase1(cv::Range(0, phase1.rows), cv::Range(0, col_end_last)).copyTo
+		(phase_tmp(cv::Range(row_offset, phase1.rows + row_offset), cv::Range(0, col_end_last)));
+		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols2)).copyTo
+		(phase_tmp(cv::Range(0, phase2.rows), cv::Range(col_end_last, total_cols)));
+	}
+
+	//拼接IW3
+
+	x = (double(total_cols * mul_rg) - round((first_pixel3 - first_pixel1) / range_spacing)) / 2.0;
+	tmp = x + (int)round((first_pixel3 - first_pixel1) / range_spacing);
+	col_end_last = tmp / mul_rg;
+	col_start_next = (col_end_last * mul_rg - round((first_pixel3 - first_pixel1) / range_spacing)) / mul_rg;
+	total_cols = col_end_last + (cols3 - col_start_next);
+	start1 = start1 < start2 ? start1 : start2;
+	end1 = end1 > end2 ? end1 : end2;
+	row_offset = (start1 - start3) * prf / (double)mul_az;
+	total_rows = (((end1 > end3 ? end1 : end3) - (start1 < start3 ? start1 : start3)) * prf + 1) / (double)mul_az + 1;
+
+	phase1.create(total_rows, total_cols, CV_64F); phase1 = 0.0;
+	mapped_lat2.create(total_rows, total_cols, CV_32F); mapped_lat2 = 360.0;
+	mapped_lon2.create(total_rows, total_cols, CV_32F); mapped_lon2 = 360.0;
+	ret = conversion.read_array_from_h5(IW3_h5file, "phase", phase2);
+	ret = conversion.read_array_from_h5(IW3_h5file, "mapped_lon", mapped_lon1);
+	ret += conversion.read_array_from_h5(IW3_h5file, "mapped_lat", mapped_lat1);
+	temp_ret += ret;
+	if (row_offset < 0)
+	{
+		if (temp_ret == 0)
+		{
+			lon_tmp(cv::Range(0, lon_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lon2(cv::Range(0, lon_tmp.rows), cv::Range(0, col_end_last)));
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lon2(cv::Range(-row_offset, mapped_lon1.rows - row_offset), cv::Range(col_end_last, total_cols)));
+
+			lat_tmp(cv::Range(0, lat_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lat2(cv::Range(0, lat_tmp.rows), cv::Range(0, col_end_last)));
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lat2(cv::Range(-row_offset, mapped_lat1.rows - row_offset), cv::Range(col_end_last, total_cols)));
+		}
+		phase_tmp(cv::Range(0, phase_tmp.rows), cv::Range(0, col_end_last)).copyTo
+		(phase1(cv::Range(0, phase_tmp.rows), cv::Range(0, col_end_last)));
+		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols3)).copyTo
+		(phase1(cv::Range(-row_offset, phase2.rows - row_offset), cv::Range(col_end_last, total_cols)));
+	}
+	else
+	{
+		if (temp_ret == 0)
+		{
+			lon_tmp(cv::Range(0, lon_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lon2(cv::Range(row_offset, lon_tmp.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lon1(cv::Range(0, mapped_lon1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lon2(cv::Range(0, mapped_lon1.rows), cv::Range(col_end_last, total_cols)));
+
+			lat_tmp(cv::Range(0, lat_tmp.rows), cv::Range(0, col_end_last)).copyTo
+			(mapped_lat2(cv::Range(row_offset, lat_tmp.rows + row_offset), cv::Range(0, col_end_last)));
+			mapped_lat1(cv::Range(0, mapped_lat1.rows), cv::Range(col_start_next, cols3)).copyTo
+			(mapped_lat2(cv::Range(0, mapped_lat1.rows), cv::Range(col_end_last, total_cols)));
+		}
+		phase_tmp(cv::Range(0, phase_tmp.rows), cv::Range(0, col_end_last)).copyTo
+		(phase1(cv::Range(row_offset, phase_tmp.rows + row_offset), cv::Range(0, col_end_last)));
+		phase2(cv::Range(0, phase2.rows), cv::Range(col_start_next, cols3)).copyTo
+		(phase1(cv::Range(0, phase2.rows), cv::Range(col_end_last, total_cols)));
+	}
+	ret = conversion.creat_new_h5(merged_phase_h5file);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.write_array_to_h5(merged_phase_h5file, "phase", phase1);
+	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+
+	if (temp_ret == 0)
+	{
+		ret = conversion.write_array_to_h5(merged_phase_h5file, "mapped_lon", mapped_lon2);
+		ret = conversion.write_array_to_h5(merged_phase_h5file, "mapped_lat", mapped_lat2);
+	}
+
+	conversion.write_int_to_h5(merged_phase_h5file, "multilook_az", mul_az);
+	conversion.write_int_to_h5(merged_phase_h5file, "multilook_rg", mul_rg);
+	conversion.write_int_to_h5(merged_phase_h5file, "azimuth_len", phase1.rows);
+	conversion.write_int_to_h5(merged_phase_h5file, "range_len", phase1.cols);
+
+	//写入三个子带的source_1和source_2
+
+	string source_1, source_2;
+	ret = conversion.read_str_from_h5(IW1_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW1", source_1.c_str());
+	ret = conversion.read_str_from_h5(IW1_h5file, "source_2", source_2);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW1", source_2.c_str());
+	ret = conversion.read_str_from_h5(IW2_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW2", source_1.c_str());
+	ret = conversion.read_str_from_h5(IW2_h5file, "source_2", source_2);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW2", source_2.c_str());
+	ret = conversion.read_str_from_h5(IW3_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW3", source_1.c_str());
+	ret = conversion.read_str_from_h5(IW3_h5file, "source_1", source_1);
+	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW3", source_2.c_str());
+
+	return 0;
+}
+
+int Utils::S1_frame_merge(vector<string>& h5files, const char* merged_phase_h5)
+{
+	if (h5files.size() < 2 || !merged_phase_h5)
+	{
+		fprintf(stderr, "S1_frame_merge(): input check failed!\n");
+		return -1;
+	}
+	Mat phase;
+	int num_files = h5files.size();
+	//根据每个拍摄frame的拍摄起始时间对文件排序（从小到大）
+	int ret; string start_time; double start;
+	Mat stime(1, num_files, CV_64F), order;
+	FormatConversion conversion;
+	for (int i = 0; i < num_files; i++)
+	{
+		ret = conversion.read_str_from_h5(h5files[i].c_str(), "acquisition_start_time", start_time);
+		if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+		ret = conversion.utc2gps(start_time.c_str(), &start);
+		if (return_check(ret, "utc2gps()", error_head)) return -1;
+		stime.at<double>(0, i) = start;
+	}
+	cv::sortIdx(stime, order, cv::SORT_EVERY_ROW + cv::SORT_ASCENDING);
+
+	//检查多视倍数和最近斜距是否相同
+	double start1, start2, start3, end1, end2, end3, first_pixel1, first_pixel2, first_pixel3,
+		range_spacing, prf;
+	int mul_az, mul_rg, mul_az1, mul_rg1;
+	ret = conversion.read_int_from_h5(h5files[0].c_str(), "multilook_az", &mul_az);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(h5files[0].c_str(), "multilook_rg", &mul_rg);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(h5files[0].c_str(), "slant_range_first_pixel", &first_pixel1);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(h5files[0].c_str(), "range_spacing", &range_spacing);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	for (int i = 1; i < num_files; i++)
+	{
+		ret = conversion.read_int_from_h5(h5files[i].c_str(), "multilook_az", &mul_az1);
+		if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+		ret = conversion.read_int_from_h5(h5files[i].c_str(), "multilook_rg", &mul_rg1);
+		if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+		if (mul_az != mul_az1 || mul_rg != mul_rg1)
+		{
+			fprintf(stderr, "S1_frame_merge(): multilook times disagree!\n");
+			return -1;
+		}
+		ret = conversion.read_double_from_h5(h5files[i].c_str(), "slant_range_first_pixel", &first_pixel2);
+		if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+		if (fabs(first_pixel2 - first_pixel1) > 0.1)
+		{
+			fprintf(stderr, "S1_frame_merge(): slant_range_first_pixel disagree!\n");
+			return -1;
+		}
+	}
+
+	Mat phase1;
+	ret = conversion.creat_new_h5(merged_phase_h5);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(h5files[order.at<int>(0)].c_str(), "phase", phase);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(h5files[order.at<int>(0)].c_str(), "acquisition_stop_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time.c_str(), &end1);
+	if (return_check(ret, "utc2gps()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(h5files[order.at<int>(0)].c_str(), "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time.c_str(), &start);
+	if (return_check(ret, "utc2gps()", error_head)) return -1;
+	conversion.write_str_to_h5(merged_phase_h5, "acquisition_start_time", start_time.c_str());
+	ret = conversion.read_str_from_h5(h5files[order.at<int>(num_files - 1)].c_str(), "acquisition_stop_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.write_str_to_h5(merged_phase_h5, "acquisition_stop_time", start_time.c_str());
+	ret = conversion.read_double_from_h5(h5files[order.at<int>(0)].c_str(), "prf", &prf);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	for (int i = 1; i < num_files; i++)
+	{
+		ret = conversion.read_array_from_h5(h5files[order.at<int>(i)].c_str(), "phase", phase1);
+		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+		if (phase1.cols != phase.cols)
+		{
+			fprintf(stderr, "S1_frame_merge(): frame cols mismatch!\n");
+			return -1;
+		}
+		ret = conversion.read_str_from_h5(h5files[order.at<int>(i)].c_str(), "acquisition_start_time", start_time);
+		if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+		ret = conversion.utc2gps(start_time.c_str(), &start2);
+		if (return_check(ret, "utc2gps()", error_head)) return -1;
+		if (end1 < start2)
+		{
+			fprintf(stderr, "S1_frame_merge(): no overlap area between frames!\n");
+			return -1;
+		}
+		int last_upper_count = ((start2 - start) * prf + 1 + ((end1 - start2) * prf + 1) / 2.0) / (double)mul_az;
+		int tmp = last_upper_count * mul_az - ((start2 - start) * prf + 1);
+		tmp = (end1 - start2) * prf + 1 - tmp;
+		int next_lower_start = round((double)tmp / (double)mul_az);
+
+		phase(cv::Range(0, last_upper_count), cv::Range(0, phase.cols)).copyTo(phase);
+		phase1(cv::Range(next_lower_start, phase1.rows), cv::Range(0, phase1.cols)).copyTo(phase1);
+		cv::vconcat(phase, phase1, phase);
+
+		ret = conversion.read_str_from_h5(h5files[order.at<int>(i)].c_str(), "acquisition_stop_time", start_time);
+		if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+		ret = conversion.utc2gps(start_time.c_str(), &end1);
+		if (return_check(ret, "utc2gps()", error_head)) return -1;
+	}
+	conversion.write_array_to_h5(merged_phase_h5, "phase", phase);
+	conversion.write_int_to_h5(merged_phase_h5, "multilook_az", mul_az);
+	conversion.write_int_to_h5(merged_phase_h5, "multilook_rg", mul_rg);
+	conversion.write_int_to_h5(merged_phase_h5, "azimuth_len", phase.rows);
+	conversion.write_int_to_h5(merged_phase_h5, "range_len", phase.cols);
+	conversion.write_double_to_h5(merged_phase_h5, "prf", prf);
+	conversion.write_double_to_h5(merged_phase_h5, "range_spacing", range_spacing);
+	conversion.write_double_to_h5(merged_phase_h5, "slant_range_first_pixel", first_pixel1);
+	return 0;
+}
+
+int Utils::S1_frame_merge(const char* frame1_h5, const char* frame2_h5, const char* outframe_h5)
+{
+	if (!frame1_h5 || !frame2_h5 || !outframe_h5)
+	{
+		fprintf(stderr, "S1_frame_merge(): input check failed!\n");
+		return -1;
+	}
+	//检查是否属于同一轨道相邻frame
+	int ret;
+	FormatConversion conversion;
+	double start1, start2, end1, end2, prf, slant_range_first_pixel1, slant_range_first_pixel2;
+	string start_time1, end_time1, start_time2, end_time2;
+	ret = conversion.read_str_from_h5(frame1_h5, "acquisition_start_time", start_time1);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time1.c_str(), &start1);
+	ret = conversion.read_str_from_h5(frame1_h5, "acquisition_stop_time", end_time1);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(end_time1.c_str(), &end1);
+	ret = conversion.read_str_from_h5(frame2_h5, "acquisition_start_time", start_time2);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time2.c_str(), &start2);
+	ret = conversion.read_str_from_h5(frame2_h5, "acquisition_stop_time", end_time2);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(end_time2.c_str(), &end2);
+	if (start1 < start2)
+	{
+		if (start2 > end1)
+		{
+			fprintf(stderr, "S1_frame_merge(): not adjacent frames!\n");
+			return -1;
+		}
+	}
+	else
+	{
+		if (start1 > end2)
+		{
+			fprintf(stderr, "S1_frame_merge(): not adjacent frames!\n");
+			return -1;
+		}
+	}
+	ret = conversion.read_double_from_h5(frame1_h5, "slant_range_first_pixel", &slant_range_first_pixel1);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(frame2_h5, "slant_range_first_pixel", &slant_range_first_pixel2);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	if (fabs(slant_range_first_pixel1 - slant_range_first_pixel2) > 0.1)
+	{
+		fprintf(stderr, "S1_frame_merge(): not the same track!\n");
+		return -1;
+	}
+
+	ret = conversion.creat_new_h5(outframe_h5);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	//融合azimuthFmRateList
+	Mat azimuthFmRateList1, azimuthFmRateList2;
+	ret = conversion.read_array_from_h5(frame1_h5, "azimuthFmRateList", azimuthFmRateList1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "azimuthFmRateList", azimuthFmRateList2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		int t_remain = azimuthFmRateList1.rows - 1;
+		for (int i = 1; i < azimuthFmRateList1.rows; i++)
+		{
+			if ((azimuthFmRateList2.at<double>(0, 0) >= azimuthFmRateList1.at<double>(i - 1, 0)) &&
+				(azimuthFmRateList2.at<double>(0, 0) <= azimuthFmRateList1.at<double>(i, 0))
+				)
+			{
+				t_remain = i - 1; break;
+			}
+		}
+		azimuthFmRateList1(cv::Range(0, t_remain), cv::Range(0, azimuthFmRateList1.cols)).copyTo(azimuthFmRateList1);
+		cv::vconcat(azimuthFmRateList1, azimuthFmRateList2, azimuthFmRateList1);
+		conversion.write_array_to_h5(outframe_h5, "azimuthFmRateList", azimuthFmRateList1);
+	}
+	else
+	{
+		int t_remain = azimuthFmRateList2.rows - 1;
+		for (int i = 1; i < azimuthFmRateList2.rows; i++)
+		{
+			if ((azimuthFmRateList1.at<double>(0, 0) >= azimuthFmRateList2.at<double>(i - 1, 0)) &&
+				(azimuthFmRateList1.at<double>(0, 0) <= azimuthFmRateList2.at<double>(i, 0))
+				)
+			{
+				t_remain = i - 1; break;
+			}
+		}
+		azimuthFmRateList2(cv::Range(0, t_remain), cv::Range(0, azimuthFmRateList2.cols)).copyTo(azimuthFmRateList2);
+		cv::vconcat(azimuthFmRateList2, azimuthFmRateList1, azimuthFmRateList1);
+		conversion.write_array_to_h5(outframe_h5, "azimuthFmRateList", azimuthFmRateList1);
+	}
+	//融合dcEstimateList
+	Mat dcEstimateList1, dcEstimateList2;
+	ret = conversion.read_array_from_h5(frame1_h5, "dcEstimateList", dcEstimateList1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "dcEstimateList", dcEstimateList2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		int t_remain = dcEstimateList1.rows - 1;
+		for (int i = 1; i < dcEstimateList1.rows; i++)
+		{
+			if ((dcEstimateList2.at<double>(0, 0) >= dcEstimateList1.at<double>(i - 1, 0)) &&
+				(dcEstimateList2.at<double>(0, 0) <= dcEstimateList1.at<double>(i, 0))
+				)
+			{
+				t_remain = i - 1; break;
+			}
+		}
+		dcEstimateList1(cv::Range(0, t_remain), cv::Range(0, dcEstimateList1.cols)).copyTo(dcEstimateList1);
+		cv::vconcat(dcEstimateList1, dcEstimateList2, dcEstimateList1);
+		conversion.write_array_to_h5(outframe_h5, "dcEstimateList", dcEstimateList1);
+	}
+	else
+	{
+		int t_remain = dcEstimateList2.rows - 1;
+		for (int i = 1; i < dcEstimateList2.rows; i++)
+		{
+			if ((dcEstimateList1.at<double>(0, 0) >= dcEstimateList2.at<double>(i - 1, 0)) &&
+				(dcEstimateList1.at<double>(0, 0) <= dcEstimateList2.at<double>(i, 0))
+				)
+			{
+				t_remain = i - 1; break;
+			}
+		}
+		dcEstimateList2(cv::Range(0, t_remain), cv::Range(0, dcEstimateList2.cols)).copyTo(dcEstimateList2);
+		cv::vconcat(dcEstimateList2, dcEstimateList1, dcEstimateList1);
+		conversion.write_array_to_h5(outframe_h5, "dcEstimateList", dcEstimateList1);
+	}
+	//融合state_vec
+	Mat state_vec1, state_vec2;
+	ret = conversion.read_array_from_h5(frame1_h5, "state_vec", state_vec1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "state_vec", state_vec2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		int t_remain = state_vec1.rows - 1;
+		for (int i = 1; i < state_vec1.rows; i++)
+		{
+			if ((state_vec2.at<double>(0, 0) >= state_vec1.at<double>(i - 1, 0)) &&
+				(state_vec2.at<double>(0, 0) <= state_vec1.at<double>(i, 0))
+				)
+			{
+				t_remain = i - 1; break;
+			}
+		}
+		state_vec1(cv::Range(0, t_remain), cv::Range(0, state_vec1.cols)).copyTo(state_vec1);
+		cv::vconcat(state_vec1, state_vec2, state_vec1);
+		conversion.write_array_to_h5(outframe_h5, "state_vec", state_vec1);
+	}
+	else
+	{
+		int t_remain = state_vec2.rows - 1;
+		for (int i = 1; i < state_vec2.rows; i++)
+		{
+			if ((state_vec1.at<double>(0, 0) >= state_vec2.at<double>(i - 1, 0)) &&
+				(state_vec1.at<double>(0, 0) <= state_vec2.at<double>(i, 0))
+				)
+			{
+				t_remain = i - 1; break;
+			}
+		}
+		state_vec2(cv::Range(0, t_remain), cv::Range(0, state_vec2.cols)).copyTo(state_vec2);
+		cv::vconcat(state_vec2, state_vec1, state_vec1);
+		conversion.write_array_to_h5(outframe_h5, "state_vec", state_vec1);
+	}
+	//融合fine_state_vec
+	Mat fine_state_vec1, fine_state_vec2;
+	ret = conversion.read_array_from_h5(frame1_h5, "fine_state_vec", fine_state_vec1);
+	ret += conversion.read_array_from_h5(frame2_h5, "fine_state_vec", fine_state_vec2);
+	if (ret == 0)
+	{
+		if (start1 < start2)
+		{
+			int t_remain = fine_state_vec1.rows - 1;
+			for (int i = 1; i < fine_state_vec1.rows; i++)
+			{
+				if ((fine_state_vec2.at<double>(0, 0) >= fine_state_vec1.at<double>(i - 1, 0)) &&
+					(fine_state_vec2.at<double>(0, 0) <= fine_state_vec1.at<double>(i, 0))
+					)
+				{
+					t_remain = i - 1; break;
+				}
+			}
+			fine_state_vec1(cv::Range(0, t_remain), cv::Range(0, fine_state_vec1.cols)).copyTo(fine_state_vec1);
+			cv::vconcat(fine_state_vec1, fine_state_vec2, fine_state_vec1);
+			conversion.write_array_to_h5(outframe_h5, "fine_state_vec", fine_state_vec1);
+		}
+		else
+		{
+			int t_remain = fine_state_vec2.rows - 1;
+			for (int i = 1; i < fine_state_vec2.rows; i++)
+			{
+				if ((fine_state_vec1.at<double>(0, 0) >= fine_state_vec2.at<double>(i - 1, 0)) &&
+					(fine_state_vec1.at<double>(0, 0) <= fine_state_vec2.at<double>(i, 0))
+					)
+				{
+					t_remain = i - 1; break;
+				}
+			}
+			fine_state_vec2(cv::Range(0, t_remain), cv::Range(0, fine_state_vec2.cols)).copyTo(fine_state_vec2);
+			cv::vconcat(fine_state_vec2, fine_state_vec1, fine_state_vec1);
+			conversion.write_array_to_h5(outframe_h5, "fine_state_vec", fine_state_vec1);
+		}
+	}
+	
+	//融合gcps
+	Mat gcps1, gcps2;
+	int rows1, rows2;
+	ret = conversion.read_int_from_h5(frame1_h5, "azimuth_len", &rows1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(frame2_h5, "azimuth_len", &rows2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame1_h5, "gcps", gcps1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "gcps", gcps2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		int t;
+		for (int i = 0; i < gcps2.rows; i++)
+		{
+			if (fabs(gcps2.at<double>(i, 3)) > 1.0)
+			{
+				t = i; break;
+			}
+		}
+		gcps2(cv::Range(t, gcps2.rows), cv::Range(0, gcps2.cols)).copyTo(gcps2);
+		Mat temp = gcps2(cv::Range(0, gcps2.rows), cv::Range(3, 4)) + gcps1.at<double>(gcps1.rows - 1, 3);
+		temp.copyTo(gcps2(cv::Range(0, gcps2.rows), cv::Range(3, 4)));
+		cv::vconcat(gcps1, gcps2, gcps1);
+		conversion.write_array_to_h5(outframe_h5, "gcps", gcps1);
+	}
+	else
+	{
+		int t;
+		for (int i = 0; i < gcps1.rows; i++)
+		{
+			if (fabs(gcps1.at<double>(i, 3)) > 1.0)
+			{
+				t = i; break;
+			}
+		}
+		gcps1(cv::Range(t, gcps1.rows), cv::Range(0, gcps1.cols)).copyTo(gcps1);
+		Mat temp = gcps1(cv::Range(0, gcps1.rows), cv::Range(3, 4)) + gcps2.at<double>(gcps2.rows - 1, 3);
+		temp.copyTo(gcps1(cv::Range(0, gcps1.rows), cv::Range(3, 4)));
+		cv::vconcat(gcps2, gcps1, gcps1);
+		conversion.write_array_to_h5(outframe_h5, "gcps", gcps1);
+	}
+	//融合burstAzimuthTime
+	Mat burstAzimuthTime1, burstAzimuthTime2;
+	ret = conversion.read_array_from_h5(frame1_h5, "burstAzimuthTime", burstAzimuthTime1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "burstAzimuthTime", burstAzimuthTime2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		cv::vconcat(burstAzimuthTime1, burstAzimuthTime2, burstAzimuthTime1);
+	}
+	else
+	{
+		cv::vconcat(burstAzimuthTime2, burstAzimuthTime1, burstAzimuthTime1);
+	}
+	conversion.write_array_to_h5(outframe_h5, "burstAzimuthTime", burstAzimuthTime1);
+	//融合firstValidLine
+	Mat firstValidLine1, firstValidLine2;
+	ret = conversion.read_array_from_h5(frame1_h5, "firstValidLine", firstValidLine1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "firstValidLine", firstValidLine2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		cv::vconcat(firstValidLine1, firstValidLine2, firstValidLine1);
+	}
+	else
+	{
+		cv::vconcat(firstValidLine2, firstValidLine1, firstValidLine1);
+	}
+	conversion.write_array_to_h5(outframe_h5, "firstValidLine", firstValidLine1);
+	//融合firstValidSample
+	Mat firstValidSample1, firstValidSample2;
+	ret = conversion.read_array_from_h5(frame1_h5, "firstValidSample", firstValidSample1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "firstValidSample", firstValidSample2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		cv::vconcat(firstValidSample1, firstValidSample2, firstValidSample1);
+	}
+	else
+	{
+		cv::vconcat(firstValidSample2, firstValidSample1, firstValidSample1);
+	}
+	conversion.write_array_to_h5(outframe_h5, "firstValidSample", firstValidSample1);
+	//融合lastValidLine
+	Mat lastValidLine1, lastValidLine2;
+	ret = conversion.read_array_from_h5(frame1_h5, "lastValidLine", lastValidLine1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "lastValidLine", lastValidLine2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		cv::vconcat(lastValidLine1, lastValidLine2, lastValidLine1);
+	}
+	else
+	{
+		cv::vconcat(lastValidLine2, lastValidLine1, lastValidLine1);
+	}
+	conversion.write_array_to_h5(outframe_h5, "lastValidLine", lastValidLine1);
+	//融合lastValidSample
+	Mat lastValidSample1, lastValidSample2;
+	ret = conversion.read_array_from_h5(frame1_h5, "lastValidSample", lastValidSample1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(frame2_h5, "lastValidSample", lastValidSample2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	if (start1 < start2)
+	{
+		cv::vconcat(lastValidSample1, lastValidSample2, lastValidSample1);
+	}
+	else
+	{
+		cv::vconcat(lastValidSample2, lastValidSample1, lastValidSample1);
+	}
+	conversion.write_array_to_h5(outframe_h5, "lastValidSample", lastValidSample1);
+	//融合拍摄时间
+	if (start1 < start2)
+	{
+		conversion.write_str_to_h5(outframe_h5, "acquisition_start_time", start_time1.c_str());
+		conversion.write_str_to_h5(outframe_h5, "acquisition_stop_time", end_time2.c_str());
+	}
+	else
+	{
+		conversion.write_str_to_h5(outframe_h5, "acquisition_start_time", start_time2.c_str());
+		conversion.write_str_to_h5(outframe_h5, "acquisition_stop_time", end_time1.c_str());
+	}
+	//融合azimuthSteeringRate
+	double azimuthSteeringRate;
+	ret = conversion.read_double_from_h5(frame1_h5, "azimuthSteeringRate", &azimuthSteeringRate);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	conversion.write_double_to_h5(outframe_h5, "azimuthSteeringRate", azimuthSteeringRate);
+	//融合azimuth_len，range_len
+	int azimuth_len1, range_len1, azimuth_len2, range_len2;
+	ret = conversion.read_int_from_h5(frame1_h5, "azimuth_len", &azimuth_len1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(frame1_h5, "range_len", &range_len1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(frame2_h5, "azimuth_len", &azimuth_len2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(frame2_h5, "range_len", &range_len2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	azimuth_len1 += azimuth_len2;
+	conversion.write_int_to_h5(outframe_h5, "azimuth_len", azimuth_len1);
+	int range_len = range_len1 >= range_len2 ? range_len1 : range_len2;
+	conversion.write_int_to_h5(outframe_h5, "range_len", range_len1);
+	//融合azimuth_spacing，range_spacing
+	double azimuth_spacing, range_spacing;
+	ret = conversion.read_double_from_h5(frame1_h5, "azimuth_spacing", &azimuth_spacing);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	conversion.write_double_to_h5(outframe_h5, "azimuth_spacing", azimuth_spacing);
+	ret = conversion.read_double_from_h5(frame1_h5, "range_spacing", &range_spacing);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	conversion.write_double_to_h5(outframe_h5, "range_spacing", range_spacing);
+	//burstCount, carrier_frequency, heading, incidence_center, linesPerBurst, prf, samplesPerBurst, 
+	double carrier_frequency, heading, incidence_center, slant_range_first_pixel;
+	int burstCount1, burstCount2, linesPerBurst, samplesPerBurst;
+	conversion.read_double_from_h5(frame1_h5, "carrier_frequency", &carrier_frequency);
+	conversion.read_double_from_h5(frame1_h5, "slant_range_first_pixel", &slant_range_first_pixel);
+	conversion.read_double_from_h5(frame1_h5, "incidence_center", &incidence_center);
+	conversion.read_double_from_h5(frame1_h5, "heading", &heading);
+	conversion.read_double_from_h5(frame1_h5, "prf", &prf);
+	conversion.read_int_from_h5(frame1_h5, "burstCount", &burstCount1);
+	conversion.read_int_from_h5(frame2_h5, "burstCount", &burstCount2);
+	conversion.read_int_from_h5(frame1_h5, "linesPerBurst", &linesPerBurst);
+	//conversion.read_int_from_h5(frame1_h5, "samplesPerBurst", &samplesPerBurst);
+	conversion.write_double_to_h5(outframe_h5, "slant_range_first_pixel", slant_range_first_pixel);
+	conversion.write_double_to_h5(outframe_h5, "carrier_frequency", carrier_frequency);
+	conversion.write_double_to_h5(outframe_h5, "incidence_center", incidence_center);
+	conversion.write_double_to_h5(outframe_h5, "heading", heading);
+	conversion.write_double_to_h5(outframe_h5, "prf", prf);
+	conversion.write_int_to_h5(outframe_h5, "burstCount", burstCount1 + burstCount2);
+	conversion.write_int_to_h5(outframe_h5, "linesPerBurst", linesPerBurst);
+	conversion.write_int_to_h5(outframe_h5, "samplesPerBurst", range_len);
+
+	//sensor, swath, polarization, orbit_dir, imaging_mode;
+	string sensor, swath, polarization, orbit_dir, imaging_mode;
+	conversion.read_str_from_h5(frame1_h5, "sensor", sensor);
+	conversion.read_str_from_h5(frame1_h5, "swath", swath);
+	conversion.read_str_from_h5(frame1_h5, "polarization", polarization);
+	conversion.read_str_from_h5(frame1_h5, "orbit_dir", orbit_dir);
+	conversion.read_str_from_h5(frame1_h5, "imaging_mode", imaging_mode);
+
+	conversion.write_str_to_h5(outframe_h5, "sensor", sensor.c_str());
+	conversion.write_str_to_h5(outframe_h5, "swath", swath.c_str());
+	conversion.write_str_to_h5(outframe_h5, "polarization", polarization.c_str());
+	conversion.write_str_to_h5(outframe_h5, "orbit_dir", orbit_dir.c_str());
+	conversion.write_str_to_h5(outframe_h5, "imaging_mode", imaging_mode.c_str());
+
+	//s_re, s_im
+	Mat s_re, s_re2;
+	conversion.read_array_from_h5(frame1_h5, "s_re", s_re);
+	conversion.read_array_from_h5(frame2_h5, "s_re", s_re2);
+	if (range_len1 != range_len2)
+	{
+		if (range_len1 > range_len2)
+		{
+			cv::copyMakeBorder(s_re2, s_re2, 0, 0, 0, range_len1 - range_len2, BORDER_CONSTANT, cv::Scalar(0));
+		}
+		else
+		{
+			cv::copyMakeBorder(s_re, s_re, 0, 0, 0, range_len2 - range_len1, BORDER_CONSTANT, cv::Scalar(0));
+		}
+	}
+	if (start1 < start2)
+	{
+		cv::vconcat(s_re, s_re2, s_re);
+	}
+	else
+	{
+		cv::vconcat(s_re2, s_re, s_re);
+	}
+	conversion.write_array_to_h5(outframe_h5, "s_re", s_re);
+
+	conversion.read_array_from_h5(frame1_h5, "s_im", s_re);
+	conversion.read_array_from_h5(frame2_h5, "s_im", s_re2);
+	if (range_len1 != range_len2)
+	{
+		if (range_len1 > range_len2)
+		{
+			cv::copyMakeBorder(s_re2, s_re2, 0, 0, 0, range_len1 - range_len2, BORDER_CONSTANT, cv::Scalar(0));
+		}
+		else
+		{
+			cv::copyMakeBorder(s_re, s_re, 0, 0, 0, range_len2 - range_len1, BORDER_CONSTANT, cv::Scalar(0));
+		}
+	}
+	if (start1 < start2)
+	{
+		cv::vconcat(s_re, s_re2, s_re);
+	}
+	else
+	{
+		cv::vconcat(s_re2, s_re, s_re);
+	}
+	conversion.write_array_to_h5(outframe_h5, "s_im", s_re);
+
+
+	//拟合系数
+
+	{
+		Mat lon_coefficient, lat_coefficient, inc_coefficient, row_coefficient, col_coefficient;
+		int numberOfSamples = range_len;
+		double mean_lon, mean_lat, mean_inc, max_lon, max_lat, max_inc, min_lon, min_lat, min_inc;
+		Mat lon, lat, inc, row, col, gcps;
+		gcps1.copyTo(gcps);
+		gcps(cv::Range(0, gcps.rows), cv::Range(0, 1)).copyTo(lon);
+		gcps(cv::Range(0, gcps.rows), cv::Range(1, 2)).copyTo(lat);
+		gcps(cv::Range(0, gcps.rows), cv::Range(3, 4)).copyTo(row);
+		gcps(cv::Range(0, gcps.rows), cv::Range(4, 5)).copyTo(col);
+		gcps(cv::Range(0, gcps.rows), cv::Range(5, 6)).copyTo(inc);
+		mean_lon = cv::mean(lon)[0];
+		mean_lat = cv::mean(lat)[0];
+		mean_inc = cv::mean(inc)[0];
+		cv::minMaxLoc(lon, &min_lon, &max_lon);
+		cv::minMaxLoc(lat, &min_lat, &max_lat);
+		cv::minMaxLoc(inc, &min_inc, &max_inc);
+		lon = (lon - mean_lon) / (max_lon - min_lon + 1e-10);
+		lat = (lat - mean_lat) / (max_lat - min_lat + 1e-10);
+		inc = (inc - mean_inc) / (max_inc - min_inc + 1e-10);
+		row = (row + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);//sentinel行列起点为0，+1统一为1.
+		col = (col + 1 - double(numberOfSamples) * 0.5) / (double(numberOfSamples) + 1e-10);
+
+		//拟合经度
+
+		Mat A, B, b, temp, coefficient, error, eye, b_t, a, a_t;
+		double rms;
+		lon.copyTo(b);
+		A = Mat::ones(lon.rows, 25, CV_64F);
+		row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+		temp = row.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+		col.copyTo(temp);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+		col.copyTo(temp);
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+		col.copyTo(temp);
+		temp = temp.mul(col);
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+		col.copyTo(temp);
+		temp = temp.mul(col);
+		temp = temp.mul(col);
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+		cv::transpose(A, temp);
+		B = temp * b;
+		A.copyTo(a);
+		cv::transpose(a, a_t);
+		A = temp * A;
+		rms = -1.0;
+		if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(b, b_t);
+			error = b_t * b - (b_t * a) * error * (a_t * b);
+			//error = b_t * (eye - a * error * a_t) * b;
+			rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+		}
+		if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+		{
+			temp.create(1, 32, CV_64F);
+			temp.at<double>(0, 0) = mean_lon;
+			temp.at<double>(0, 1) = max_lon - min_lon + 1e-10;
+			temp.at<double>(0, 2) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 3) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 4) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 5) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 31) = rms;
+			cv::transpose(coefficient, coefficient);
+			coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+			temp.copyTo(lon_coefficient);
+		}
+
+		//拟合纬度
+
+		lat.copyTo(b);
+
+		A = Mat::ones(lon.rows, 25, CV_64F);
+		row.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+		temp = row.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+		col.copyTo(temp);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+		col.copyTo(temp);
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+		col.copyTo(temp);
+		temp = temp.mul(col);
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+		col.copyTo(temp);
+		temp = temp.mul(col);
+		temp = temp.mul(col);
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+		temp = temp.mul(row);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+		cv::transpose(A, temp);
+		B = temp * b;
+		A.copyTo(a);
+		cv::transpose(a, a_t);
+		A = temp * A;
+		rms = -1.0;
+		if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(b, b_t);
+			error = b_t * b - (b_t * a) * error * (a_t * b);
+			//error = b_t * (eye - a * error * a_t) * b;
+			rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+		}
+		if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+		{
+			temp.create(1, 32, CV_64F);
+			temp.at<double>(0, 0) = mean_lat;
+			temp.at<double>(0, 1) = max_lat - min_lat + 1e-10;
+			temp.at<double>(0, 2) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 3) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 4) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 5) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 31) = rms;
+			cv::transpose(coefficient, coefficient);
+			coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+			temp.copyTo(lat_coefficient);
+		}
+
+		//拟合下视角
+
+		inc.copyTo(b);
+		A = Mat::ones(inc.rows, 6, CV_64F);
+		col.copyTo(A(cv::Range(0, inc.rows), cv::Range(1, 2)));
+		temp = col.mul(col);
+		temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(2, 3)));
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(3, 4)));
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(4, 5)));
+		temp = temp.mul(col);
+		temp.copyTo(A(cv::Range(0, inc.rows), cv::Range(5, 6)));
+		cv::transpose(A, temp);
+		B = temp * b;
+		A.copyTo(a);
+		cv::transpose(a, a_t);
+		A = temp * A;
+		rms = -1.0;
+		if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(b, b_t);
+			error = b_t * b - (b_t * a) * error * (a_t * b);
+			//error = b_t * (eye - a * error * a_t) * b;
+			rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+		}
+		if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+		{
+			temp.create(1, 11, CV_64F);
+			temp.at<double>(0, 0) = mean_inc;
+			temp.at<double>(0, 1) = max_inc - min_inc + 1e-10;
+			temp.at<double>(0, 2) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 3) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 10) = rms;
+			cv::transpose(coefficient, coefficient);
+			coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(4, 10)));
+			temp.copyTo(inc_coefficient);
+		}
+
+		//拟合行坐标
+
+		row.copyTo(b);
+		A = Mat::ones(lon.rows, 25, CV_64F);
+		lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+		temp = lon.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+		lat.copyTo(temp);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+		lat.copyTo(temp);
+		temp = temp.mul(lat);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+		lat.copyTo(temp);
+		temp = temp.mul(lat);
+		temp = temp.mul(lat);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+		lat.copyTo(temp);
+		temp = temp.mul(lat);
+		temp = temp.mul(lat);
+		temp = temp.mul(lat);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+		cv::transpose(A, temp);
+		B = temp * b;
+		A.copyTo(a);
+		cv::transpose(a, a_t);
+		A = temp * A;
+		rms = -1.0;
+		if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(b, b_t);
+			error = b_t * b - (b_t * a) * error * (a_t * b);
+			//error = b_t * (eye - a * error * a_t) * b;
+			rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+		}
+		if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+		{
+			temp.create(1, 32, CV_64F);
+			temp.at<double>(0, 0) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 1) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 2) = mean_lon;
+			temp.at<double>(0, 3) = max_lon - min_lon + 1e-10;
+			temp.at<double>(0, 4) = mean_lat;
+			temp.at<double>(0, 5) = max_lat - min_lat + 1e-10;
+			temp.at<double>(0, 31) = rms;
+			cv::transpose(coefficient, coefficient);
+			coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+			temp.copyTo(row_coefficient);
+		}
+
+		//拟合列坐标
+
+		col.copyTo(b);
+		A = Mat::ones(lon.rows, 25, CV_64F);
+		lon.copyTo(A(cv::Range(0, lon.rows), cv::Range(1, 2)));
+		temp = lon.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(2, 3)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(3, 4)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(4, 5)));
+
+		lat.copyTo(temp);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(5, 6)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(6, 7)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(7, 8)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(8, 9)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(9, 10)));
+
+		lat.copyTo(temp);
+		temp = temp.mul(lat);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(10, 11)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(11, 12)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(12, 13)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(13, 14)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(14, 15)));
+
+		lat.copyTo(temp);
+		temp = temp.mul(lat);
+		temp = temp.mul(lat);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(15, 16)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(16, 17)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(17, 18)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(18, 19)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(19, 20)));
+
+		lat.copyTo(temp);
+		temp = temp.mul(lat);
+		temp = temp.mul(lat);
+		temp = temp.mul(lat);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(20, 21)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(21, 22)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(22, 23)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(23, 24)));
+		temp = temp.mul(lon);
+		temp.copyTo(A(cv::Range(0, lon.rows), cv::Range(24, 25)));
+
+		cv::transpose(A, temp);
+		B = temp * b;
+		A.copyTo(a);
+		cv::transpose(a, a_t);
+		A = temp * A;
+		rms = -1.0;
+		if (cv::invert(A, error, cv::DECOMP_LU) > 0)
+		{
+			cv::transpose(b, b_t);
+			error = b_t * b - (b_t * a) * error * (a_t * b);
+			//error = b_t * (eye - a * error * a_t) * b;
+			rms = sqrt(error.at<double>(0, 0) / double(b.rows));
+		}
+		if (cv::solve(A, B, coefficient, cv::DECOMP_NORMAL))
+		{
+			temp.create(1, 32, CV_64F);
+			temp.at<double>(0, 0) = double(numberOfSamples) * 0.5;
+			temp.at<double>(0, 1) = double(numberOfSamples) + 1e-10;
+			temp.at<double>(0, 2) = mean_lon;
+			temp.at<double>(0, 3) = max_lon - min_lon + 1e-10;
+			temp.at<double>(0, 4) = mean_lat;
+			temp.at<double>(0, 5) = max_lat - min_lat + 1e-10;
+			temp.at<double>(0, 31) = rms;
+			cv::transpose(coefficient, coefficient);
+			coefficient.copyTo(temp(cv::Range(0, 1), cv::Range(6, 31)));
+			temp.copyTo(col_coefficient);
+		}
+		conversion.write_array_to_h5(outframe_h5, "lon_coefficient", lon_coefficient);
+		conversion.write_array_to_h5(outframe_h5, "lat_coefficient", lat_coefficient);
+		conversion.write_array_to_h5(outframe_h5, "inc_coefficient", inc_coefficient);
+		conversion.write_array_to_h5(outframe_h5, "row_coefficient", row_coefficient);
+		conversion.write_array_to_h5(outframe_h5, "col_coefficient", col_coefficient);
+	}
+	
+	return 0;
+}
+
+int Utils::SAR2UTM(
+	Mat& mapped_lon,
+	Mat& mapped_lat,
+	Mat& phase, 
+	Mat& mapped_phase,
+	int interpolation_method,
+	double* lon_east,
+	double* lon_west,
+	double* lat_north,
+	double* lat_south
+)
+{
+	if (mapped_lat.size() != mapped_lon.size() ||
+		mapped_lat.size() != phase.size() ||
+		phase.rows < 2 ||
+		phase.cols < 2 ||
+		phase.type() != CV_64F ||
+		mapped_lat.type() != CV_32F ||
+		mapped_lon.type() != CV_32F
+		)
+	{
+		fprintf(stderr, "SAR2UTM(): input check failed!\n");
+		return -1;
+	}
+	//确定经纬度覆盖范围
+	double max_lon = -380.0, min_lon = 380.0, max_lat = -380.0, min_lat = 180.0;
+	for (int i = 0; i < mapped_lat.rows; i++)
+	{
+		for (int j = 0; j < mapped_lat.cols; j++)
+		{
+			if (mapped_lat.at<float>(i, j) < 350.0)
+			{
+				min_lat = min_lat > mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : min_lat;
+				max_lat = max_lat < mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : max_lat;
+				min_lon = min_lon > mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : min_lon;
+				max_lon = max_lon < mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : max_lon;
+			}
+		}
+	}
+	//cv::minMaxLoc(mapped_lon, &min_lon, &max_lon);
+	//cv::minMaxLoc(mapped_lat, &min_lat, &max_lat);
+	double west = max_lon - min_lon > 180.0 ? max_lon : min_lon;
+	if (lon_west) *lon_west = west;
+	
+	//确定经纬度采样间隔
+	double lon_interval, lat_interval;
+	Mat temp1, temp2;
+	int rows_start = mapped_lon.rows / 4;
+	int rows_end = rows_start + mapped_lon.rows / 4;
+	mapped_lon(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lon.cols)).copyTo(temp1);
+	mapped_lon(cv::Range(rows_start + 1, rows_end + 1), cv::Range(0, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	lon_interval = cv::mean(temp1)[0];
+	double sigma1, sigma2;
+	std(temp1, &sigma1);
+
+	mapped_lon(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lon.cols - 1)).copyTo(temp1);
+	mapped_lon(cv::Range(rows_start, rows_end), cv::Range(1, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	std(temp1, &sigma2);
+	lon_interval = (cv::mean(temp1)[0] + fabs(lon_interval)) / 2.0;
+	lon_interval = lon_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	mapped_lat(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lat.cols)).copyTo(temp1);
+	mapped_lat(cv::Range(rows_start + 1, rows_end + 1), cv::Range(0, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = cv::mean(temp1)[0];
+	std(temp1, &sigma1);
+
+	mapped_lat(cv::Range(rows_start, rows_end), cv::Range(0, mapped_lat.cols - 1)).copyTo(temp1);
+	mapped_lat(cv::Range(rows_start, rows_end), cv::Range(1, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = (cv::mean(temp1)[0] + lat_interval) / 2.0;
+	std(temp1, &sigma2);
+	lat_interval = lat_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	int rows = phase.rows; int cols = phase.cols;
+	
+
+	//计算UTM坐标系相位尺寸
+	int UTM_rows = (max_lat - min_lat) / lat_interval;
+	UTM_rows += 2;
+	double south = max_lat - (double)(UTM_rows - 1) * lat_interval;
+	double north = max_lat;
+	if (lat_north) *lat_north = north;
+	if (lat_south) *lat_south = south;
+	double max_lon_temp = max_lon - min_lon;
+	max_lon_temp = max_lon_temp > 180.0 ? 360.0 - max_lon_temp : max_lon_temp;
+	int UTM_cols = max_lon_temp / lon_interval;
+	UTM_cols += 2;
+	double east = west + (double)(UTM_cols - 1) * lon_interval;
+	east = east > 180.0 ? east - 360.0 : east;
+	if (lon_east) *lon_east = east;
+	Mat b_filled(UTM_rows, UTM_cols, CV_8U); b_filled = 0;
+	mapped_phase.create(UTM_rows, UTM_cols, CV_64F); mapped_phase = 0.0;
+	//开始地理编码
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			double lon, lat;
+			int row, col;
+			lon = mapped_lon.at<float>(i, j);
+			if (lon > 350.0) continue;
+			lat = mapped_lat.at<float>(i, j);
+			row = (int)round((lat - min_lat) / lat_interval);
+			lon = fabs(lon - west);
+			lon = lon > 180.0 ? 360.0 - lon : lon;
+			col = (int)round(lon / lon_interval);
+			mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
+			b_filled.at<uchar>(row, col) = 1;
+		}
+	}
+
+	//插值
+	if (interpolation_method == 0)
+	{
+		for (int i = 0; i < UTM_rows; i++)
+		{
+			for (int j = 0; j < UTM_cols; j++)
+			{
+				if (b_filled.at<uchar>(i, j) != 0) continue;
+				int up, down, left, right, up_count, down_count, left_count, right_count;
+				double value1, value2, ratio1, ratio2;
+				//寻找上面有值的点
+				up = i;
+				while (true)
+				{
+					up--;
+					if (up < 0) break;
+					if (b_filled.at<uchar>(up, j) != 0) break;
+				}
+				//寻找下面有值的点
+				down = i;
+				while (true)
+				{
+					down++;
+					if (down > UTM_rows - 1) break;
+					if (b_filled.at<uchar>(down, j) != 0) break;
+				}
+				//寻找左边有值的点
+				left = j;
+				while (true)
+				{
+					left--;
+					if (left < 0) break;
+					if (b_filled.at<uchar>(i, left) != 0) break;
+				}
+				//寻找右边有值的点
+				right = j;
+				while (true)
+				{
+					right++;
+					if (right > UTM_cols - 1) break;
+					if (b_filled.at<uchar>(i, right) != 0) break;
+				}
+
+				//上下左右都有值
+				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+				{
+					int x_i = i, x_j = j;
+					int down_distance = down - i;
+					int up_distance = i - up;
+					int left_distance = j - left;
+					int right_distance = right - j;
+					if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+					{
+						x_i = down; x_j = j;
+					}
+					else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+					{
+						x_i = up; x_j = j;
+					}
+					else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+					{
+						x_i = i; x_j = left;
+					}
+					else
+					{
+						x_i = i; x_j = right;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+				//上下有值
+				if (up >= 0 && down <= UTM_rows - 1)
+				{
+					int x_i = i, x_j = j;
+					int down_distance = down - i;
+					int up_distance = i - up;
+					if (down_distance < up_distance)
+					{
+						x_i = down; x_j = j;
+					}
+					else
+					{
+						x_i = down; x_j = j;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+				//左右有值
+				if (left >= 0 && right <= UTM_cols - 1)
+				{
+					int x_i = i, x_j = j;
+					int left_distance = j - left;
+					int right_distance = right - j;
+					if (left_distance < right_distance)
+					{
+						x_i = i; x_j = left;
+					}
+					else
+					{
+						x_i = i; x_j = right;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < UTM_rows; i++)
+		{
+			for (int j = 0; j < UTM_cols; j++)
+			{
+				if (b_filled.at<uchar>(i, j) != 0) continue;
+				int up, down, left, right, up_count, down_count, left_count, right_count;
+				double value1, value2, ratio1, ratio2;
+				//寻找上面有值的点
+				up = i;
+				while (true)
+				{
+					up--;
+					if (up < 0) break;
+					if (b_filled.at<uchar>(up, j) != 0) break;
+				}
+				//寻找下面有值的点
+				down = i;
+				while (true)
+				{
+					down++;
+					if (down > UTM_rows - 1) break;
+					if (b_filled.at<uchar>(down, j) != 0) break;
+				}
+				//寻找左边有值的点
+				left = j;
+				while (true)
+				{
+					left--;
+					if (left < 0) break;
+					if (b_filled.at<uchar>(i, left) != 0) break;
+				}
+				//寻找右边有值的点
+				right = j;
+				while (true)
+				{
+					right++;
+					if (right > UTM_cols - 1) break;
+					if (b_filled.at<uchar>(i, right) != 0) break;
+				}
+
+				//上下左右都有值
+				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+				{
+					
+					ratio1 = double(j - left) / double(right - left);
+					value1 = double(mapped_phase.at<double>(i, left)) +
+						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+					ratio2 = double(i - up) / double(down - up);
+					value2 = double(mapped_phase.at<double>(up, j)) +
+						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+					mapped_phase.at<double>(i, j) = (value1 + value2) / 2.0;
+					continue;
+				}
+				//上下有值
+				if (up >= 0 && down <= UTM_rows - 1)
+				{
+					ratio2 = double(i - up) / double(down - up);
+					value2 = double(mapped_phase.at<double>(up, j)) +
+						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+					mapped_phase.at<double>(i, j) = value2;
+					continue;
+				}
+				//左右有值
+				if (left >= 0 && right <= UTM_cols - 1)
+				{
+					ratio1 = double(j - left) / double(right - left);
+					value1 = double(mapped_phase.at<double>(i, left)) +
+						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+					mapped_phase.at<double>(i, j) = value1;
+					continue;
+				}
+			}
+		}
+	}
+	
+
+	cv::flip(mapped_phase, mapped_phase, 0);
+	return 0;
+}
+
+int Utils::SAR2UTM(
+	Mat& mapped_lon,
+	Mat& mapped_lat,
+	ComplexMat& slc, 
+	ComplexMat& mapped_slc, 
+	int interpolation_method,
+	double* lon_east,
+	double* lon_west,
+	double* lat_north,
+	double* lat_south
+)
+{
+	if (mapped_lat.size() != mapped_lon.size() ||
+		mapped_lat.size() != slc.re.size() ||
+		mapped_lat.size() != slc.im.size() ||
+		slc.GetRows() < 2 ||
+		slc.GetCols() < 2 ||
+		(slc.type() != CV_16S && slc.type() != CV_32F) ||
+		mapped_lat.type() != CV_32F ||
+		mapped_lon.type() != CV_32F
+		)
+	{
+		fprintf(stderr, "SAR2UTM(): input check failed!\n");
+		return -1;
+	}
+	//确定经纬度覆盖范围
+	double max_lon, min_lon, max_lat, min_lat;
+	cv::minMaxLoc(mapped_lon, &min_lon, &max_lon);
+	cv::minMaxLoc(mapped_lat, &min_lat, &max_lat);
+	double west = max_lon - min_lon > 180.0 ? max_lon : min_lon;
+	if (lon_west) *lon_west = west;
+	//确定经纬度采样间隔
+	double lon_interval, lat_interval;
+	Mat temp1, temp2;
+	mapped_lon(cv::Range(0, mapped_lon.rows - 1), cv::Range(0, mapped_lon.cols)).copyTo(temp1);
+	mapped_lon(cv::Range(1, mapped_lon.rows), cv::Range(0, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	lon_interval = cv::mean(temp1)[0];
+	double sigma1, sigma2;
+	std(temp1, &sigma1);
+
+	mapped_lon(cv::Range(0, mapped_lon.rows), cv::Range(0, mapped_lon.cols - 1)).copyTo(temp1);
+	mapped_lon(cv::Range(0, mapped_lon.rows), cv::Range(1, mapped_lon.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = temp1 / 180.0 * PI;
+	wrap(temp1, temp1);
+	temp1 = temp1 / PI * 180.0;
+	temp1 = cv::abs(temp1);
+	std(temp1, &sigma2);
+	lon_interval = (cv::mean(temp1)[0] + fabs(lon_interval)) / 2.0;
+	lon_interval = lon_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	mapped_lat(cv::Range(0, mapped_lat.rows - 1), cv::Range(0, mapped_lat.cols)).copyTo(temp1);
+	mapped_lat(cv::Range(1, mapped_lat.rows), cv::Range(0, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = cv::mean(temp1)[0];
+	std(temp1, &sigma1);
+
+	mapped_lat(cv::Range(0, mapped_lat.rows), cv::Range(0, mapped_lat.cols - 1)).copyTo(temp1);
+	mapped_lat(cv::Range(0, mapped_lat.rows), cv::Range(1, mapped_lat.cols)).copyTo(temp2);
+	temp1 = temp2 - temp1;
+	temp1 = cv::abs(temp1);
+	lat_interval = (cv::mean(temp1)[0] + lat_interval) / 2.0;
+	std(temp1, &sigma2);
+	lat_interval = lat_interval + 1.0 * (sigma1 + sigma2) / 2.0;
+
+	int rows = slc.GetRows(); int cols = slc.GetCols();
+
+	
+	
+	//计算UTM坐标系相位尺寸
+	int UTM_rows = (max_lat - min_lat) / lat_interval;
+	UTM_rows += 2;
+	double south = max_lat - (double)(UTM_rows - 1) * lat_interval;
+	double north = max_lat;
+	if (lat_north) *lat_north = north;
+	if (lat_south) *lat_south = south;
+	double max_lon_temp = max_lon - min_lon;
+	max_lon_temp = max_lon_temp > 180.0 ? 360.0 - max_lon_temp : max_lon_temp;
+	int UTM_cols = max_lon_temp / lon_interval;
+	UTM_cols += 2;
+	double east = west + (double)(UTM_cols - 1) * lon_interval;
+	east = east > 180.0 ? east - 360.0 : east;
+	if (lon_east) *lon_east = east;
+	Mat b_filled(UTM_rows, UTM_cols, CV_8U); b_filled = 0;
+	mapped_slc.re.create(UTM_rows, UTM_cols, slc.type()); mapped_slc.im.create(UTM_rows, UTM_cols, slc.type());
+	mapped_slc.re = 0;
+	mapped_slc.im = 0;
+	//开始地理编码
+	if (slc.type() == CV_16S)
+	{
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<float>(i, j);
+				lat = mapped_lat.at<float>(i, j);
+				row = (int)round((lat - min_lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_slc.re.at<short>(row, col) = slc.re.at<short>(i, j);
+				mapped_slc.im.at<short>(row, col) = slc.im.at<short>(i, j);
+				b_filled.at<uchar>(row, col) = 1;
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<float>(i, j);
+				lat = mapped_lat.at<float>(i, j);
+				row = (int)round((lat - min_lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_slc.re.at<float>(row, col) = slc.re.at<float>(i, j);
+				mapped_slc.im.at<float>(row, col) = slc.im.at<float>(i, j);
+				b_filled.at<uchar>(row, col) = 1;
+			}
+		}
+	}
+	
+
+	//插值
+	if (interpolation_method == 0)
+	{
+		if (slc.type() == CV_16S)
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+						{
+							x_i = up; x_j = j;
+						}
+						else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<short>(i, j) = mapped_slc.re.at<short>(x_i, x_j);
+						mapped_slc.im.at<short>(i, j) = mapped_slc.im.at<short>(x_i, x_j);
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						if (down_distance < up_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else
+						{
+							x_i = down; x_j = j;
+						}
+						mapped_slc.re.at<short>(i, j) = mapped_slc.re.at<short>(x_i, x_j);
+						mapped_slc.im.at<short>(i, j) = mapped_slc.im.at<short>(x_i, x_j);
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						int x_i = i, x_j = j;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<short>(i, j) = mapped_slc.re.at<short>(x_i, x_j);
+						mapped_slc.im.at<short>(i, j) = mapped_slc.im.at<short>(x_i, x_j);
+						continue;
+					}
+				}
+			}
+		}
+		else
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+						{
+							x_i = up; x_j = j;
+						}
+						else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(x_i, x_j);
+						mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(x_i, x_j);
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						int x_i = i, x_j = j;
+						int down_distance = down - i;
+						int up_distance = i - up;
+						if (down_distance < up_distance)
+						{
+							x_i = down; x_j = j;
+						}
+						else
+						{
+							x_i = down; x_j = j;
+						}
+						mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(x_i, x_j);
+						mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(x_i, x_j);
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						int x_i = i, x_j = j;
+						int left_distance = j - left;
+						int right_distance = right - j;
+						if (left_distance < right_distance)
+						{
+							x_i = i; x_j = left;
+						}
+						else
+						{
+							x_i = i; x_j = right;
+						}
+						mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(x_i, x_j);
+						mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(x_i, x_j);
+						continue;
+					}
+				}
+			}
+		}
+		
+	}
+	else
+	{
+		if (slc.type() == CV_16S)
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<short>(i, left)) +
+							double(mapped_slc.re.at<short>(i, right) - mapped_slc.re.at<short>(i, right)) * ratio1;
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<short>(up, j)) +
+							double(mapped_slc.re.at<short>(down, j) - mapped_slc.re.at<short>(up, j)) * ratio2;
+						mapped_slc.re.at<short>(i, j) = (value1 + value2) / 2.0;
+
+						value1 = double(mapped_slc.im.at<short>(i, left)) +
+							double(mapped_slc.im.at<short>(i, right) - mapped_slc.im.at<short>(i, right)) * ratio1;
+						value2 = double(mapped_slc.im.at<short>(up, j)) +
+							double(mapped_slc.im.at<short>(down, j) - mapped_slc.im.at<short>(up, j)) * ratio2;
+						mapped_slc.im.at<short>(i, j) = (value1 + value2) / 2.0;
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<short>(up, j)) +
+							double(mapped_slc.re.at<short>(down, j) - mapped_slc.re.at<short>(up, j)) * ratio2;
+						mapped_slc.re.at<short>(i, j) = value2;
+
+						value2 = double(mapped_slc.im.at<short>(up, j)) +
+							double(mapped_slc.im.at<short>(down, j) - mapped_slc.im.at<short>(up, j)) * ratio2;
+						mapped_slc.im.at<short>(i, j) = value2;
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<short>(i, left)) +
+							double(mapped_slc.re.at<short>(i, right) - mapped_slc.re.at<short>(i, right)) * ratio1;
+						mapped_slc.re.at<short>(i, j) = value1;
+
+						value1 = double(mapped_slc.im.at<short>(i, left)) +
+							double(mapped_slc.im.at<short>(i, right) - mapped_slc.im.at<short>(i, right)) * ratio1;
+						mapped_slc.im.at<short>(i, j) = value1;
+						continue;
+					}
+				}
+			}
+		}
+		else
+		{
+			for (int i = 0; i < UTM_rows; i++)
+			{
+				for (int j = 0; j < UTM_cols; j++)
+				{
+					if (b_filled.at<uchar>(i, j) != 0) continue;
+					int up, down, left, right, up_count, down_count, left_count, right_count;
+					double value1, value2, ratio1, ratio2;
+					//寻找上面有值的点
+					up = i;
+					while (true)
+					{
+						up--;
+						if (up < 0) break;
+						if (b_filled.at<uchar>(up, j) != 0) break;
+					}
+					//寻找下面有值的点
+					down = i;
+					while (true)
+					{
+						down++;
+						if (down > UTM_rows - 1) break;
+						if (b_filled.at<uchar>(down, j) != 0) break;
+					}
+					//寻找左边有值的点
+					left = j;
+					while (true)
+					{
+						left--;
+						if (left < 0) break;
+						if (b_filled.at<uchar>(i, left) != 0) break;
+					}
+					//寻找右边有值的点
+					right = j;
+					while (true)
+					{
+						right++;
+						if (right > UTM_cols - 1) break;
+						if (b_filled.at<uchar>(i, right) != 0) break;
+					}
+
+					//上下左右都有值
+					if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+					{
+
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<float>(i, left)) +
+							double(mapped_slc.re.at<float>(i, right) - mapped_slc.re.at<float>(i, right)) * ratio1;
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<float>(up, j)) +
+							double(mapped_slc.re.at<float>(down, j) - mapped_slc.re.at<float>(up, j)) * ratio2;
+						mapped_slc.re.at<float>(i, j) = (value1 + value2) / 2.0;
+
+						value1 = double(mapped_slc.im.at<float>(i, left)) +
+							double(mapped_slc.im.at<float>(i, right) - mapped_slc.im.at<float>(i, right)) * ratio1;
+						value2 = double(mapped_slc.im.at<float>(up, j)) +
+							double(mapped_slc.im.at<float>(down, j) - mapped_slc.im.at<float>(up, j)) * ratio2;
+						mapped_slc.im.at<float>(i, j) = (value1 + value2) / 2.0;
+						continue;
+					}
+					//上下有值
+					if (up >= 0 && down <= UTM_rows - 1)
+					{
+						ratio2 = double(i - up) / double(down - up);
+						value2 = double(mapped_slc.re.at<float>(up, j)) +
+							double(mapped_slc.re.at<float>(down, j) - mapped_slc.re.at<float>(up, j)) * ratio2;
+						mapped_slc.re.at<float>(i, j) = value2;
+
+						value2 = double(mapped_slc.im.at<float>(up, j)) +
+							double(mapped_slc.im.at<float>(down, j) - mapped_slc.im.at<float>(up, j)) * ratio2;
+						mapped_slc.im.at<float>(i, j) = value2;
+						continue;
+					}
+					//左右有值
+					if (left >= 0 && right <= UTM_cols - 1)
+					{
+						ratio1 = double(j - left) / double(right - left);
+						value1 = double(mapped_slc.re.at<float>(i, left)) +
+							double(mapped_slc.re.at<float>(i, right) - mapped_slc.re.at<float>(i, right)) * ratio1;
+						mapped_slc.re.at<float>(i, j) = value1;
+
+						value1 = double(mapped_slc.im.at<float>(i, left)) +
+							double(mapped_slc.im.at<float>(i, right) - mapped_slc.im.at<float>(i, right)) * ratio1;
+						mapped_slc.im.at<float>(i, j) = value1;
+						continue;
+					}
+				}
+			}
+		}
+	}
+
+
+	cv::flip(mapped_slc.re, mapped_slc.re, 0);
+	cv::flip(mapped_slc.im, mapped_slc.im, 0);
 	return 0;
 }
 

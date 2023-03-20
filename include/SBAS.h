@@ -448,7 +448,8 @@ public:
 	* @param spatial                        空间基线(1×n，单位：m)
 	* @param temporal                       时间基线（1×n，单位：day）
 	* @param spatial_thresh                 空间基线阈值（m）
-	* @param temporal_thresh                时间基线阈值（year）
+	* @param temporal_thresh_low            时间基线低阈值（m）
+	* @param temporal_thresh                时间基线高阈值（year）
 	* @param formation_matrix               干涉组合矩阵（返回值，int型，n×n）
 	* @param spatial_baseline               空间基线矩阵（与干涉组合矩阵对应，单位：m）
 	* @param temporal_baseline              时间基线矩阵（与干涉组合矩阵对应，单位：year）
@@ -458,6 +459,7 @@ public:
 		Mat& spatial,
 		Mat& temporal,
 		double spatial_thresh,
+		double temporal_thresh_low,
 		double temporal_thresh,
 		Mat& formation_matrix,
 		Mat& spatial_baseline,

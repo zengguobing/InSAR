@@ -403,7 +403,7 @@ private:
 	/*经度采样间隔（默认为5.0/6000.0）*/
 	double lonSpacing;
 	/*SRTM全球高程url*/
-	string SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
+	string SRTMURL = "http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
 };
 
 

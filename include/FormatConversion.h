@@ -7,6 +7,7 @@
 #include"Utils.h"
 #include"hdf5.h"
 #include"..\include\tinyxml.h"
+#define Big2Little64(A) ((uint64_t)(A&0xff00000000000000)>>56|(A&0x00ff000000000000)>>40|(A&0x0000ff0000000000)>>24|(A&0x000000ff00000000)>>8|(A&0x00000000ff000000)<<8|(A&0x0000000000ff0000)<<24|(A&0x000000000000ff00)<<40|(A&0x00000000000000ff)<<56)
 #define Big2Little32(A) ((uint32_t)(A&0xff000000)>>24|(uint32_t)(A&0x00ff0000)>>8 | (uint32_t)(A&0x0000ff00)<<8|(uint32_t)(A&0x000000ff)<<24)
 #define Big2Little16(A) ((uint16_t)(A&0xff00)>>8 | (uint16_t)(A&0x00ff)<<8)
 /*********************************************************/
@@ -136,6 +137,19 @@ public:
 		const char* dataNode,
 		const char* dataName,
 		const char* dataPath
+	);
+	/*@brief 添加地理编码节点
+	* @param dataNode            地理编码图像数据节点名
+	* @param dataName            地理编码图像数据名
+	* @param dataPath            地理编码图像数据储存路径（相对路径）
+	* @param level               数据等级
+	* @return 成功返回0，否则返回-1
+	*/
+	int XMLFile_add_geocoding(
+		const char* dataNode,
+		const char* dataName,
+		const char* dataPath,
+		const char* level
 	);
 	/** @brief 添加干涉相位生成节点
 
@@ -396,7 +410,7 @@ public:
 	*/
 	int utc2gps(const char* utc_time, double* gps_time);
 	/** @brief 创建新的h5文件（若文件已存在则覆盖）
-	
+
 	@param filename     文件名
 	*/
 	int creat_new_h5(const char* filename);
@@ -478,7 +492,7 @@ public:
 		Mat& out_array
 	);
 	/** @brief 向已有的H5文件指定数据集矩阵中的指定位置写入子矩阵
-	
+
 	@param h5_filename                   h5文件名
 	@param dataset_name                  数据集名称
 	@param subarray                      子矩阵数据
@@ -536,7 +550,7 @@ public:
 	*/
 	int read_slc_from_TSXcos(const char* filename, ComplexMat& slc);
 	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式
-	
+
 	@param cosar_filename                     TerraSAR-X .cos文件名
 	@param xml_filename                       TerraSAR-X 主xml文件名
 	@param GEOREF_filename                    TerraSAR-X GEOREF.xml文件名
@@ -550,7 +564,7 @@ public:
 		const char* dst_h5_filename
 	);
 	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式
-	
+
 	@param xml_filename                       TerraSAR-X 主xml文件名
 	@param dst_h5_filename                    目标h5文件
 	@return 成功返回0，否则返回-1
@@ -558,6 +572,18 @@ public:
 	int TSX2h5(
 		const char* xml_filename,
 		const char* dst_h5_filename
+	);
+	/** @brief 将TerraSAR-X卫星数据格式转换为自定义的h5格式(带极化选项)
+
+	@param xml_filename                       TerraSAR-X 主xml文件名
+	@param dst_h5_filename                    目标h5文件
+	@param polarization                       极化方式(默认为HH极化)
+	@return 成功返回0，否则返回-1
+	*/
+	int TSX2h5(
+		const char* xml_filename,
+		const char* dst_h5_filename,
+		const char* polarization ="HH"
 	);
 
 
@@ -856,7 +882,7 @@ public:
 	/*DEM路径*/
 	string DEMPath;
 	/*SRTM全球高程url*/
-	string SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
+	string SRTMURL = "http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
 
 	char error_head[512];
 
@@ -914,6 +940,94 @@ private:
 	/*轨道信息是否已更新*/
 	bool isOrbitUpdated;
 };
+
+
+/*------------------------------------------------*/
+/*             COSMO-SkyMed数据读取工具           */
+/*------------------------------------------------*/
+class InSAR_API CSK_reader
+{
+public:
+	CSK_reader(const char* csk_data_file);
+	~CSK_reader();
+	/*@brief 初始化
+	* @param csk_data_file                    COSMO-SkyMed源hdf5数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int init();
+	
+	/*@brief 将数据写入到指定h5文件
+	* @param dst_h5                          指定hdf5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_to_h5(
+		const char* dst_h5
+	);
+
+private:
+
+	/*@brief 从COSMO-SkyMed源hdf5数据L1A产品中读取数据
+	* @param CSK_data_file                    COSMO-SkyMed源hdf5数据文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_data(
+		const char* CSK_data_file
+	);
+	/*@brief 从COSMO-SkyMed源hdf5数据L1A产品中读取单视复图像
+	* @param CSK_data_file                    COSMO-SkyMed源hdf5数据文件
+	* @param slc                              读出的单视复数据矩阵
+	* @return 成功返回0，否则返回-1
+	*/
+
+	int read_slc(
+		const char* CSK_data_file,
+		ComplexMat& slc
+	);
+	/*@brief 从hdf5文件读取string类型属性
+	* @param object_id                       相应的object
+	* @param attribute_name                  string属性名
+	* @param attribute_value                 string属性值（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int get_str_attribute(
+		hid_t object_id,
+		const char* attribute_name,
+		string& attribute_value
+	);
+	/*@brief 从hdf5文件读取数组类型属性
+	* @param object_id                       相应的object
+	* @param attribute_name                  属性名
+	* @param attribute_value                 属性值（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int get_array_attribute(
+		hid_t object_id,
+		const char* attribute_name,
+		Mat& attribute_value
+	);
+
+private:
+	string csk_data_file;
+	bool b_initialized;
+	string acquisition_start_time;
+	string acquisition_stop_time;
+	double azimuth_resolution;
+	double azimuth_spacing;
+	double carrier_frequency;
+	double prf;
+	double range_resolution;
+	double range_spacing;
+	double slant_range_first_pixel;
+	double slant_range_last_pixel;
+	Mat topleft, topright, bottomleft, bottomright;
+	Mat state_vec, inc_coefficient, lon_coefficient, lat_coefficient, row_coefficient, col_coefficient;
+	string lookside;
+	string sensor;
+	string polarization, orbit_direction;
+	ComplexMat slc;
+
+};
+
 
 
 /*------------------------------------------------*/
@@ -1236,6 +1350,21 @@ public:
 		double* lonMax,
 		double* latMin,
 		double* latMax
+	);
+	/*@brief 计算场景地理位置（经纬度）边界
+	* @param lonMin                           最小经度
+	* @param lonMax                           最大经度
+	* @param latMin                           最小纬度
+	* @param latMax                           最大纬度
+	* @param burstIndex                       burst序号（1-based）
+	* @return 成功返回0，否则返回-1
+	*/
+	int computeImageGeoBoundry(
+		double* lonMin,
+		double* lonMax,
+		double* latMin,
+		double* latMax,
+		int burstIndex
 	);
 	/*@brief burst拼接
 	* @param outFile                          deburst输出h5文件

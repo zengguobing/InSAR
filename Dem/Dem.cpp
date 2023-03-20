@@ -4,14 +4,18 @@
 #include"..\include\Dem.h"
 #include"..\include\tinyxml.h"
 #include"..\include\FormatConversion.h"
+#include"..\include\ComplexMat.h"
+#include"..\include\Utils.h"
 #ifdef _DEBUG
 #pragma comment(lib, "FormatConversion_d.lib")
 #pragma comment(lib, "Utils_d.lib")
 #pragma comment(lib, "Deflat_d.lib")
+#pragma comment(lib, "ComplexMat_d.lib")
 #else
 #pragma comment(lib, "FormatConversion.lib")
 #pragma comment(lib, "Utils.lib")
 #pragma comment(lib, "Deflat.lib")
+#pragma comment(lib, "ComplexMat.lib")
 #endif // _DEBUG
 using namespace cv;
 inline bool return_check(int ret, const char* detail_info, const char* error_head)
@@ -694,7 +698,7 @@ int Dem::dem_newton_iter(const char* unwrapped_phase_file, Mat& dem, const char*
 	double r_main = sqrt(sum((sate1(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground).mul(sate1(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground))[0]);
 	double r_slave = sqrt(sum((sate2(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground).mul(sate2(cv::Range(row, row + 1), cv::Range(0, 3)) - xyz_ground))[0]);
 	double C = mode == 1 ? 4 * PI : 2 * PI;
-	double lambda = 3e8 / (carrier_frequency.at<double>(0, 0) + 1e-10);
+	double lambda = VEL_C / (carrier_frequency.at<double>(0, 0) + 1e-10);
 	double phase_real = (r_slave - r_main) / lambda * C;
 	double K = round((phase_real - unwrapped_phase.at<double>(row, col)) / (2 * PI));
 	unwrapped_phase = unwrapped_phase + K * 2 * PI;//相位校正
@@ -951,6 +955,560 @@ int Dem::dem_newton_iter(const char* unwrapped_phase_file, Mat& dem, const char*
 	}
 	if (parallel_check(parallel_flag, "dem_newton_iter()", parallel_error_head)) return -1;
 	dem = dem + llh.at<double>(0, 2) - dem.at<double>(row, col);
+	return 0;
+}
+
+int Dem::dem_newton_iter_test(const char* unwrapped_phase_file, Mat& dem, const char* project_path, int iter_times, int mode)
+{
+	if (unwrapped_phase_file == NULL ||
+		project_path == NULL ||
+		iter_times < 1 ||
+		mode < 1 || mode > 2)
+	{
+		fprintf(stderr, "dem_newton_iter(): input check failed!\n");
+		return -1;
+	}
+
+	/*
+	* 校正至绝对相位
+	*/
+
+	FormatConversion conversion; Utils util;
+	int nr, nc, ret, offset_row, offset_col;
+	double time_interval1, time_interval2, acquisitionStartTime1, acquisitionStartTime2, acquisitionStopTime1,
+		acquisitionStopTime2, wavelength, nearRange;
+	string source_1, source_2, tmp, start_time, end_time;
+	string project(project_path);
+	Mat unwrapped_phase, flat_phase_coefficient, gcps, temp, range_spacing,
+		stateVec1, stateVec2, lat_coefficient, lon_coefficient, prf1, prf2, carrier_frequency;
+	ret = conversion.read_array_from_h5(unwrapped_phase_file, "phase", unwrapped_phase);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	nr = unwrapped_phase.rows; nc = unwrapped_phase.cols;
+	if (nr < 1 || nc < 1)
+	{
+		fprintf(stderr, "dem_newton_iter(): invalide unwrapped_phase !\n");
+		return -1;
+	}
+	ret = conversion.read_array_from_h5(unwrapped_phase_file, "flat_phase_coefficient", flat_phase_coefficient);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(unwrapped_phase_file, "source_1", source_1);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(unwrapped_phase_file, "source_2", source_2);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	tmp = project;
+	source_1 = tmp + source_1;
+	source_2 = tmp + source_2;
+	ret = conversion.read_array_from_h5(source_1.c_str(), "GCP", gcps);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(source_1.c_str(), "offset_row", temp);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	offset_row = temp.at<int>(0, 0);
+	ret = conversion.read_array_from_h5(source_1.c_str(), "offset_col", temp);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	offset_col = temp.at<int>(0, 0);
+	ret = conversion.read_array_from_h5(source_1.c_str(), "range_spacing", range_spacing);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(source_1.c_str(), "state_vec", stateVec1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(source_2.c_str(), "state_vec", stateVec2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(source_1.c_str(), "prf", prf1);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	time_interval1 = 1.0 / (prf1.at<double>(0, 0) + 1e-10);
+	ret = conversion.read_array_from_h5(source_2.c_str(), "prf", prf2);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	time_interval2 = 1.0 / (prf2.at<double>(0, 0) + 1e-10);
+	//ret = conversion.read_array_from_h5(source_1.c_str(), "lat_coefficient", lat_coefficient);
+	//if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	//ret = conversion.read_array_from_h5(source_1.c_str(), "lon_coefficient", lon_coefficient);
+	//if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	ret = conversion.read_array_from_h5(source_1.c_str(), "carrier_frequency", carrier_frequency);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+	wavelength = 3e8 / carrier_frequency.at<double>(0, 0);
+
+	ret = conversion.read_str_from_h5(source_1.c_str(), "acquisition_start_time", start_time);
+	ret = conversion.utc2gps(start_time.c_str(), &acquisitionStartTime1);
+	ret = conversion.read_str_from_h5(source_1.c_str(), "acquisition_stop_time", end_time);
+	ret = conversion.utc2gps(end_time.c_str(), &acquisitionStopTime1);
+	ret = conversion.read_str_from_h5(source_2.c_str(), "acquisition_start_time", start_time);
+	ret = conversion.utc2gps(start_time.c_str(), &acquisitionStartTime2);
+	ret = conversion.read_str_from_h5(source_2.c_str(), "acquisition_stop_time", end_time);
+	ret = conversion.utc2gps(end_time.c_str(), &acquisitionStopTime2);
+
+	ret = conversion.read_double_from_h5(source_1.c_str(), "slant_range_first_pixel", &nearRange);
+
+	//寻找图像范围内的控制点信息
+
+	int num_gcps = gcps.rows;
+	int row, col, i_gcp = 0, count = 0;
+	bool b_gcp = false;
+	vector<int> valid_row;
+	for (i_gcp = 0; i_gcp < num_gcps; i_gcp++)
+	{
+		row = (int)gcps.at<double>(i_gcp, 0);
+		col = (int)gcps.at<double>(i_gcp, 1);
+		if ((row - offset_row - 1) >= 0 && (row - offset_row - 1) < nr && (col - offset_col - 1) >= 0 && (col - offset_col - 1) < nc)
+		{
+			b_gcp = true;
+			valid_row.push_back(i_gcp);
+			//break;
+		}
+	}
+	Mat llh(1, 3, CV_64F), xyz_ground(1, 3, CV_64F);
+	if (b_gcp)
+	{
+		i_gcp = valid_row[0];
+		row = (int)gcps.at<double>(i_gcp, 0);
+		col = (int)gcps.at<double>(i_gcp, 1);
+		llh.at<double>(0, 0) = gcps.at<double>(i_gcp, 3);
+		llh.at<double>(0, 1) = gcps.at<double>(i_gcp, 2);
+		llh.at<double>(0, 2) = gcps.at<double>(i_gcp, 4);
+		row = row - offset_row; col = col - offset_col;
+	}
+	else
+	{
+		return -1;
+	}
+	ret = util.ell2xyz(llh, xyz_ground);
+	if (return_check(ret, "ell2xyz", error_head)) return -1;
+
+
+	/*
+	* 轨道插值
+	*/
+	orbitStateVectors stateVectors1(stateVec1, acquisitionStartTime1, acquisitionStopTime1);
+	stateVectors1.applyOrbit();
+	orbitStateVectors stateVectors2(stateVec2, acquisitionStartTime2, acquisitionStopTime2);
+	stateVectors2.applyOrbit();
+	/*
+	* 寻找图像左上角成像卫星位置
+	*/
+	Mat sate1 = Mat::zeros(nr, 3, CV_64F);//主星位置
+	Mat satev1 = Mat::zeros(nr, 3, CV_64F);//主星位置
+	Mat sate2 = Mat::zeros(nr, 3, CV_64F);//辅星位置
+	//找到零多普勒位置
+	Position pos;Velocity vel;
+	for (int i = 0; i < nr; i++)
+	{
+		stateVectors1.getPosition(acquisitionStartTime1 + double(offset_row + i) * time_interval1, pos);
+		stateVectors1.getVelocity(acquisitionStartTime1 + double(offset_row + i) * time_interval1, vel);
+		sate1.at<double>(i, 0) = pos.x;
+		sate1.at<double>(i, 1) = pos.y;
+		sate1.at<double>(i, 2) = pos.z;
+		satev1.at<double>(i, 0) = vel.vx;
+		satev1.at<double>(i, 1) = vel.vy;
+		satev1.at<double>(i, 2) = vel.vz;
+	}
+
+	//卫星2
+	Position groundPosition;
+	double latitude, longitude, height, dopplerFrequency = 0.0;
+	latitude = gcps.at<double>(i_gcp, 3);
+	longitude = gcps.at<double>(i_gcp, 2);
+	longitude = longitude > 180.0 ? (longitude - 360.0) : longitude;
+	height = gcps.at<double>(i_gcp, 4);
+	Utils::ell2xyz(longitude, latitude, height, groundPosition);
+	int numOrbitVec = stateVectors2.newStateVectors.rows;
+	double firstVecTime = 0.0;
+	double secondVecTime = 0.0;
+	double firstVecFreq = 0.0;
+	double secondVecFreq = 0.0;
+	double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+	for (int iii = 0; iii < numOrbitVec; iii++) {
+		Position orb_pos(stateVectors2.newStateVectors.at<double>(iii, 1), stateVectors2.newStateVectors.at<double>(iii, 2),
+			stateVectors2.newStateVectors.at<double>(iii, 3));
+		Velocity orb_vel(stateVectors2.newStateVectors.at<double>(iii, 4), stateVectors2.newStateVectors.at<double>(iii, 5),
+			stateVectors2.newStateVectors.at<double>(iii, 6));
+		currentFreq = 0;
+		xdiff = groundPosition.x - orb_pos.x;
+		ydiff = groundPosition.y - orb_pos.y;
+		zdiff = groundPosition.z - orb_pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+		if (iii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+			firstVecTime = stateVectors2.newStateVectors.at<double>(iii, 0);
+			firstVecFreq = currentFreq;
+		}
+		else {
+			secondVecTime = stateVectors2.newStateVectors.at<double>(iii, 0);
+			secondVecFreq = currentFreq;
+			break;
+		}
+	}
+
+	if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+		return -1;
+	}
+
+	double lowerBoundTime = firstVecTime;
+	double upperBoundTime = secondVecTime;
+	double lowerBoundFreq = firstVecFreq;
+	double upperBoundFreq = secondVecFreq;
+	double midTime, midFreq;
+	double diffTime = fabs(upperBoundTime - lowerBoundTime);
+	double absLineTimeInterval = time_interval2;
+
+	int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+	int numIterations = 0; 
+	while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+		midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+		stateVectors2.getPosition(midTime, pos);
+		stateVectors2.getVelocity(midTime, vel);
+		xdiff = groundPosition.x - pos.x;
+		ydiff = groundPosition.y - pos.y;
+		zdiff = groundPosition.z - pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+		if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+			lowerBoundTime = midTime;
+			lowerBoundFreq = midFreq;
+		}
+		else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+			upperBoundTime = midTime;
+			upperBoundFreq = midFreq;
+		}
+		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+			zeroDopplerTime = midTime;
+			break;
+		}
+
+		diffTime = fabs(upperBoundTime - lowerBoundTime);
+		numIterations++;
+	}
+	zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+	acquisitionStartTime2 = zeroDopplerTime - (row - 1) * time_interval2;
+	for (int i = 0; i < nr; i++)
+	{
+		stateVectors2.getPosition(acquisitionStartTime2 + double(i) * time_interval2, pos);
+		sate2.at<double>(i, 0) = pos.x;
+		sate2.at<double>(i, 1) = pos.y;
+		sate2.at<double>(i, 2) = pos.z;
+	}
+
+	//加回平地相位
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < nr; i++)
+	{
+		Mat temp(1, 6, CV_64F);
+		for (int j = 0; j < nc; j++)
+		{
+			temp.at<double>(0, 0) = 1.0;
+			temp.at<double>(0, 1) = i;
+			temp.at<double>(0, 2) = j;
+			temp.at<double>(0, 3) = i * j;
+			temp.at<double>(0, 4) = i * i;
+			temp.at<double>(0, 5) = j * j;
+			unwrapped_phase.at<double>(i, j) = unwrapped_phase.at<double>(i, j) + sum(temp.mul(flat_phase_coefficient))[0];
+		}
+	}
+	//控制点绝对相位计算
+	double lambda = VEL_C / (carrier_frequency.at<double>(0, 0) + 1e-10);
+	double K = 0.0;
+	for (int i = 0; i < valid_row.size(); i++)
+	{
+		int rrr = (int)gcps.at<double>(valid_row[i], 0) - offset_row;
+		int ccc = (int)gcps.at<double>(valid_row[i], 1) - offset_col;
+		Mat ground(1, 3, CV_64F), llh_temp(1, 3, CV_64F);
+		llh_temp.at<double>(0, 0) = gcps.at<double>(valid_row[i], 3);
+		llh_temp.at<double>(0, 1) = gcps.at<double>(valid_row[i], 2);
+		llh_temp.at<double>(0, 2) = gcps.at<double>(valid_row[i], 4);
+		util.ell2xyz(llh_temp, ground);
+		double r_main = sqrt(sum((sate1(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground).mul(sate1(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground))[0]);
+		double r_slave = sqrt(sum((sate2(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground).mul(sate2(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground))[0]);
+		double C = mode == 1 ? 4 * PI : 2 * PI;
+		double phase_real = (r_slave - r_main) / lambda * C;
+		K += ((phase_real - unwrapped_phase.at<double>(rrr - 1, ccc - 1)) / (2 * PI));
+	}
+	K /= (double)valid_row.size();
+	unwrapped_phase = unwrapped_phase + round(K) * 2 * PI;//相位校正
+	//conversion.creat_new_h5("G:\\tmp\\unwrapped_phase.h5");
+	//conversion.write_array_to_h5("G:\\tmp\\unwrapped_phase.h5", "phase", unwrapped_phase); return 0;
+
+	//Mat R1, R2;
+	//conversion.read_array_from_h5("G:\\tmp\\R.h5", "R1", R1);
+	//conversion.read_array_from_h5("G:\\tmp\\R.h5", "R2", R2);
+
+	//for (int i = 0; i < nr; i++)
+	//{
+	//	for (int j = 0; j < nc; j++)
+	//	{
+	//		unwrapped_phase.at<double>(i, j) = -4.0 * PI * (R1.at<double>(i + offset_row, j + offset_col) -
+	//			R2.at<double>(i + offset_row, j + offset_col)) / lambda;
+	//	}
+	//}
+
+	/*
+	* 反演高程
+	*/
+
+	Mat R_M(1, nc, CV_64F);
+	//Mat R_M(nr, nc, CV_64F);
+	for (int i = 0; i < nc; i++)
+	{
+		R_M.at<double>(0, i) = nearRange + range_spacing.at<double>(0, 0) * double(i + offset_col);
+		
+	}
+	//for (int i = 0; i < nr; i++)
+	//{
+	//	for (int j = 0; j < nc; j++)
+	//	{
+	//		R_M.at<double>(i, j) = R1.at<double>(i + offset_row, j + offset_col);
+	//	}
+	//}
+	Mat ones = Mat::ones(nr, 1, CV_64F);
+	R_M = ones * R_M;
+	Mat R_F = R_M * 2.0 + lambda * unwrapped_phase / (2 * PI);
+	Mat Satellite_M_T_Position = sate1;//主星发射位置
+	Mat Satellite_S_T_Position;
+	if (mode == 1)
+	{
+		Satellite_S_T_Position = sate2;//辅星发射位置
+	}
+	else
+	{
+		Satellite_S_T_Position = sate1;//辅星发射位置
+	}
+	Mat Satellite_M_R_Position = sate1;//主星接收位置
+	Mat Satellite_S_R_Position = sate2;//辅星接收位置
+	Mat Satellite_M = (Satellite_M_R_Position + Satellite_M_T_Position) / 2;
+	Mat Vs = satev1;
+	ones = Mat::ones(nr, nc, CV_64F);
+	Mat P1 = ones * xyz_ground.at<double>(0, 0);
+	Mat P2 = ones * xyz_ground.at<double>(0, 1);
+	Mat P3 = ones * xyz_ground.at<double>(0, 2);
+	Mat M_T, M_R, S_T, S_R;
+	Mat f1, f2, f3;
+	Mat det_Df, Df_ni11, Df_ni12, Df_ni13, Df_ni21, Df_ni22, Df_ni23;
+	Mat Df11, Df12, Df13, Df21, Df22, Df23, Df31, Df32, Df33, Df_ni31, Df_ni32, Df_ni33;
+	Mat delta_Rt1, delta_Rt2, delta_Rt3;
+	ones = Mat::ones(1, nc, CV_64F);
+	Mat temp_var, temp_var1;
+	Mat fd = Mat::zeros(1, nc, CV_64F);
+	for (int i = 0; i < iter_times; i++)
+	{
+		temp_var = Satellite_M_T_Position(Range(0, Satellite_M_T_Position.rows), Range(0, 1)) * ones - P1;
+		temp_var = temp_var.mul(temp_var);
+		temp_var.copyTo(M_T);
+		temp_var = Satellite_M_T_Position(Range(0, Satellite_M_T_Position.rows), Range(1, 2)) * ones - P2;
+		temp_var = temp_var.mul(temp_var);
+		M_T = M_T + temp_var;
+		temp_var = Satellite_M_T_Position(Range(0, Satellite_M_T_Position.rows), Range(2, 3)) * ones - P3;
+		temp_var = temp_var.mul(temp_var);
+		M_T = M_T + temp_var;
+		cv::sqrt(M_T, f1);
+		f1 = f1 * 2 - 2 * R_M;
+
+		temp_var = Satellite_S_T_Position(Range(0, Satellite_S_T_Position.rows), Range(0, 1)) * ones - P1;
+		temp_var = temp_var.mul(temp_var);
+		temp_var.copyTo(S_T);
+		temp_var = Satellite_S_T_Position(Range(0, Satellite_S_T_Position.rows), Range(1, 2)) * ones - P2;
+		temp_var = temp_var.mul(temp_var);
+		S_T = S_T + temp_var;
+		temp_var = Satellite_S_T_Position(Range(0, Satellite_S_T_Position.rows), Range(2, 3)) * ones - P3;
+		temp_var = temp_var.mul(temp_var);
+		S_T = S_T + temp_var;
+
+		temp_var = Satellite_S_R_Position(Range(0, Satellite_S_R_Position.rows), Range(0, 1)) * ones - P1;
+		temp_var = temp_var.mul(temp_var);
+		temp_var.copyTo(S_R);
+		temp_var = Satellite_S_R_Position(Range(0, Satellite_S_R_Position.rows), Range(1, 2)) * ones - P2;
+		temp_var = temp_var.mul(temp_var);
+		S_R = S_R + temp_var;
+		temp_var = Satellite_S_R_Position(Range(0, Satellite_S_R_Position.rows), Range(2, 3)) * ones - P3;
+		temp_var = temp_var.mul(temp_var);
+		S_R = S_R + temp_var;
+
+		cv::sqrt(S_T, f2);
+		cv::sqrt(S_R, temp_var);
+		f2 = f2 + temp_var - R_F;
+
+
+		temp_var = Vs(Range(0, Vs.rows), Range(0, 1)) * ones;
+		temp_var1 = Satellite_M(Range(0, Satellite_M.rows), Range(0, 1)) * ones - P1;
+		f3 = temp_var.mul(temp_var1);
+		temp_var = Vs(Range(0, Vs.rows), Range(1, 2)) * ones;
+		temp_var1 = Satellite_M(Range(0, Satellite_M.rows), Range(1, 2)) * ones - P2;
+		f3 = f3 + temp_var.mul(temp_var1);
+		temp_var = Vs(Range(0, Vs.rows), Range(2, 3)) * ones;
+		temp_var1 = Satellite_M(Range(0, Satellite_M.rows), Range(2, 3)) * ones - P3;
+		f3 = f3 + temp_var.mul(temp_var1);
+		ones = Mat::ones(nr, 1, CV_64F);
+		temp_var = ones * fd;
+		temp_var1 = R_M * lambda / 2.0;
+		f3 = f3 + temp_var.mul(temp_var1);
+
+		//Dff
+		//第一行：f(1)的x，y，z的导数
+		ones = Mat::ones(1, nc, CV_64F);
+		temp_var = Satellite_M_T_Position(Range(0, Satellite_M_T_Position.rows), Range(0, 1)) * ones - P1;
+		cv::sqrt(M_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df11 = temp_var.mul(temp_var1);
+
+		temp_var = Satellite_M_R_Position(Range(0, Satellite_M_R_Position.rows), Range(0, 1)) * ones - P1;
+		cv::sqrt(M_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df11 = Df11 + temp_var.mul(temp_var1);
+
+		temp_var = Satellite_M_T_Position(Range(0, Satellite_M_T_Position.rows), Range(1, 2)) * ones - P2;
+		cv::sqrt(M_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df12 = temp_var.mul(temp_var1);
+
+		temp_var = Satellite_M_R_Position(Range(0, Satellite_M_R_Position.rows), Range(1, 2)) * ones - P2;
+		cv::sqrt(M_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df12 = Df12 + temp_var.mul(temp_var1);
+
+		temp_var = Satellite_M_T_Position(Range(0, Satellite_M_T_Position.rows), Range(2, 3)) * ones - P3;
+		cv::sqrt(M_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df13 = temp_var.mul(temp_var1);
+
+		temp_var = Satellite_M_R_Position(Range(0, Satellite_M_R_Position.rows), Range(2, 3)) * ones - P3;
+		cv::sqrt(M_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df13 = Df13 + temp_var.mul(temp_var1);
+
+
+		//第二行：f(2)的x，y，z的导数
+		temp_var = Satellite_S_T_Position(Range(0, Satellite_S_T_Position.rows), Range(0, 1)) * ones - P1;
+		cv::sqrt(S_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df21 = temp_var.mul(temp_var1);
+
+		temp_var = Satellite_S_R_Position(Range(0, Satellite_S_R_Position.rows), Range(0, 1)) * ones - P1;
+		cv::sqrt(S_R, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df21 = Df21 + temp_var.mul(temp_var1);
+
+
+		temp_var = Satellite_S_T_Position(Range(0, Satellite_S_T_Position.rows), Range(1, 2)) * ones - P2;
+		cv::sqrt(S_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df22 = temp_var.mul(temp_var1);
+
+		temp_var = Satellite_S_R_Position(Range(0, Satellite_S_R_Position.rows), Range(1, 2)) * ones - P2;
+		cv::sqrt(S_R, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df22 = Df22 + temp_var.mul(temp_var1);
+
+
+		temp_var = Satellite_S_T_Position(Range(0, Satellite_S_T_Position.rows), Range(2, 3)) * ones - P3;
+		cv::sqrt(S_T, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df23 = temp_var.mul(temp_var1);
+
+		temp_var = Satellite_S_R_Position(Range(0, Satellite_S_R_Position.rows), Range(2, 3)) * ones - P3;
+		cv::sqrt(S_R, temp_var1);
+		temp_var1 = 1 / temp_var1;
+		temp_var1 = -temp_var1;
+		Df23 = Df23 + temp_var.mul(temp_var1);
+
+		//第三行：f(3)的x，y，z的导数
+		Df31 = -Vs(Range(0, Vs.rows), Range(0, 1)) * ones;
+		Df32 = -Vs(Range(0, Vs.rows), Range(1, 2)) * ones;
+		Df33 = -Vs(Range(0, Vs.rows), Range(2, 3)) * ones;
+
+		temp_var = Df11.mul(Df22);
+		temp_var = temp_var.mul(Df33);
+		temp_var.copyTo(det_Df);
+
+		temp_var = Df12.mul(Df23);
+		temp_var = temp_var.mul(Df31);
+		det_Df = det_Df + temp_var;
+
+		temp_var = Df13.mul(Df21);
+		temp_var = temp_var.mul(Df32);
+		det_Df = det_Df + temp_var;
+
+		temp_var = Df31.mul(Df22);
+		temp_var = temp_var.mul(Df13);
+		det_Df = det_Df - temp_var;
+
+		temp_var = Df32.mul(Df23);
+		temp_var = temp_var.mul(Df11);
+		det_Df = det_Df - temp_var;
+
+		temp_var = Df33.mul(Df21);
+		temp_var = temp_var.mul(Df12);
+		det_Df = det_Df - temp_var;
+
+		Df_ni11 = (Df22.mul(Df33) - Df32.mul(Df23)) / det_Df;
+		Df_ni12 = -(Df12.mul(Df33) - Df32.mul(Df13)) / det_Df;
+		Df_ni13 = (Df12.mul(Df23) - Df22.mul(Df13)) / det_Df;
+		delta_Rt1 = Df_ni11.mul(f1) + Df_ni12.mul(f2) + Df_ni13.mul(f3);
+
+
+		Df_ni21 = -(Df21.mul(Df33) - Df31.mul(Df23)) / det_Df;
+		Df_ni22 = (Df11.mul(Df33) - Df31.mul(Df13)) / det_Df;
+		Df_ni23 = -(Df11.mul(Df23) - Df21.mul(Df13)) / det_Df;
+		delta_Rt2 = Df_ni21.mul(f1) + Df_ni22.mul(f2) + Df_ni23.mul(f3);
+
+		Df_ni31 = (Df21.mul(Df32) - Df31.mul(Df22)) / det_Df;
+		Df_ni32 = -(Df11.mul(Df32) - Df31.mul(Df12)) / det_Df;
+		Df_ni33 = (Df22.mul(Df11) - Df21.mul(Df12)) / det_Df;
+		delta_Rt3 = Df_ni31.mul(f1) + Df_ni32.mul(f2) + Df_ni33.mul(f3);
+
+		P1 = P1 - delta_Rt1;
+		P2 = P2 - delta_Rt2;
+		P3 = P3 - delta_Rt3;
+	}
+	delta_Rt1.release(); delta_Rt2.release(); delta_Rt3.release(); Df_ni31.release(); Df_ni32.release();
+	Df_ni33.release(); Df_ni21.release(); Df_ni22.release(); Df_ni23.release(); Df_ni11.release(); Df_ni12.release();
+	Df_ni13.release();
+	volatile bool parallel_flag = true;
+	dem.create(nr, nc, CV_64F);
+	Mat lon, lat;
+	lon.create(nr, nc, CV_64F); lat.create(nr, nc, CV_64F); 
+#pragma omp parallel for schedule(guided) \
+	private(ret)
+	for (int i = 0; i < nr; i++)
+	{
+		Utils util;
+		for (int j = 0; j < nc; j++)
+		{
+			Mat xyz, llh;
+			xyz = Mat::zeros(1, 3, CV_64F);
+			xyz.at<double>(0, 0) = P1.at<double>(i, j);
+			xyz.at<double>(0, 1) = P2.at<double>(i, j);
+			xyz.at<double>(0, 2) = P3.at<double>(i, j);
+			ret = util.xyz2ell(xyz, llh);
+			dem.at<double>(i, j) = llh.at<double>(0, 2);
+			lat.at<double>(i, j) = llh.at<double>(0, 0);
+			lon.at<double>(i, j) = llh.at<double>(0, 1);
+		}
+	}
+	//if (parallel_check(parallel_flag, "dem_newton_iter()", parallel_error_head)) return -1;
+	//dem = dem + llh.at<double>(0, 2) - dem.at<double>(row - 1, col - 1);
+	Mat error(valid_row.size(), 3, CV_64F);
+
+	for (int i = 0; i < valid_row.size(); i++)
+	{
+		int r, c;
+		//Utils::ell2xyz(gcps.at<double>(valid_row[i], 2), gcps.at<double>(valid_row[i], 3), gcps.at<double>(valid_row[i], 4), pos);
+		r = gcps.at<double>(valid_row[i], 0) - offset_row;
+		c = gcps.at<double>(valid_row[i], 1) - offset_col;
+		/*error.at<double>(i, 0) = P1.at<double>(r - 1, c - 1) - pos.x;
+		error.at<double>(i, 1) = P2.at<double>(r - 1, c - 1) - pos.y;
+		error.at<double>(i, 2) = P3.at<double>(r - 1, c - 1) - pos.z;*/
+		error.at<double>(i, 0) = lon.at<double>(r - 1, c - 1) - gcps.at<double>(valid_row[i], 2);
+		error.at<double>(i, 1) = lat.at<double>(r - 1, c - 1) - gcps.at<double>(valid_row[i], 3);
+		error.at<double>(i, 2) = dem.at<double>(r - 1, c - 1) - gcps.at<double>(valid_row[i], 4);
+	}
+	util.cvmat2bin("G:\\tmp\\error.bin", error);
 	return 0;
 }
 

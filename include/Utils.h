@@ -819,7 +819,7 @@ public:
 		int multilook_rg,
 		int multilook_az
 	);
-	/** @brief 将相位转换成cos和sin（实部和虚部）
+	/** @brief 将相位转换成cos和sin（实部和虚部，支持double和float）
 	
 	@param phase                     输入相位
 	@param cos                       实部
@@ -1181,6 +1181,38 @@ public:
 		double interval,
 		Mat& out
 	);
+	/*@brief 直方图统计函数
+	* @param input                   输入待统计数据
+	* @param lowerbound              区间下界
+	* @param upperbound              区间上界
+	* @param interval                统计区间间隔
+	* @param out_x                   输出结果（横坐标）
+	* @param out_y                   输出结果（纵坐标）
+	* @return 成功返回0，否则返回-1
+	*/
+	int hist(
+		Mat& input,
+		double lowerbound,
+		double upperbound,
+		double interval,
+		Mat& out_x,
+		Mat& out_y
+	);
+	/*@brief 高斯曲线拟合
+	* @param input_x                输入横坐标
+	* @param input_y                输入纵坐标
+	* @param mu                     均值
+	* @param sigma_square           方差
+	* @param scale                  幅度
+	* @return 成功返回0，否则返回-1
+	*/
+	int gaussian_curve_fit(
+		Mat& input_x,
+		Mat& input_y,
+		double* mu,
+		double* sigma_square,
+		double* scale
+	);
 	/*
 	* 卫星轨道插值
 	* 参数1：卫星轨道参数（未插值）
@@ -1483,6 +1515,8 @@ public:
 	* @param TopRight_lat                  右上角纬度
 	* @param TopLeft_lon                   左上角经度
 	* @param TopLeft_lat                   左上角纬度
+	* @param Reference_lon                 参考点经度
+	* @param Reference_lat                 参考点纬度
 	* @param image_file                    图像文件（必须与待写入的KML文件处在同一目录下）
 	* @param KML_file                      待写入KML文件名
 	* @param Legend_file                   图例文件（必须与待写入的KML文件处在同一目录下）
@@ -1497,9 +1531,82 @@ public:
 		double TopRight_lat,
 		double TopLeft_lon,
 		double TopLeft_lat,
+		double Reference_lon,
+		double Reference_lat,
 		const char* image_file,
 		const char* KML_file,
 		const char* Legend_file = NULL
+	);
+	/*@brief 拼接哨兵一号3个子带干涉相位
+	* @param IW1_h5file                     子带1干涉相位h5文件
+	* @param IW2_h5file                     子带2干涉相位h5文件
+	* @param IW3_h5file                     子带3干涉相位h5文件
+	* @param merged_phase_h5file            拼接后干涉相位h5文件（覆盖写入）
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_subswath_merge(
+		const char* IW1_h5file,
+		const char* IW2_h5file,
+		const char* IW3_h5file,
+		const char* merged_phase_h5file
+	);
+	/*@brief 拼接哨兵一号同一轨道相邻frame的干涉相位
+	* @param h5files                        同一子带不同frame干涉相位h5数据文件
+	* @param merged_phase_h5                拼接后的干涉相位h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_frame_merge(
+		vector<string>& h5files,
+		const char* merged_phase_h5
+	);
+	/*@brief 拼接同一轨道相邻frame的单视复图像
+	* @param frame1_h5                         待拼接frame1的h5文件
+	* @param frame2_h5                         待拼接frame2的h5文件
+	* @param outframe_h5                       拼接frame的h5文件（覆盖写入）
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_frame_merge(
+		const char* frame1_h5,
+		const char* frame2_h5,
+		const char* outframe_h5
+	);
+	/*@brief 相位地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param mapped_lon                        相位对应的经度
+	* @param mapped_lat                        相位对应的纬度
+	* @param phase                             SAR图像坐标相位
+	* @param mapped_phase                      墨卡托坐标相位（返回值）
+	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SAR2UTM(
+		Mat& mapped_lon,
+		Mat& mapped_lat,
+		Mat& phase,
+		Mat& mapped_phase,
+		int interpolation_method = 0,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
+	);
+	/*@brief SLC复图像地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param mapped_lon                        SLC对应的经度
+	* @param mapped_lat                        SLC对应的纬度
+	* @param slc                               SAR图像坐标SLC
+	* @param mapped_slc                        墨卡托坐标SLC（返回值）
+	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SAR2UTM(
+		Mat& mapped_lon,
+		Mat& mapped_lat,
+		ComplexMat& slc,
+		ComplexMat& mapped_slc,
+		int interpolation_method = 0,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
 	);
 
 private:
