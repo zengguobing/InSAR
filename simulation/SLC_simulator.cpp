@@ -1573,8 +1573,8 @@ int SLC_simulator::generateSLC(
 					theta = -2.0 * PI * (distance1 + distance2) / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
 					real = gcp_sigma * (cos(theta) + noise_real2.at<float>(gcp_row, gcp_col));
 					imaginary = gcp_sigma * (sin(theta) + noise_imaginary2.at<float>(gcp_row, gcp_col));
-					slc2.re.at<float>(azimuthIndex1, rangeIndex1) += real;
-					slc2.im.at<float>(azimuthIndex1, rangeIndex1) += imaginary;
+					slc2.re.at<float>(azimuthIndex2, rangeIndex2) += real;
+					slc2.im.at<float>(azimuthIndex2, rangeIndex2) += imaginary;
 
 					theta = -4.0 * PI * distance2 / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
 					real = gcp_sigma * (cos(theta) + noise_real3.at<float>(gcp_row, gcp_col));
@@ -1585,8 +1585,8 @@ int SLC_simulator::generateSLC(
 					theta = -2.0 * PI * (distance1 + distance2) / wavelength + randomAngle.at<float>(gcp_row, gcp_col);
 					real = gcp_sigma * (cos(theta) + noise_real4.at<float>(gcp_row, gcp_col));
 					imaginary = gcp_sigma * (sin(theta) + noise_imaginary4.at<float>(gcp_row, gcp_col));
-					slc4.re.at<float>(azimuthIndex2, rangeIndex2) += real;
-					slc4.im.at<float>(azimuthIndex2, rangeIndex2) += imaginary;
+					slc4.re.at<float>(azimuthIndex1, rangeIndex1) += real;
+					slc4.im.at<float>(azimuthIndex1, rangeIndex1) += imaginary;
 				}
 			}
 			printf("\rprocess %lf: %d / %d", (double)seed / (double)(num_block_row * num_block_col) * 100.0, seed,
