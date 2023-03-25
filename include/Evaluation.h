@@ -21,13 +21,13 @@ public:
 	* @param master_h5				   主图像h5文件
 	* @param slave_regis_h5			   配准后辅图像h5文件
 	* @param coherence				   相关系数矩阵
-	* @param Output                    配准精度（像素）
+	* @param regis_error               配准误差矩阵（左方位向右距离向）
 	* @return 成功返回0，否则返回-1
 	*/
 	int Regis(const char* master_h5,
 		const char* slave_regis_h5,
 		Mat& coherence,
-		double* Output);
+		Mat& regis_error);
 	/*@brief 干涉相位保相性
 	* @param master_h5				   解缠后相位h5文件
 	* @param slave_h5				   解缠前相位h5文件

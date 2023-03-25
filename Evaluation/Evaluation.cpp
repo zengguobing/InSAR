@@ -377,13 +377,12 @@ int Evaluation::PhasePreserve(const char* master_h5,
 	*Output = sqrt(PhaseError / count);
 }
 
-int Evaluation::Regis(const char* master_h5,  const char* slave_regis_h5, Mat& coherence, double* Output)
+int Evaluation::Regis(const char* master_h5,  const char* slave_regis_h5, Mat& coherence, Mat& regis_error)
 {
 	if(master_h5 == NULL ||
-		slave_regis_h5 == NULL ||
-		Output == NULL)
+		slave_regis_h5 == NULL)
 	{
-		fprintf(stderr, "PhasePreserve(): input check failed!\n\n");
+		fprintf(stderr, "Regis(): input check failed!\n\n");
 		return -1;
 	}
 	FormatConversion conversion; Utils util;
@@ -402,22 +401,19 @@ int Evaluation::Regis(const char* master_h5,  const char* slave_regis_h5, Mat& c
 	int cols = master.GetCols();
 	Mat GCPS, slave_Gcps;
 	//读取标志点数据
-	ret = conversion.read_array_from_h5(master_h5, "GCP", GCPS);
+	ret = conversion.read_array_from_h5(master_h5, "gcps", GCPS);
 	if (return_check(ret, "read_Gcps_from_h5()", error_head)) return -1;
 	int offset_row, offset_col;
 	ret = conversion.read_int_from_h5(master_h5, "offset_row", &offset_row);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_int_from_h5(master_h5, "offset_col", &offset_col);
-
+	vector<double> r_error, a_error;
+	vector<int> Gcp_SN;
 	int Gcps_number = GCPS.rows;
 	int interp_times = 32;
 	int win_size = 32;
 	int interp_size = interp_times * win_size;
 	int count = 0; //符合要求的标志点个数
-	double regis_row_error = 0, regis_col_error = 0, regis_row_error2 = 0, regis_col_error2 = 0;
-	FILE* fp3 = NULL;
-	fp3 = fopen("D:\\Test_File\\Error.txt", "w+");
-	fprintf(fp3, "误差\n");
 	for (int i = 0; i < Gcps_number; i++)
 	{
 		ComplexMat master_win, master_fft;
@@ -449,23 +445,19 @@ int Evaluation::Regis(const char* master_h5,  const char* slave_regis_h5, Mat& c
 		double max1, max2;
 		minMaxLoc(master_mod, NULL, &max1, NULL, &master_max);
 		minMaxLoc(slave_mod, NULL, &max2, NULL, &slave_max);
-		util.cvmat2bin("D:/Test_File/master.bin", master_mod);
-		util.cvmat2bin("D:/Test_File/slave.bin", slave_mod);
-		util.saveSLC("D:/Test_File/master.bmp", 60, master_interp);
-		util.saveSLC("D:/Test_File/slave.bmp", 60, slave_interp);
-		regis_col_error += powf(double(master_max.x - slave_max.x) / interp_times, 2);
-		regis_col_error2 += (double(master_max.x - slave_max.x) / interp_times);
-		regis_row_error	+= powf(double(master_max.y - slave_max.y) / interp_times, 2);
-		regis_row_error2 += (double(master_max.y - slave_max.y) / interp_times);
+		r_error.push_back(double(master_max.x - slave_max.x) / interp_times);
+		a_error.push_back(double(master_max.y - slave_max.y) / interp_times);
+		Gcp_SN.push_back(i + 1);
 		count++;
 	}
-	
-	regis_row_error = sqrt(regis_row_error / count);
-	regis_col_error = sqrt(regis_col_error / count);
-	fprintf(fp3, "%f\t", regis_row_error);
-	fprintf(fp3, "%f\t", regis_col_error);
-	fclose(fp3);
-	*Output = regis_row_error;
+	Mat regis_error_tmp = Mat::zeros(Size(2, count), CV_64FC1);
+	for (int i = 0; i < count; i++)
+	{
+		regis_error_tmp.at<double>(i, 0) = a_error.at(i);
+		regis_error_tmp.at<double>(i, 1) = r_error.at(i);
+	}
+	regis_error = regis_error_tmp;
+	util.complex_coherence(master, slave, coherence);
 
 	//util.real_coherence(master, slave, coherence);
 	return 0;
