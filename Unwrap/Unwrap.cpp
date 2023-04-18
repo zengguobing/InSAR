@@ -3215,7 +3215,7 @@ int Unwrap::SPD_Guided_Unwrap(Mat& wrapped_phase, Mat& unwrapped_phase)
 		}
 		if (x < width - 1 && mark == 0)
 		{
-			if (flag.ptr<double>(y)[x + 1] == 0)
+			if (flag.ptr<double>(y)[x + 1] ==0)
 			{
 				ret = unwrap(wrapped_phase, tmp, x + 1, y, x, y, flag, adjoin, SPD, Heap);
 				if (ret < 0)

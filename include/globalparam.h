@@ -4,9 +4,9 @@
 struct Heap //创建小顶堆以储存解缠邻接点序列
 {
 	int size;
-	int* x = (int*)malloc(sizeof(int) * 1000000);
-	int* y = (int*)malloc(sizeof(int) * 1000000);
-	double* queue = (double*)malloc(sizeof(double) * 1000000);
+	int* x = (int*)malloc(sizeof(int) * 100000000);
+	int* y = (int*)malloc(sizeof(int) * 100000000);
+	double* queue = (double*)malloc(sizeof(double) * 100000000);
 public:
 	Heap()         //初始化 
 	{
