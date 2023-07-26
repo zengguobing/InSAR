@@ -429,6 +429,17 @@ public:
 		int times
 	);
 
+	/** @brief 删除图像节点
+	@param datanode_node  待删除图像节点名
+	@param node_name      待删除图像名
+	@param node_path      待删除图像路径
+	*/
+	int XMLFile_remove_node(
+		const char* datanode_name,
+		const char* node_name,
+		const char* node_path
+	);
+
 	/** @brief 返回字符串
 
 	@param n			输入整数值

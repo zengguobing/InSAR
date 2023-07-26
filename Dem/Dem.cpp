@@ -703,7 +703,8 @@ int Dem::dem_newton_iter(const char* unwrapped_phase_file, Mat& dem, const char*
 	double K = round((phase_real - unwrapped_phase.at<double>(row, col)) / (2 * PI));
 	unwrapped_phase = unwrapped_phase + K * 2 * PI;//相位校正
 	
-	//util.cvmat2bin("E:\\working_dir\\projects\\software\\InSAR\\bin\\unwrapped_phase_abs.bin", unwrapped_phase);
+	FormatConversion FC;
+	FC.write_array_to_h5(unwrapped_phase_file, "phase", unwrapped_phase);
 
 	/*
 	* 反演高程
@@ -1766,8 +1767,20 @@ int Dem::dem_newton_iter_14(
 		for (int j = 0; j < nc; j++)
 		{
 			double phi_ref = 0.0;
-			phi_ref = slantRange_slave.at<double>(i, j) - slantRange_main.at<double>(i, j);
-			phi_ref = phi_ref / wavelength * 4 * PI;
+			if (mode == 1)
+			{
+				phi_ref = slantRange_slave.at<double>(i, j) - slantRange_main.at<double>(i, j);
+				phi_ref = phi_ref / wavelength * 4 * PI;
+			}
+				
+			else if (mode == 2)
+			{
+				phi_ref = slantRange_slave.at<double>(i, j) - slantRange_main.at<double>(i, j) * 2;
+				phi_ref = phi_ref / wavelength * 2 * PI;
+
+			}
+				
+			
 			//flat_phase.at<double>(i, j) = phi_ref;
 			unwrapped_phase.at<double>(i, j) = unwrapped_phase.at<double>(i, j) + phi_ref;
 		}
@@ -1787,15 +1800,16 @@ int Dem::dem_newton_iter_14(
 		util.ell2xyz(llh_temp, ground);
 		double r_main = sqrt(sum((sate1(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground).mul(sate1(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground))[0]);
 		double r_slave = sqrt(sum((sate2(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground).mul(sate2(cv::Range(rrr - 1, rrr), cv::Range(0, 3)) - ground))[0]);
-		double C = mode == 1 ? 4 * PI : 2 * PI;
+		double C = mode == 1 ? 4 * PI :2 * PI;
 		double phase_real = (r_slave - r_main) / lambda * C;
 		KK.at<double>(0, i) = ((phase_real - unwrapped_phase.at<double>(rrr - 1, ccc - 1)) / (2 * PI));
 		K += ((phase_real - unwrapped_phase.at<double>(rrr - 1, ccc - 1)) / (2 * PI));
 	}
-	conversion.creat_new_h5("E:\\working_dir\\projects\\software\\InSAR\\bin\\KK2.h5");
-	conversion.write_array_to_h5("E:\\working_dir\\projects\\software\\InSAR\\bin\\KK2.h5", "KK", KK);
+	/*conversion.creat_new_h5("E:\\working_dir\\projects\\software\\InSAR\\bin\\KK2.h5");
+	conversion.write_array_to_h5("E:\\working_dir\\projects\\software\\InSAR\\bin\\KK2.h5", "KK", KK);*/
 	K /= (double)valid_row.size();
 	unwrapped_phase = unwrapped_phase + round(K) * 2 * PI;//相位校正
+	ret = conversion.write_array_to_h5(unwrapped_phase_file, "phase_abs", unwrapped_phase);
 	//conversion.creat_new_h5("G:\\tmp\\unwrapped_phase.h5");
 	//conversion.write_array_to_h5("G:\\tmp\\unwrapped_phase.h5", "phase", unwrapped_phase); return 0;
 
