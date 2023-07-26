@@ -6655,6 +6655,62 @@ int XMLFile::XMLFile_add_dem_14(
 	return 0;
 }
 
+int XMLFile::XMLFile_remove_node(const char* datanode_name, const char* node_name, const char* node_path)
+{
+	if (datanode_name == NULL ||
+		node_name == NULL ||
+		node_path == NULL)
+	{
+		fprintf(stderr, "XMLFile_remove_node(): input check failed!\n");
+		return -1;
+	}
+	TiXmlElement* DataNode = NULL;
+	int ret = find_node_with_attribute(doc.RootElement(), "DataNode", "name", datanode_name, DataNode);
+	string tmp;
+	char rank[256];
+	if (DataNode)
+	{
+		tmp = DataNode->Attribute("data_count");
+		int data_count = str2int(tmp);
+		int delete_num = 0;
+		TiXmlElement* Node = DataNode->FirstChildElement();
+		TiXmlElement* Node_name = NULL;
+		TiXmlElement* Node_index = NULL;
+		while (Node)
+		{
+			if (!strcmp(Node->Value(), "Data"))
+			{
+				ret = _find_node(Node, "Data_Name", Node_name);
+				if (!ret)
+				{
+					if (!strcmp(Node_name->FirstChild()->Value(), node_name))
+					{
+						data_count -= 1;
+						delete_num += 1;
+						TiXmlNode* Delete_Node = Node;
+						Node = Node->NextSiblingElement();
+						DataNode->RemoveChild(Delete_Node);
+						Delete_Node = NULL;
+					}
+					else
+					{
+						ret = _find_node(Node, "Data_Index", Node_index);
+						tmp = Node_index->FirstChild()->Value();
+						int index = str2int(tmp);
+						Node_index->FirstChild()->SetValue(int2str(index - delete_num).c_str());
+						Node = Node->NextSiblingElement();
+					}
+				}
+			}
+			else
+				break;
+		}
+		DataNode->SetAttribute("data_count", data_count);
+	}
+
+	return 0;
+}
+
 string XMLFile::int2str(int n)
 {
 	string sResult;
