@@ -1626,6 +1626,10 @@ public:
 	* @param phase                             SAR图像坐标相位
 	* @param mapped_phase                      墨卡托坐标相位（返回值）
 	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @param lon_east                          编码图像最东边缘经度（返回值）
+	* @param lon_west                          编码图像最西边缘经度（返回值）
+	* @param lat_north                         编码图像最北边缘纬度（返回值）
+	* @param lat_south                         编码图像最南边缘纬度（返回值）
 	* @return 成功返回0，否则返回-1
 	*/
 	int SAR2UTM(
@@ -1645,6 +1649,10 @@ public:
 	* @param slc                               SAR图像坐标SLC
 	* @param mapped_slc                        墨卡托坐标SLC（返回值）
 	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @param lon_east                          编码图像最东边缘经度（返回值）
+	* @param lon_west                          编码图像最西边缘经度（返回值）
+	* @param lat_north                         编码图像最北边缘纬度（返回值）
+	* @param lat_south                         编码图像最南边缘纬度（返回值）
 	* @return 成功返回0，否则返回-1
 	*/
 	int SAR2UTM(
@@ -1659,6 +1667,114 @@ public:
 		double* lat_south = NULL
 	);
 
+	/*@brief 干涉产品地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param DEM84                        84坐标系DEM（short型矩阵）
+	* @param input                        待编码产品
+	* @param mapped_resolution_x          编码后产品东西向分辨率（m）
+	* @param mapped_resolution_y          编码后产品南北向分辨率（m）
+	* @param mapped_result                地理编码结果（返回值）
+	* @param lon_upperleft                84坐标系DEM左上角经度
+	* @param lat_upperleft                84坐标系DEM左上角纬度
+	* @param offset_row                   SAR图像在原场景中的行偏移量
+	* @param offset_col                   SAR图像在原场景中的列偏移量
+	* @param sceneHeight                  SAR图像场景高度
+	* @param sceneWidth                   SAR图像场景宽度
+	* @param prf                          SAR卫星雷达脉冲重复频率
+	* @param rangeSpacing                 距离向采样间隔（m）
+	* @param wavelength                   波长
+	* @param nearRangeTime                最近斜距时间
+	* @param acquisitionStartTime         方位向采样开始时间
+	* @param acquisitionStopTime          方位向采样结束时间
+	* @param stateVector                  卫星轨道数据（未插值）
+	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
+	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @param lon_east                     编码图像最东边缘经度（返回值）
+	* @param lon_west                     编码图像最西边缘经度（返回值）
+	* @param lat_north                    编码图像最北边缘纬度（返回值）
+	* @param lat_south                    编码图像最南边缘纬度（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int geocode(
+		Mat& DEM84,
+		Mat& input,
+		double mapped_resolution_x,
+		double mapped_resolution_y,
+		Mat& mapped_result,
+		double lon_upperleft,
+		double lat_upperleft,
+		int offset_row,
+		int offset_col,
+		int sceneHeight,
+		int sceneWidth,
+		double prf,
+		double rangeSpacing,
+		double wavelength,
+		double nearRangeTime,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		Mat& stateVector,
+		double lon_spacing,
+		double lat_spacing,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
+	);
+
+	/*@brief 单视复图像地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param DEM84                        84坐标系DEM（short型矩阵）
+	* @param slc                          待编码单视复图像
+	* @param mapped_resolution_x          编码后产品东西向分辨率（m）
+	* @param mapped_resolution_y          编码后产品南北向分辨率（m）
+	* @param mapped_slc                   地理编码结果（返回值）
+	* @param lon_upperleft                84坐标系DEM左上角经度
+	* @param lat_upperleft                84坐标系DEM左上角纬度
+	* @param offset_row                   SAR图像在原场景中的行偏移量
+	* @param offset_col                   SAR图像在原场景中的列偏移量
+	* @param sceneHeight                  SAR图像场景高度
+	* @param sceneWidth                   SAR图像场景宽度
+	* @param prf                          SAR卫星雷达脉冲重复频率
+	* @param rangeSpacing                 距离向采样间隔（m）
+	* @param wavelength                   波长
+	* @param nearRangeTime                最近斜距时间
+	* @param acquisitionStartTime         方位向采样开始时间
+	* @param acquisitionStopTime          方位向采样结束时间
+	* @param stateVector                  卫星轨道数据（未插值）
+	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
+	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @param interp_times                 84坐标系DEM插值倍数（默认值为10）
+	* @param lon_east                     编码图像最东边缘经度（返回值）
+	* @param lon_west                     编码图像最西边缘经度（返回值）
+	* @param lat_north                    编码图像最北边缘纬度（返回值）
+	* @param lat_south                    编码图像最南边缘纬度（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int geocode(
+		Mat& DEM84,
+		ComplexMat& slc,
+		double mapped_resolution_x,
+		double mapped_resolution_y,
+		ComplexMat& mapped_slc,
+		double lon_upperleft,
+		double lat_upperleft,
+		int offset_row,
+		int offset_col,
+		int sceneHeight,
+		int sceneWidth,
+		double prf,
+		double rangeSpacing,
+		double wavelength,
+		double nearRangeTime,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		Mat& stateVector,
+		double lon_spacing,
+		double lat_spacing,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
+	);
 private:
 	static constexpr const char* SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
 	static constexpr const char* error_head = "UTILS_DLL_ERROR: error happens when using ";

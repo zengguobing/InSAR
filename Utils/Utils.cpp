@@ -11082,6 +11082,424 @@ int Utils::SAR2UTM(
 	return 0;
 }
 
+int Utils::geocode(
+	Mat& DEM84,
+	Mat& input,
+	double mapped_resolution_x,
+	double mapped_resolution_y,
+	Mat& mapped_result,
+	double lon_upperleft,
+	double lat_upperleft,
+	int offset_row, 
+	int offset_col,
+	int sceneHeight, 
+	int sceneWidth,
+	double prf, 
+	double rangeSpacing, 
+	double wavelength, 
+	double nearRangeTime, 
+	double acquisitionStartTime,
+	double acquisitionStopTime,
+	Mat& stateVector, 
+	double lon_spacing,
+	double lat_spacing,
+	double* lon_east,
+	double* lon_west,
+	double* lat_north, 
+	double* lat_south
+)
+{
+	if (DEM84.empty() ||
+		DEM84.type() != CV_16S ||
+		(input.type() != CV_32F && input.type() != CV_64F)||
+		sceneHeight < 10 ||
+		sceneWidth < 10 ||
+		prf <= 0 ||
+		wavelength <= 0 ||
+		rangeSpacing <= 0 ||
+		nearRangeTime <= 0 ||
+		acquisitionStartTime <= 0 ||
+		acquisitionStopTime <= 0 ||
+		lon_spacing <= 0.0 ||
+		lat_spacing <= 0.0 ||
+		fabs(lon_upperleft) > 180.0 ||
+		fabs(lat_upperleft) > 90.0 ||
+		stateVector.type() != CV_64F ||
+		stateVector.rows < 5 ||
+		stateVector.cols != 7
+		)
+	{
+		fprintf(stderr, "geocode(): input check failed!\n");
+		return -1;
+	}
+	//计算DEM插值倍数
+	int interp_times_x, interp_times_y;
+	double a = 6378137, b = 6356752;
+	double C_short = (a + b) * PI;//经线一圈长度
+	double C_long = a * 2 * PI;
+	double lon_per_meter = 360.0 / C_short;//经线上每米多少度
+	double lat_per_meter = 360.0 / (C_long * cos(lat_upperleft / 180.0 * PI));//纬线上每米多少度
+	interp_times_x = lon_spacing / lon_per_meter / mapped_resolution_x;
+	interp_times_y = lat_spacing / lat_per_meter / mapped_resolution_y;
+	//84坐标系DEM插值
+	Mat DEM, stateVector_interp;
+	interp_times_x = interp_times_x < 1 ? 1 : interp_times_x;
+	interp_times_y = interp_times_y < 1 ? 1 : interp_times_y;
+	cv::resize(DEM84, DEM, cv::Size(DEM84.cols * interp_times_x, DEM84.rows * interp_times_y));
+	lon_spacing = lon_spacing / (double)interp_times_x;
+	lat_spacing = lat_spacing / (double)interp_times_y;
+	//初始化轨道类
+	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime);
+	stateVectors.applyOrbit();
+	int ret;
+	double time_interval = 1.0 / prf;
+
+	int DEM_rows = DEM.rows; int DEM_cols = DEM.cols;
+	double dopplerFrequency = 0.0;
+	mapped_result.create(DEM.rows, DEM.cols, input.type()); mapped_result = 0.0;
+	//地理编码
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < DEM_rows; i++)
+	{
+		for (int j = 0; j < DEM_cols; j++)
+		{
+			Position groundPosition;
+			double lat, lon, height;
+			lat = lat_upperleft - (double)i * lat_spacing;
+			lon = lon_upperleft + (double)j * lon_spacing;
+			lon = lon > 180.0 ? (lon - 360.0) : lon;
+			height = DEM.at<short>(i, j);
+			Utils::ell2xyz(lon, lat, height, groundPosition);
+			int numOrbitVec = stateVectors.newStateVectors.rows;
+			double firstVecTime = 0.0;
+			double secondVecTime = 0.0;
+			double firstVecFreq = 0.0;
+			double secondVecFreq = 0.0;
+			double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+			for (int ii = 0; ii < numOrbitVec; ii++) {
+				Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+					stateVectors.newStateVectors.at<double>(ii, 3));
+				Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+					stateVectors.newStateVectors.at<double>(ii, 6));
+				currentFreq = 0;
+				xdiff = groundPosition.x - orb_pos.x;
+				ydiff = groundPosition.y - orb_pos.y;
+				zdiff = groundPosition.z - orb_pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+				if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+					firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					firstVecFreq = currentFreq;
+				}
+				else {
+					secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					secondVecFreq = currentFreq;
+					break;
+				}
+			}
+
+			if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+				continue;
+			}
+
+			double lowerBoundTime = firstVecTime;
+			double upperBoundTime = secondVecTime;
+			double lowerBoundFreq = firstVecFreq;
+			double upperBoundFreq = secondVecFreq;
+			double midTime, midFreq;
+			double diffTime = fabs(upperBoundTime - lowerBoundTime);
+			double absLineTimeInterval = time_interval;
+
+			int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+			int numIterations = 0; Position pos; Velocity vel;
+			while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+				midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+				stateVectors.getPosition(midTime, pos);
+				stateVectors.getVelocity(midTime, vel);
+				xdiff = groundPosition.x - pos.x;
+				ydiff = groundPosition.y - pos.y;
+				zdiff = groundPosition.z - pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+				if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+					lowerBoundTime = midTime;
+					lowerBoundFreq = midFreq;
+				}
+				else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+					upperBoundTime = midTime;
+					upperBoundFreq = midFreq;
+				}
+				else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+					zeroDopplerTime = midTime;
+					break;
+				}
+
+				diffTime = fabs(upperBoundTime - lowerBoundTime);
+				numIterations++;
+			}
+
+
+			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
+			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			azimuthIndex = azimuthIndex - offset_row;
+			rangeIndex = rangeIndex - offset_col;
+			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 2 || rangeIndex < 0 || rangeIndex > sceneWidth - 2)
+			{
+
+			}
+			else
+			{
+				//双线性插值计算
+				double ratio_x = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing - rangeIndex;
+				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - azimuthIndex;
+				
+				if (input.type() == CV_32F)
+				{
+					double upper = (double)input.at<float>(azimuthIndex, rangeIndex) + double(input.at<float>(azimuthIndex, rangeIndex)
+						- input.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double lower = (double)input.at<float>(azimuthIndex + 1, rangeIndex) + double(input.at<float>(azimuthIndex + 1, rangeIndex + 1)
+						- input.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
+					mapped_result.at<float>(i, j) = upper + (lower - upper) * ratio_y;
+				}
+				else
+				{
+					double upper = (double)input.at<double>(azimuthIndex, rangeIndex) + double(input.at<double>(azimuthIndex, rangeIndex)
+						- input.at<double>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double lower = (double)input.at<double>(azimuthIndex + 1, rangeIndex) + double(input.at<double>(azimuthIndex + 1, rangeIndex + 1)
+						- input.at<double>(azimuthIndex + 1, rangeIndex)) * ratio_x;
+					mapped_result.at<double>(i, j) = upper + (lower - upper) * ratio_y;
+				}
+			}
+		}
+	}
+	if (lat_north && lat_south && lon_east && lon_west)
+	{
+		*lat_north = lat_upperleft;
+		*lat_south = lat_upperleft - (double)(DEM.rows - 1) * lat_spacing;
+		*lon_east = lon_upperleft;
+		*lon_west = lon_upperleft + (double)(DEM.cols - 1) * lon_spacing;
+		*lon_west = *lon_west > 180.0 ? (*lon_west - 360.0) : *lon_west;
+	}
+	return 0;
+}
+
+int Utils::geocode(
+	Mat& DEM84,
+	ComplexMat& slc,
+	double mapped_resolution_x,
+	double mapped_resolution_y,
+	ComplexMat& mapped_slc, 
+	double lon_upperleft,
+	double lat_upperleft,
+	int offset_row, 
+	int offset_col,
+	int sceneHeight,
+	int sceneWidth, 
+	double prf,
+	double rangeSpacing,
+	double wavelength,
+	double nearRangeTime,
+	double acquisitionStartTime, 
+	double acquisitionStopTime, 
+	Mat& stateVector,
+	double lon_spacing,
+	double lat_spacing,
+	double* lon_east,
+	double* lon_west,
+	double* lat_north,
+	double* lat_south
+)
+{
+	if (DEM84.empty() ||
+		DEM84.type() != CV_16S ||
+		(slc.type() != CV_32F && slc.type() != CV_16S) ||
+		sceneHeight < 10 ||
+		sceneWidth < 10 ||
+		prf <= 0 ||
+		wavelength <= 0 ||
+		rangeSpacing <= 0 ||
+		nearRangeTime <= 0 ||
+		acquisitionStartTime <= 0 ||
+		acquisitionStopTime <= 0 ||
+		lon_spacing <= 0.0 ||
+		lat_spacing <= 0.0 ||
+		fabs(lon_upperleft) > 180.0 ||
+		fabs(lat_upperleft) > 90.0 ||
+		stateVector.type() != CV_64F ||
+		stateVector.rows < 5 ||
+		stateVector.cols != 7
+		)
+	{
+		fprintf(stderr, "geocode(): input check failed!\n");
+		return -1;
+	}
+	//计算DEM插值倍数
+	int interp_times_x, interp_times_y;
+	double a = 6378137, b = 6356752;
+	double C_short = (a + b) * PI;//经线一圈长度
+	double C_long = a * 2 * PI;
+	double lon_per_meter = 360.0 / C_short;//经线上每米多少度
+	double lat_per_meter = 360.0 / (C_long * cos(lat_upperleft / 180.0 * PI));//纬线上每米多少度
+	interp_times_x = lon_spacing / lon_per_meter / mapped_resolution_x;
+	interp_times_y = lat_spacing / lat_per_meter / mapped_resolution_y;
+	//84坐标系DEM插值
+	Mat DEM, stateVector_interp;
+	interp_times_x = interp_times_x < 1 ? 1 : interp_times_x;
+	interp_times_y = interp_times_y < 1 ? 1 : interp_times_y;
+	cv::resize(DEM84, DEM, cv::Size(DEM84.cols * interp_times_x, DEM84.rows * interp_times_y));
+	lon_spacing = lon_spacing / (double)interp_times_x;
+	lat_spacing = lat_spacing / (double)interp_times_y;
+	//初始化轨道类
+	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime);
+	stateVectors.applyOrbit();
+	int ret;
+	double time_interval = 1.0 / prf;
+
+	int DEM_rows = DEM.rows; int DEM_cols = DEM.cols;
+	double dopplerFrequency = 0.0;
+	mapped_slc.re.create(DEM.rows, DEM.cols, slc.type()); mapped_slc.re = 0.0;
+	mapped_slc.im.create(DEM.rows, DEM.cols, slc.type()); mapped_slc.im = 0.0;
+	//地理编码
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < DEM_rows; i++)
+	{
+		for (int j = 0; j < DEM_cols; j++)
+		{
+			Position groundPosition;
+			double lat, lon, height;
+			lat = lat_upperleft - (double)i * lat_spacing;
+			lon = lon_upperleft + (double)j * lon_spacing;
+			lon = lon > 180.0 ? (lon - 360.0) : lon;
+			height = DEM.at<short>(i, j);
+			Utils::ell2xyz(lon, lat, height, groundPosition);
+			int numOrbitVec = stateVectors.newStateVectors.rows;
+			double firstVecTime = 0.0;
+			double secondVecTime = 0.0;
+			double firstVecFreq = 0.0;
+			double secondVecFreq = 0.0;
+			double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+			for (int ii = 0; ii < numOrbitVec; ii++) {
+				Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+					stateVectors.newStateVectors.at<double>(ii, 3));
+				Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+					stateVectors.newStateVectors.at<double>(ii, 6));
+				currentFreq = 0;
+				xdiff = groundPosition.x - orb_pos.x;
+				ydiff = groundPosition.y - orb_pos.y;
+				zdiff = groundPosition.z - orb_pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+				if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+					firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					firstVecFreq = currentFreq;
+				}
+				else {
+					secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					secondVecFreq = currentFreq;
+					break;
+				}
+			}
+
+			if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+				continue;
+			}
+
+			double lowerBoundTime = firstVecTime;
+			double upperBoundTime = secondVecTime;
+			double lowerBoundFreq = firstVecFreq;
+			double upperBoundFreq = secondVecFreq;
+			double midTime, midFreq;
+			double diffTime = fabs(upperBoundTime - lowerBoundTime);
+			double absLineTimeInterval = time_interval;
+
+			int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+			int numIterations = 0; Position pos; Velocity vel;
+			while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+				midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+				stateVectors.getPosition(midTime, pos);
+				stateVectors.getVelocity(midTime, vel);
+				xdiff = groundPosition.x - pos.x;
+				ydiff = groundPosition.y - pos.y;
+				zdiff = groundPosition.z - pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+				if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+					lowerBoundTime = midTime;
+					lowerBoundFreq = midFreq;
+				}
+				else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+					upperBoundTime = midTime;
+					upperBoundFreq = midFreq;
+				}
+				else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+					zeroDopplerTime = midTime;
+					break;
+				}
+
+				diffTime = fabs(upperBoundTime - lowerBoundTime);
+				numIterations++;
+			}
+
+
+			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
+			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			azimuthIndex = azimuthIndex - offset_row;
+			rangeIndex = rangeIndex - offset_col;
+			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 2 || rangeIndex < 0 || rangeIndex > sceneWidth - 2)
+			{
+
+			}
+			else
+			{
+				//双线性插值计算
+				double ratio_x = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing - rangeIndex;
+				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - azimuthIndex;
+				if (slc.type() == CV_32F)
+				{
+					double upper = (double)slc.re.at<float>(azimuthIndex, rangeIndex) + double(slc.re.at<float>(azimuthIndex, rangeIndex)
+						- slc.re.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double lower = (double)slc.re.at<float>(azimuthIndex + 1, rangeIndex) + double(slc.re.at<float>(azimuthIndex + 1, rangeIndex + 1)
+						- slc.re.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
+					mapped_slc.re.at<float>(i, j) = upper + (lower - upper) * ratio_y;
+
+					upper = (double)slc.im.at<float>(azimuthIndex, rangeIndex) + double(slc.im.at<float>(azimuthIndex, rangeIndex)
+						- slc.im.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					lower = (double)slc.im.at<float>(azimuthIndex + 1, rangeIndex) + double(slc.im.at<float>(azimuthIndex + 1, rangeIndex + 1)
+						- slc.im.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
+					mapped_slc.im.at<float>(i, j) = upper + (lower - upper) * ratio_y;
+				}
+				else
+				{
+					double upper = (double)slc.re.at<short>(azimuthIndex, rangeIndex) + double(slc.re.at<short>(azimuthIndex, rangeIndex)
+						- slc.re.at<short>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double lower = (double)slc.re.at<short>(azimuthIndex + 1, rangeIndex) + double(slc.re.at<short>(azimuthIndex + 1, rangeIndex + 1)
+						- slc.re.at<short>(azimuthIndex + 1, rangeIndex)) * ratio_x;
+					mapped_slc.re.at<short>(i, j) = upper + (lower - upper) * ratio_y;
+
+					upper = (double)slc.im.at<short>(azimuthIndex, rangeIndex) + double(slc.im.at<short>(azimuthIndex, rangeIndex)
+						- slc.im.at<short>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					lower = (double)slc.im.at<short>(azimuthIndex + 1, rangeIndex) + double(slc.im.at<short>(azimuthIndex + 1, rangeIndex + 1)
+						- slc.im.at<short>(azimuthIndex + 1, rangeIndex)) * ratio_x;
+					mapped_slc.im.at<short>(i, j) = upper + (lower - upper) * ratio_y;
+				}
+			}
+		}
+	}
+	if (lat_north && lat_south && lon_east && lon_west)
+	{
+		*lat_north = lat_upperleft;
+		*lat_south = lat_upperleft - (double)(DEM.rows - 1) * lat_spacing;
+		*lon_east = lon_upperleft;
+		*lon_west = lon_upperleft + (double)(DEM.cols - 1) * lon_spacing;
+		*lon_west = *lon_west > 180.0 ? (*lon_west - 360.0) : *lon_west;
+	}
+	return 0;
+}
+
 
 
 
