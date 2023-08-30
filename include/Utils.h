@@ -1775,6 +1775,123 @@ public:
 		double* lat_north = NULL,
 		double* lat_south = NULL
 	);
+	/*
+	* @brief 利用地理配准网格文件（TropiSAR的.grille文件）将横向墨卡托投影的DTM和DSM投影至SAR坐标系
+	* @param grille_file                       grille网格文件
+	* @param DTM                               待投影的DTM或者DSM数据
+	* @param xllcorner                         DTM左上角UTM_x坐标
+	* @param yllcorner                         DTM左上角UTM_y坐标
+	* @param prior_DTM                         SAR坐标系先验DTM
+	* @param mapped_DTM                        投影至SAR坐标系的DTM
+	* @param SAR_extent_x                      SAR场景x坐标范围(0~SAR_extent_x)
+	* @param SAR_extent_y                      SAR场景y坐标范围(0~SAR_extent_y)
+	* @return 成功返回0，否则返回-1
+	*/
+	int geo_transformation(
+		const char* grille_file,
+		Mat DTM,
+		double xllcorner,
+		double yllcorner,
+		Mat& prior_DTM,
+		Mat& mapped_DTM,
+		int SAR_extent_x,
+		int SAR_extent_y
+	);
+	/*
+	* @brief 读取TropiSAR的.grille文件
+	* @param grille_file                       待读取的grille网格文件
+	* @param row_matrix                        每层网格的行信息
+	* @param col_matrix                        每层网格的列信息
+	* @param lon_matrix                        每层网格的经度信息
+	* @param lat_matrix                        每层网格的纬度信息
+	* @param height_vector                     每层网格的高度信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_grille(
+		const char* grille_file,
+		Mat& row_matrix,
+		Mat& col_matrix,
+		vector<Mat>& lon_matrix,
+		vector<Mat>& lat_matrix,
+		vector<double>& height_vector
+	);
+	/*
+	* @brief 将经纬度坐标转换为UTM坐标
+	* @param lon                                经度
+	* @param lat                                纬度
+	* @param UTM_X                              UTM X坐标
+	* @param UTM_Y                              UTM Y坐标
+	* @return 成功返回0，否则返回-1
+	*/
+	int lonlat2utm(
+		Mat lon,
+		Mat lat,
+		Mat& UTM_X,
+		Mat& UTM_Y
+	);
+	/*
+	* @brief 从LVIS 2级数据中读取DTM和DSM信息
+	* @param LVIS2_filelist                     LVIS 2级文件
+	* @param DTM                                LVIS DTM信息(返回值，n×1)
+	* @param DSM                                LVIS DSM信息(RH100，返回值，n×1)
+	* @param RH100                              LVIS RH100信息(返回值，n×1)
+	* @param RH95                               LVIS RH100信息(返回值，n×1)
+	* @param lat                                LVIS 纬度信息(返回值，n×1)
+	* @param lon                                LVIS 经度信息(返回值，n×1)
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_LVIS(
+		vector<string>& LVIS2_filelist,
+		Mat& DTM,
+		Mat& DSM,
+		Mat& RH100,
+		Mat& RH95,
+		Mat& lat,
+		Mat& lon
+	);
+	/*
+	* @brief 将DTM/DSM数据投影至DLR F-SAR坐标系
+	* @param east_min                          F-SAR场景边缘
+	* @param north_min                         F-SAR场景边缘
+	* @param east_max                          F-SAR场景边缘
+	* @param north_max                         F-SAR场景边缘
+	* @param projection_zone                   UTM区号
+	* @param pixel_spacing                     参考DEM采样间隔（米）
+	* @param sr2geo_az                         参考DEM在SAR坐标系中的方位向坐标表
+	* @param sr2geo_rg                         参考DEM在SAR坐标系中的距离向坐标表
+	* @param sr2geo_h_ref                      参考DEM的高度
+	* @param sr2geo3d_rg_o1                    3D地理编码系数
+	* @param sr2geo3d_rg_o2                    3D地理编码系数
+	* @param sr2geo3d_az_o1                    3D地理编码系数
+	* @param sr2geo3d_az_o2                    3D地理编码系数
+	* @param DTM/DSM                           待投影的DTM/DSM
+	* @param DTM_lon                           待投影DTM/DSM的经度
+	* @param DTM_lat                           待投影DTM/DSM的纬度
+	* @param mapped_slc_rg                     投影后DTM/DSM在SAR坐标系中的距离向坐标（返回值）
+	* @param mapped_slc_az                     投影后DTM/DSM在SAR坐标系中的方位向坐标（返回值）
+	* @param mapped_h0                         参考DEM（返回值，与mapped_slc_rg和mapped_slc_az同尺寸）
+	*/
+	int geo2sar_DLR(
+		double east_min,
+		double north_min,
+		double east_max,
+		double north_max,
+		int projection_zone,
+		double pixel_spacing,
+		Mat& sr2geo_az,
+		Mat& sr2geo_rg,
+		Mat& sr2geo_h_ref,
+		Mat& sr2geo3d_rg_o1,
+		Mat& sr2geo3d_rg_o2,
+		Mat& sr2geo3d_az_o1,
+		Mat& sr2geo3d_az_o2,
+		Mat& DTM,
+		Mat& DTM_lon,
+		Mat& DTM_lat,
+		Mat& mapped_slc_rg,
+		Mat& mapped_slc_az,
+		Mat& mapped_h0
+	);
 private:
 	static constexpr const char* SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
 	static constexpr const char* error_head = "UTILS_DLL_ERROR: error happens when using ";
