@@ -1798,6 +1798,32 @@ public:
 		int SAR_extent_y
 	);
 	/*
+	* @brief 利用地理配准网格文件（TropiSAR的.grille文件）将WGS84坐标系（经纬高）的DTM和DSM投影至SAR坐标系
+	* @param grille_file                       grille网格文件
+	* @param DTM                               待投影的DTM或者DSM数据
+	* @param lon_upleft                        DTM左上角经度
+	* @param lat_upleft                        DTM左上角纬度
+	* @param lon_interval                      经度采样间隔
+	* @param lat_interval                      纬度采样间隔
+	* @param prior_DTM                         SAR坐标系先验DTM
+	* @param mapped_DTM                        投影至SAR坐标系的DTM
+	* @param SAR_extent_x                      SAR场景x坐标范围(0~SAR_extent_x)
+	* @param SAR_extent_y                      SAR场景y坐标范围(0~SAR_extent_y)
+	* @return 成功返回0，否则返回-1
+	*/
+	int geo_transformation(
+		const char* grille_file,
+		Mat DTM,
+		double lon_upleft,
+		double lat_upleft,
+		double lon_interval,
+		double lat_interval,
+		Mat& prior_DTM,
+		Mat& mapped_DTM,
+		int SAR_extent_x,
+		int SAR_extent_y
+	);
+	/*
 	* @brief 读取TropiSAR的.grille文件
 	* @param grille_file                       待读取的grille网格文件
 	* @param row_matrix                        每层网格的行信息
