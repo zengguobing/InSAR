@@ -591,7 +591,7 @@ public:
 	* 参数1：轨道参数（输出值，N×7矩阵，每列分别是：GPS时间，位置，速度）
 	*/
 	int get_stateVec_from_sentinel(Mat& stateVec);
-	
+
 
 private:
 	char m_xmlFileName[2048];
