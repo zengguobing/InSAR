@@ -64,6 +64,23 @@ public:
 		int n_win,
 		int n_pad
 	);
+	/*经典Goldstein滤波（并行）
+	* 参数1 待滤波相位
+	* 参数2 滤波后相位
+	* 参数3 滤波器参数
+	* 参数4 傅里叶变换窗口大小
+	* 参数5 补零窗口大小
+	*/
+	int Goldstein_filter_parallel(
+		Mat& phase,
+		Mat& phase_filter,
+		double alpha,
+		int n_win,
+		int n_pad
+	);
+	// 按二维高斯函数实现高斯滤波
+	int GaussianFilter(Mat& src, Mat& dst, Mat window);
+	int GenerateGaussMask(Mat& Mask, int window_height, int win_width, double sigma);
 private:
 	char error_head[256];
 	char parallel_error_head[256];

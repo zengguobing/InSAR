@@ -592,6 +592,7 @@ int Filter::Goldstein_filter(Mat& phase, Mat& phase_filter, double alpha, int n_
 	Mat guasswin_t;
 	transpose(guasswin, guasswin_t);
 	guasswin = guasswin * guasswin_t;
+	GenerateGaussMask(guasswin, 7, 7, 1.0);
 	int n_win_ex = n_win + n_pad;
 	ComplexMat ph_bit(n_win_ex, n_win_ex);
 	ComplexMat temp, temp1, temp2, fft_out, ph_filt;
@@ -639,9 +640,9 @@ int Filter::Goldstein_filter(Mat& phase, Mat& phase_filter, double alpha, int n_
 			if (return_check(ret, "util.fft2(*, *)", error_head)) return -1;
 			H = fft_out.GetMod();
 			ret = fftshift2(H);
-
 			if (return_check(ret, "fftshift2(*, *)", error_head)) return -1;
-			filter2D(H, H, -1, guasswin, Point(-1, -1), 0.0, BORDER_CONSTANT);
+			GaussianFilter(H, H, guasswin);
+			//filter2D(H, H, -1, guasswin, Point(-1, -1), 0.0, BORDER_CONSTANT);
 			ret = util.ifftshift(H);
 			if (return_check(ret, "ifftshift(*, *)", error_head)) return -1;
 			H.copyTo(tmp);
@@ -676,5 +677,182 @@ int Filter::Goldstein_filter(Mat& phase, Mat& phase_filter, double alpha, int n_
 
 	}
 	ph_out.GetPhase().copyTo(phase_filter);
+	return 0;
+}
+
+int Filter::Goldstein_filter_parallel(Mat& phase, Mat& phase_filter, double alpha, int n_win, int n_pad)
+{
+	if (phase.cols < 3 ||
+		phase.rows < 3 ||
+		phase.channels() != 1 ||
+		phase.type() != CV_64F ||
+		alpha <= 0 ||
+		n_win < 5 ||
+		n_pad < 0
+		)
+	{
+		fprintf(stderr, "Goldstein_filter_parallel(): input check failed!\n\n");
+		return -1;
+	}
+	int n_i = phase.rows;
+	int n_j = phase.cols;
+	ComplexMat ph;
+	Mat cos, sin;
+	
+	Utils util;
+	util.phase2cos(phase, ph.re, ph.im);
+
+	ComplexMat ph_out(n_i, n_j);
+	int n_inc = floor(n_win / 4);
+	int n_win_i = ceil(n_i / n_inc) - 1;
+	int n_win_j = ceil(n_j / n_inc) - 1;
+	int x = floor(n_win / 2 - 1);
+	Mat qua_wnd = Mat::zeros(x + 1, x + 1, CV_64F);
+	for (int i = 0; i <= x; i++)
+	{
+		for (int j = 0; j <= x; j++)
+		{
+			qua_wnd.at<double>(i, j) = double(i + j);
+		}
+	}
+	qua_wnd.at<double>(0, 0) = 1e-6;
+	Mat fliped_wnd, guasswin;
+	flip(qua_wnd, fliped_wnd, 1);
+	hconcat(qua_wnd, fliped_wnd, qua_wnd);
+	flip(qua_wnd, fliped_wnd, 0);
+	vconcat(qua_wnd, fliped_wnd, qua_wnd);
+	GenerateGaussMask(guasswin, 7, 7, 1.0);
+	int n_win_ex = n_win + n_pad;
+	
+	for (int ix1 = 1; ix1 <= n_win_i; ix1++)
+	{
+		Mat wf, wind_func, tmp1, tmp2;
+		qua_wnd.copyTo(wind_func);
+		int i1, i2, i_shift;
+		wind_func.copyTo(wf);
+		i1 = (ix1 - 1) * n_inc + 1;
+		i2 = i1 + n_win - 1;
+		if (i2 > n_i)
+		{
+			i_shift = i2 - n_i;
+			i2 = n_i;
+			i1 = n_i - n_win + 1;
+			tmp1 = Mat::zeros(i_shift, n_win, CV_64F);
+			wf(Range(0, n_win - i_shift), Range(0, wf.cols)).copyTo(tmp2);
+			vconcat(tmp1, tmp2, wf);
+		}
+#pragma omp parallel for schedule(guided)
+		for (int ix2 = 1; ix2 <= n_win_j; ix2++)
+		{
+			ComplexMat ph_bit(n_win_ex, n_win_ex);
+			ComplexMat temp, temp1, temp2, fft_out, ph_filt;
+			Mat wf2, tmp, tmp11, tmp22, H;
+			int j_shift, j1, j2; int ret;
+			double median = 1.0;
+			wf.copyTo(wf2);
+			j1 = (ix2 - 1) * n_inc + 1;
+			j2 = j1 + n_win - 1;
+			if (j2 > n_j)
+			{
+				j_shift = j2 - n_j;
+				j2 = n_j;
+				j1 = n_j - n_win + 1;
+				tmp11 = Mat::zeros(n_win, j_shift, CV_64F);
+				wf2(Range(0, wf2.rows), Range(0, n_win - j_shift)).copyTo(tmp22);
+				hconcat(tmp11, tmp22, wf2);
+			}
+			if (wf2.cols != n_win || wf2.rows != n_win)
+			{
+				fprintf(stderr, "Goldstein_filter_parallel(): wf2.size and n_win mismatch, please check to make sure n_win is even!\n\n");
+				//return -1;
+			}
+			temp = ph(cv::Range(i1 - 1, i2), cv::Range(j1 - 1, j2));
+			ret = ph_bit.SetValue(cv::Range(0, n_win), cv::Range(0, n_win), temp);
+			ret = util.fft2(ph_bit, fft_out);
+			H = fft_out.GetMod();
+			ret = fftshift2(H);
+			GaussianFilter(H, H, guasswin);
+			//filter2D(H, H, -1, guasswin, Point(-1, -1), 0.0, BORDER_CONSTANT);
+			ret = util.ifftshift(H);
+			H.copyTo(tmp);
+			tmp = tmp.reshape(0, 1);
+			cv::sort(tmp, tmp, SORT_ASCENDING + SORT_EVERY_ROW);
+			if (tmp.cols % 2 == 1)
+			{
+				median = tmp.at<double>(0, int((tmp.cols + 1) / 2) - 1);
+			}
+			else
+			{
+				median = tmp.at<double>(0, int(tmp.cols / 2) - 1) + tmp.at<double>(0, int(tmp.cols / 2));
+				median = median / 2.0;
+			}
+			if (fabs(median) > 1e-8)
+			{
+				H = H / median;
+			}
+			cv::pow(H, alpha, H);
+			fft_out = fft_out * H;
+			ret = util.ifft2(fft_out, temp);
+			Mat re, im;
+			re = temp.GetRe();
+			im = temp.GetIm();
+			temp1 = temp(Range(0, n_win), Range(0, n_win));
+			ph_filt = temp1 * wf2;
+			temp = ph_out(Range(i1 - 1, i2), Range(j1 - 1, j2)) + ph_filt;
+			ret = ph_out.SetValue(Range(i1 - 1, i2), Range(j1 - 1, j2), temp);
+		}
+		fprintf(stdout, "Goldstein filtering process: %d / %d\n", ix1, n_win_i);
+	}
+	ph_out.GetPhase().copyTo(phase_filter);
+	return 0;
+}
+
+// 按二维高斯函数实现高斯滤波
+int Filter::GaussianFilter(cv::Mat& src, cv::Mat& dst, cv::Mat window) 
+{
+	int hh = (window.rows - 1) / 2;
+	int hw = (window.cols - 1) / 2;
+	Mat Dst = cv::Mat::zeros(src.size(), src.type());
+	//边界填充
+	cv::Mat Newsrc;
+	cv::copyMakeBorder(src, Newsrc, hh, hh, hw, hw, cv::BORDER_REPLICATE);//边界复制
+	Dst.zeros(src.size(), src.type());
+	//高斯滤波
+	for (int i = hh; i < src.rows + hh; ++i) {
+		for (int j = hw; j < src.cols + hw; ++j) {
+			double sum = 0.0;
+
+			for (int r = -hh; r <= hh; ++r) {
+				for (int c = -hw; c <= hw; ++c) {
+					sum = sum + Newsrc.ptr<double>(i + r)[j + c] * window.ptr<double>(r + hh)[c + hw];
+				}
+			}
+			Dst.ptr<double>(i - hh)[j - hw] = sum;
+		}
+	}
+	Dst.copyTo(dst);
+	return 0;
+}
+
+int Filter::GenerateGaussMask(Mat& Mask, int window_height, int window_width, double sigma)
+{
+	Mask.create(window_height, window_width, CV_64F);
+	int h = window_height;
+	int w = window_width;
+	int center_h = (h - 1) / 2;
+	int center_w = (w - 1) / 2;
+	double sum = 0.0;
+	double x, y;
+	for (int i = 0; i < h; ++i) {
+		y = pow(i - center_h, 2);
+		for (int j = 0; j < w; ++j) {
+			x = pow(j - center_w, 2);
+			//因为最后都要归一化的，常数部分可以不计算，也减少了运算量
+			double g = exp(-(x + y) / (2 * sigma * sigma));
+			Mask.ptr<double>(i)[j] = g;
+			sum += g;
+		}
+	}
+	Mask = Mask / sum;
 	return 0;
 }
