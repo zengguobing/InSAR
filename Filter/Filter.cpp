@@ -674,7 +674,7 @@ int Filter::Goldstein_filter(Mat& phase, Mat& phase_filter, double alpha, int n_
 			ret = ph_out.SetValue(Range(i1 - 1, i2), Range(j1 - 1, j2), temp);
 			if (return_check(ret, "ph_out.SetValue(*, *, *)", error_head)) return -1;
 		}
-
+		fprintf(stdout, "Goldstein filtering process: %d / %d\n", ix1, n_win_i);
 	}
 	ph_out.GetPhase().copyTo(phase_filter);
 	return 0;
