@@ -11258,19 +11258,27 @@ int Utils::geocode(
 				
 				if (input.type() == CV_32F)
 				{
-					double upper = (double)input.at<float>(azimuthIndex, rangeIndex) + double(input.at<float>(azimuthIndex, rangeIndex)
+					/*double upper = (double)input.at<float>(azimuthIndex, rangeIndex) + double(input.at<float>(azimuthIndex, rangeIndex)
 						- input.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
 					double lower = (double)input.at<float>(azimuthIndex + 1, rangeIndex) + double(input.at<float>(azimuthIndex + 1, rangeIndex + 1)
 						- input.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_result.at<float>(i, j) = upper + (lower - upper) * ratio_y;
+					mapped_result.at<float>(i, j) = upper + (lower - upper) * ratio_y;*/
+
+					mapped_result.at<float>(i, j) = input.at<float>(azimuthIndex + 1, rangeIndex + 1) + input.at<float>(azimuthIndex + 1, rangeIndex) +
+						input.at<float>(azimuthIndex, rangeIndex + 1) + input.at<float>(azimuthIndex, rangeIndex);
+					mapped_result.at<float>(i, j) = mapped_result.at<float>(i, j) / 4.0;
 				}
 				else
 				{
-					double upper = (double)input.at<double>(azimuthIndex, rangeIndex) + double(input.at<double>(azimuthIndex, rangeIndex)
+					/*double upper = (double)input.at<double>(azimuthIndex, rangeIndex) + double(input.at<double>(azimuthIndex, rangeIndex)
 						- input.at<double>(azimuthIndex, rangeIndex + 1)) * ratio_x;
 					double lower = (double)input.at<double>(azimuthIndex + 1, rangeIndex) + double(input.at<double>(azimuthIndex + 1, rangeIndex + 1)
 						- input.at<double>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_result.at<double>(i, j) = upper + (lower - upper) * ratio_y;
+					mapped_result.at<double>(i, j) = upper + (lower - upper) * ratio_y;*/
+
+					mapped_result.at<double>(i, j) = input.at<double>(azimuthIndex + 1, rangeIndex + 1) + input.at<double>(azimuthIndex + 1, rangeIndex) +
+						input.at<double>(azimuthIndex, rangeIndex + 1) + input.at<double>(azimuthIndex, rangeIndex);
+					mapped_result.at<double>(i, j) = mapped_result.at<double>(i, j) / 4.0;
 				}
 			}
 		}
@@ -11461,7 +11469,7 @@ int Utils::geocode(
 				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - azimuthIndex;
 				if (slc.type() == CV_32F)
 				{
-					double upper = (double)slc.re.at<float>(azimuthIndex, rangeIndex) + double(slc.re.at<float>(azimuthIndex, rangeIndex)
+					/*double upper = (double)slc.re.at<float>(azimuthIndex, rangeIndex) + double(slc.re.at<float>(azimuthIndex, rangeIndex)
 						- slc.re.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
 					double lower = (double)slc.re.at<float>(azimuthIndex + 1, rangeIndex) + double(slc.re.at<float>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.re.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
@@ -11471,11 +11479,19 @@ int Utils::geocode(
 						- slc.im.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
 					lower = (double)slc.im.at<float>(azimuthIndex + 1, rangeIndex) + double(slc.im.at<float>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.im.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_slc.im.at<float>(i, j) = upper + (lower - upper) * ratio_y;
+					mapped_slc.im.at<float>(i, j) = upper + (lower - upper) * ratio_y;*/
+
+					mapped_slc.im.at<float>(i, j) = slc.im.at<float>(azimuthIndex + 1, rangeIndex + 1) + slc.im.at<float>(azimuthIndex + 1, rangeIndex) +
+						slc.im.at<float>(azimuthIndex, rangeIndex + 1) + slc.im.at<float>(azimuthIndex, rangeIndex);
+					mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(i, j) / 4.0;
+
+					mapped_slc.re.at<float>(i, j) = slc.re.at<float>(azimuthIndex + 1, rangeIndex + 1) + slc.re.at<float>(azimuthIndex + 1, rangeIndex) +
+						slc.re.at<float>(azimuthIndex, rangeIndex + 1) + slc.re.at<float>(azimuthIndex, rangeIndex);
+					mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(i, j) / 4.0;
 				}
 				else
 				{
-					double upper = (double)slc.re.at<short>(azimuthIndex, rangeIndex) + double(slc.re.at<short>(azimuthIndex, rangeIndex)
+					/*double upper = (double)slc.re.at<short>(azimuthIndex, rangeIndex) + double(slc.re.at<short>(azimuthIndex, rangeIndex)
 						- slc.re.at<short>(azimuthIndex, rangeIndex + 1)) * ratio_x;
 					double lower = (double)slc.re.at<short>(azimuthIndex + 1, rangeIndex) + double(slc.re.at<short>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.re.at<short>(azimuthIndex + 1, rangeIndex)) * ratio_x;
@@ -11485,7 +11501,15 @@ int Utils::geocode(
 						- slc.im.at<short>(azimuthIndex, rangeIndex + 1)) * ratio_x;
 					lower = (double)slc.im.at<short>(azimuthIndex + 1, rangeIndex) + double(slc.im.at<short>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.im.at<short>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_slc.im.at<short>(i, j) = upper + (lower - upper) * ratio_y;
+					mapped_slc.im.at<short>(i, j) = upper + (lower - upper) * ratio_y;*/
+
+					mapped_slc.im.at<short>(i, j) = slc.im.at<short>(azimuthIndex + 1, rangeIndex + 1) + slc.im.at<short>(azimuthIndex + 1, rangeIndex) +
+						slc.im.at<short>(azimuthIndex, rangeIndex + 1) + slc.im.at<short>(azimuthIndex, rangeIndex);
+					mapped_slc.im.at<short>(i, j) = double(mapped_slc.im.at<short>(i, j)) / 4.0;
+
+					mapped_slc.re.at<short>(i, j) = slc.re.at<short>(azimuthIndex + 1, rangeIndex + 1) + slc.re.at<short>(azimuthIndex + 1, rangeIndex) +
+						slc.re.at<short>(azimuthIndex, rangeIndex + 1) + slc.re.at<short>(azimuthIndex, rangeIndex);
+					mapped_slc.re.at<short>(i, j) = double(mapped_slc.re.at<short>(i, j)) / 4.0;
 				}
 			}
 		}
