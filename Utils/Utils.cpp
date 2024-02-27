@@ -11242,8 +11242,8 @@ int Utils::geocode(
 
 
 			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
-			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
-			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			int azimuthIndex = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
+			int rangeIndex = floor((distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing);
 			azimuthIndex = azimuthIndex - offset_row;
 			rangeIndex = rangeIndex - offset_col;
 			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 2 || rangeIndex < 0 || rangeIndex > sceneWidth - 2)
@@ -11253,32 +11253,32 @@ int Utils::geocode(
 			else
 			{
 				//双线性插值计算
-				double ratio_x = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing - rangeIndex;
-				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - azimuthIndex;
+				double ratio_x = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing - floor((distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing);
+				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
 				
 				if (input.type() == CV_32F)
 				{
-					/*double upper = (double)input.at<float>(azimuthIndex, rangeIndex) + double(input.at<float>(azimuthIndex, rangeIndex)
-						- input.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double upper = (double)input.at<float>(azimuthIndex, rangeIndex) + double(input.at<float>(azimuthIndex, rangeIndex + 1)
+						- input.at<float>(azimuthIndex, rangeIndex)) * ratio_x;
 					double lower = (double)input.at<float>(azimuthIndex + 1, rangeIndex) + double(input.at<float>(azimuthIndex + 1, rangeIndex + 1)
 						- input.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_result.at<float>(i, j) = upper + (lower - upper) * ratio_y;*/
+					mapped_result.at<float>(i, j) = upper + (lower - upper) * ratio_y;
 
-					mapped_result.at<float>(i, j) = input.at<float>(azimuthIndex + 1, rangeIndex + 1) + input.at<float>(azimuthIndex + 1, rangeIndex) +
+					/*mapped_result.at<float>(i, j) = input.at<float>(azimuthIndex + 1, rangeIndex + 1) + input.at<float>(azimuthIndex + 1, rangeIndex) +
 						input.at<float>(azimuthIndex, rangeIndex + 1) + input.at<float>(azimuthIndex, rangeIndex);
-					mapped_result.at<float>(i, j) = mapped_result.at<float>(i, j) / 4.0;
+					mapped_result.at<float>(i, j) = mapped_result.at<float>(i, j) / 4.0;*/
 				}
 				else
 				{
-					/*double upper = (double)input.at<double>(azimuthIndex, rangeIndex) + double(input.at<double>(azimuthIndex, rangeIndex)
-						- input.at<double>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double upper = (double)input.at<double>(azimuthIndex, rangeIndex) + double(input.at<double>(azimuthIndex, rangeIndex + 1)
+						- input.at<double>(azimuthIndex, rangeIndex)) * ratio_x;
 					double lower = (double)input.at<double>(azimuthIndex + 1, rangeIndex) + double(input.at<double>(azimuthIndex + 1, rangeIndex + 1)
 						- input.at<double>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_result.at<double>(i, j) = upper + (lower - upper) * ratio_y;*/
+					mapped_result.at<double>(i, j) = upper + (lower - upper) * ratio_y;
 
-					mapped_result.at<double>(i, j) = input.at<double>(azimuthIndex + 1, rangeIndex + 1) + input.at<double>(azimuthIndex + 1, rangeIndex) +
+					/*mapped_result.at<double>(i, j) = input.at<double>(azimuthIndex + 1, rangeIndex + 1) + input.at<double>(azimuthIndex + 1, rangeIndex) +
 						input.at<double>(azimuthIndex, rangeIndex + 1) + input.at<double>(azimuthIndex, rangeIndex);
-					mapped_result.at<double>(i, j) = mapped_result.at<double>(i, j) / 4.0;
+					mapped_result.at<double>(i, j) = mapped_result.at<double>(i, j) / 4.0;*/
 				}
 			}
 		}
@@ -11454,8 +11454,8 @@ int Utils::geocode(
 
 
 			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
-			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
-			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			int azimuthIndex = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
+			int rangeIndex = floor((distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing);
 			azimuthIndex = azimuthIndex - offset_row;
 			rangeIndex = rangeIndex - offset_col;
 			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 2 || rangeIndex < 0 || rangeIndex > sceneWidth - 2)
@@ -11465,51 +11465,51 @@ int Utils::geocode(
 			else
 			{
 				//双线性插值计算
-				double ratio_x = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing - rangeIndex;
-				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - azimuthIndex;
+				double ratio_x = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing - floor((distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing);
+				double ratio_y = (zeroDopplerTime - acquisitionStartTime) / time_interval - floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
 				if (slc.type() == CV_32F)
 				{
-					/*double upper = (double)slc.re.at<float>(azimuthIndex, rangeIndex) + double(slc.re.at<float>(azimuthIndex, rangeIndex)
-						- slc.re.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double upper = (double)slc.re.at<float>(azimuthIndex, rangeIndex) + double(slc.re.at<float>(azimuthIndex, rangeIndex + 1)
+						- slc.re.at<float>(azimuthIndex, rangeIndex)) * ratio_x;
 					double lower = (double)slc.re.at<float>(azimuthIndex + 1, rangeIndex) + double(slc.re.at<float>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.re.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
 					mapped_slc.re.at<float>(i, j) = upper + (lower - upper) * ratio_y;
 
-					upper = (double)slc.im.at<float>(azimuthIndex, rangeIndex) + double(slc.im.at<float>(azimuthIndex, rangeIndex)
-						- slc.im.at<float>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					upper = (double)slc.im.at<float>(azimuthIndex, rangeIndex) + double(slc.im.at<float>(azimuthIndex, rangeIndex + 1)
+						- slc.im.at<float>(azimuthIndex, rangeIndex)) * ratio_x;
 					lower = (double)slc.im.at<float>(azimuthIndex + 1, rangeIndex) + double(slc.im.at<float>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.im.at<float>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_slc.im.at<float>(i, j) = upper + (lower - upper) * ratio_y;*/
+					mapped_slc.im.at<float>(i, j) = upper + (lower - upper) * ratio_y;
 
-					mapped_slc.im.at<float>(i, j) = slc.im.at<float>(azimuthIndex + 1, rangeIndex + 1) + slc.im.at<float>(azimuthIndex + 1, rangeIndex) +
+					/*mapped_slc.im.at<float>(i, j) = slc.im.at<float>(azimuthIndex + 1, rangeIndex + 1) + slc.im.at<float>(azimuthIndex + 1, rangeIndex) +
 						slc.im.at<float>(azimuthIndex, rangeIndex + 1) + slc.im.at<float>(azimuthIndex, rangeIndex);
 					mapped_slc.im.at<float>(i, j) = mapped_slc.im.at<float>(i, j) / 4.0;
 
 					mapped_slc.re.at<float>(i, j) = slc.re.at<float>(azimuthIndex + 1, rangeIndex + 1) + slc.re.at<float>(azimuthIndex + 1, rangeIndex) +
 						slc.re.at<float>(azimuthIndex, rangeIndex + 1) + slc.re.at<float>(azimuthIndex, rangeIndex);
-					mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(i, j) / 4.0;
+					mapped_slc.re.at<float>(i, j) = mapped_slc.re.at<float>(i, j) / 4.0;*/
 				}
 				else
 				{
-					/*double upper = (double)slc.re.at<short>(azimuthIndex, rangeIndex) + double(slc.re.at<short>(azimuthIndex, rangeIndex)
-						- slc.re.at<short>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					double upper = (double)slc.re.at<short>(azimuthIndex, rangeIndex) + double(slc.re.at<short>(azimuthIndex, rangeIndex + 1)
+						- slc.re.at<short>(azimuthIndex, rangeIndex)) * ratio_x;
 					double lower = (double)slc.re.at<short>(azimuthIndex + 1, rangeIndex) + double(slc.re.at<short>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.re.at<short>(azimuthIndex + 1, rangeIndex)) * ratio_x;
 					mapped_slc.re.at<short>(i, j) = upper + (lower - upper) * ratio_y;
 
-					upper = (double)slc.im.at<short>(azimuthIndex, rangeIndex) + double(slc.im.at<short>(azimuthIndex, rangeIndex)
-						- slc.im.at<short>(azimuthIndex, rangeIndex + 1)) * ratio_x;
+					upper = (double)slc.im.at<short>(azimuthIndex, rangeIndex) + double(slc.im.at<short>(azimuthIndex, rangeIndex + 1)
+						- slc.im.at<short>(azimuthIndex, rangeIndex)) * ratio_x;
 					lower = (double)slc.im.at<short>(azimuthIndex + 1, rangeIndex) + double(slc.im.at<short>(azimuthIndex + 1, rangeIndex + 1)
 						- slc.im.at<short>(azimuthIndex + 1, rangeIndex)) * ratio_x;
-					mapped_slc.im.at<short>(i, j) = upper + (lower - upper) * ratio_y;*/
+					mapped_slc.im.at<short>(i, j) = upper + (lower - upper) * ratio_y;
 
-					mapped_slc.im.at<short>(i, j) = slc.im.at<short>(azimuthIndex + 1, rangeIndex + 1) + slc.im.at<short>(azimuthIndex + 1, rangeIndex) +
+					/*mapped_slc.im.at<short>(i, j) = slc.im.at<short>(azimuthIndex + 1, rangeIndex + 1) + slc.im.at<short>(azimuthIndex + 1, rangeIndex) +
 						slc.im.at<short>(azimuthIndex, rangeIndex + 1) + slc.im.at<short>(azimuthIndex, rangeIndex);
 					mapped_slc.im.at<short>(i, j) = double(mapped_slc.im.at<short>(i, j)) / 4.0;
 
 					mapped_slc.re.at<short>(i, j) = slc.re.at<short>(azimuthIndex + 1, rangeIndex + 1) + slc.re.at<short>(azimuthIndex + 1, rangeIndex) +
 						slc.re.at<short>(azimuthIndex, rangeIndex + 1) + slc.re.at<short>(azimuthIndex, rangeIndex);
-					mapped_slc.re.at<short>(i, j) = double(mapped_slc.re.at<short>(i, j)) / 4.0;
+					mapped_slc.re.at<short>(i, j) = double(mapped_slc.re.at<short>(i, j)) / 4.0;*/
 				}
 			}
 		}
