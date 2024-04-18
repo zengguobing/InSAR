@@ -10655,191 +10655,191 @@ int Utils::SAR2UTM(Mat& mapped_lon, Mat& mapped_lat, Mat& phase, Mat& mapped_pha
 		}
 	}
 
-//	//插值
-//	if (interpolation_method == 0)
-//	{
-//#pragma omp parallel for schedule(guided)
-//		for (int i = 0; i < UTM_rows; i++)
-//		{
-//			for (int j = 0; j < UTM_cols; j++)
-//			{
-//				if (b_filled.at<uchar>(i, j) != 0) continue;
-//				int up, down, left, right, up_count, down_count, left_count, right_count;
-//				double value1, value2, ratio1, ratio2;
-//				//寻找上面有值的点
-//				up = i;
-//				while (true)
-//				{
-//					up--;
-//					if (up < 0) break;
-//					if (b_filled.at<uchar>(up, j) != 0) break;
-//				}
-//				//寻找下面有值的点
-//				down = i;
-//				while (true)
-//				{
-//					down++;
-//					if (down > UTM_rows - 1) break;
-//					if (b_filled.at<uchar>(down, j) != 0) break;
-//				}
-//				//寻找左边有值的点
-//				left = j;
-//				while (true)
-//				{
-//					left--;
-//					if (left < 0) break;
-//					if (b_filled.at<uchar>(i, left) != 0) break;
-//				}
-//				//寻找右边有值的点
-//				right = j;
-//				while (true)
-//				{
-//					right++;
-//					if (right > UTM_cols - 1) break;
-//					if (b_filled.at<uchar>(i, right) != 0) break;
-//				}
-//
-//				//上下左右都有值
-//				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
-//				{
-//					int x_i = i, x_j = j;
-//					int down_distance = down - i;
-//					int up_distance = i - up;
-//					int left_distance = j - left;
-//					int right_distance = right - j;
-//					if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
-//					{
-//						x_i = down; x_j = j;
-//					}
-//					else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
-//					{
-//						x_i = up; x_j = j;
-//					}
-//					else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
-//					{
-//						x_i = i; x_j = left;
-//					}
-//					else
-//					{
-//						x_i = i; x_j = right;
-//					}
-//					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
-//					continue;
-//				}
-//				//上下有值
-//				if (up >= 0 && down <= UTM_rows - 1)
-//				{
-//					int x_i = i, x_j = j;
-//					int down_distance = down - i;
-//					int up_distance = i - up;
-//					if (down_distance < up_distance)
-//					{
-//						x_i = down; x_j = j;
-//					}
-//					else
-//					{
-//						x_i = down; x_j = j;
-//					}
-//					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
-//					continue;
-//				}
-//				//左右有值
-//				if (left >= 0 && right <= UTM_cols - 1)
-//				{
-//					int x_i = i, x_j = j;
-//					int left_distance = j - left;
-//					int right_distance = right - j;
-//					if (left_distance < right_distance)
-//					{
-//						x_i = i; x_j = left;
-//					}
-//					else
-//					{
-//						x_i = i; x_j = right;
-//					}
-//					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
-//					continue;
-//				}
-//			}
-//		}
-//	}
-//	else
-//	{
-//#pragma omp parallel for schedule(guided)
-//		for (int i = 0; i < UTM_rows; i++)
-//		{
-//			for (int j = 0; j < UTM_cols; j++)
-//			{
-//				if (b_filled.at<uchar>(i, j) != 0) continue;
-//				int up, down, left, right, up_count, down_count, left_count, right_count;
-//				double value1, value2, ratio1, ratio2;
-//				//寻找上面有值的点
-//				up = i;
-//				while (true)
-//				{
-//					up--;
-//					if (up < 0) break;
-//					if (b_filled.at<uchar>(up, j) != 0) break;
-//				}
-//				//寻找下面有值的点
-//				down = i;
-//				while (true)
-//				{
-//					down++;
-//					if (down > UTM_rows - 1) break;
-//					if (b_filled.at<uchar>(down, j) != 0) break;
-//				}
-//				//寻找左边有值的点
-//				left = j;
-//				while (true)
-//				{
-//					left--;
-//					if (left < 0) break;
-//					if (b_filled.at<uchar>(i, left) != 0) break;
-//				}
-//				//寻找右边有值的点
-//				right = j;
-//				while (true)
-//				{
-//					right++;
-//					if (right > UTM_cols - 1) break;
-//					if (b_filled.at<uchar>(i, right) != 0) break;
-//				}
-//
-//				//上下左右都有值
-//				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
-//				{
-//
-//					ratio1 = double(j - left) / double(right - left);
-//					value1 = double(mapped_phase.at<double>(i, left)) +
-//						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
-//					ratio2 = double(i - up) / double(down - up);
-//					value2 = double(mapped_phase.at<double>(up, j)) +
-//						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
-//					mapped_phase.at<double>(i, j) = (value1 + value2) / 2.0;
-//					continue;
-//				}
-//				//上下有值
-//				if (up >= 0 && down <= UTM_rows - 1)
-//				{
-//					ratio2 = double(i - up) / double(down - up);
-//					value2 = double(mapped_phase.at<double>(up, j)) +
-//						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
-//					mapped_phase.at<double>(i, j) = value2;
-//					continue;
-//				}
-//				//左右有值
-//				if (left >= 0 && right <= UTM_cols - 1)
-//				{
-//					ratio1 = double(j - left) / double(right - left);
-//					value1 = double(mapped_phase.at<double>(i, left)) +
-//						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
-//					mapped_phase.at<double>(i, j) = value1;
-//					continue;
-//				}
-//			}
-//		}
-//	}
+	//插值
+	if (interpolation_method == 0)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < UTM_rows; i++)
+		{
+			for (int j = 0; j < UTM_cols; j++)
+			{
+				if (b_filled.at<uchar>(i, j) != 0) continue;
+				int up, down, left, right, up_count, down_count, left_count, right_count;
+				double value1, value2, ratio1, ratio2;
+				//寻找上面有值的点
+				up = i;
+				while (true)
+				{
+					up--;
+					if (up < 0) break;
+					if (b_filled.at<uchar>(up, j) != 0) break;
+				}
+				//寻找下面有值的点
+				down = i;
+				while (true)
+				{
+					down++;
+					if (down > UTM_rows - 1) break;
+					if (b_filled.at<uchar>(down, j) != 0) break;
+				}
+				//寻找左边有值的点
+				left = j;
+				while (true)
+				{
+					left--;
+					if (left < 0) break;
+					if (b_filled.at<uchar>(i, left) != 0) break;
+				}
+				//寻找右边有值的点
+				right = j;
+				while (true)
+				{
+					right++;
+					if (right > UTM_cols - 1) break;
+					if (b_filled.at<uchar>(i, right) != 0) break;
+				}
+
+				//上下左右都有值
+				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+				{
+					int x_i = i, x_j = j;
+					int down_distance = down - i;
+					int up_distance = i - up;
+					int left_distance = j - left;
+					int right_distance = right - j;
+					if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+					{
+						x_i = down; x_j = j;
+					}
+					else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+					{
+						x_i = up; x_j = j;
+					}
+					else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+					{
+						x_i = i; x_j = left;
+					}
+					else
+					{
+						x_i = i; x_j = right;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+				//上下有值
+				if (up >= 0 && down <= UTM_rows - 1)
+				{
+					int x_i = i, x_j = j;
+					int down_distance = down - i;
+					int up_distance = i - up;
+					if (down_distance < up_distance)
+					{
+						x_i = down; x_j = j;
+					}
+					else
+					{
+						x_i = down; x_j = j;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+				//左右有值
+				if (left >= 0 && right <= UTM_cols - 1)
+				{
+					int x_i = i, x_j = j;
+					int left_distance = j - left;
+					int right_distance = right - j;
+					if (left_distance < right_distance)
+					{
+						x_i = i; x_j = left;
+					}
+					else
+					{
+						x_i = i; x_j = right;
+					}
+					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+					continue;
+				}
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < UTM_rows; i++)
+		{
+			for (int j = 0; j < UTM_cols; j++)
+			{
+				if (b_filled.at<uchar>(i, j) != 0) continue;
+				int up, down, left, right, up_count, down_count, left_count, right_count;
+				double value1, value2, ratio1, ratio2;
+				//寻找上面有值的点
+				up = i;
+				while (true)
+				{
+					up--;
+					if (up < 0) break;
+					if (b_filled.at<uchar>(up, j) != 0) break;
+				}
+				//寻找下面有值的点
+				down = i;
+				while (true)
+				{
+					down++;
+					if (down > UTM_rows - 1) break;
+					if (b_filled.at<uchar>(down, j) != 0) break;
+				}
+				//寻找左边有值的点
+				left = j;
+				while (true)
+				{
+					left--;
+					if (left < 0) break;
+					if (b_filled.at<uchar>(i, left) != 0) break;
+				}
+				//寻找右边有值的点
+				right = j;
+				while (true)
+				{
+					right++;
+					if (right > UTM_cols - 1) break;
+					if (b_filled.at<uchar>(i, right) != 0) break;
+				}
+
+				//上下左右都有值
+				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+				{
+
+					ratio1 = double(j - left) / double(right - left);
+					value1 = double(mapped_phase.at<double>(i, left)) +
+						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+					ratio2 = double(i - up) / double(down - up);
+					value2 = double(mapped_phase.at<double>(up, j)) +
+						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+					mapped_phase.at<double>(i, j) = (value1 + value2) / 2.0;
+					continue;
+				}
+				//上下有值
+				if (up >= 0 && down <= UTM_rows - 1)
+				{
+					ratio2 = double(i - up) / double(down - up);
+					value2 = double(mapped_phase.at<double>(up, j)) +
+						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+					mapped_phase.at<double>(i, j) = value2;
+					continue;
+				}
+				//左右有值
+				if (left >= 0 && right <= UTM_cols - 1)
+				{
+					ratio1 = double(j - left) / double(right - left);
+					value1 = double(mapped_phase.at<double>(i, left)) +
+						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+					mapped_phase.at<double>(i, j) = value1;
+					continue;
+				}
+			}
+		}
+	}
 
 
 	//cv::flip(mapped_phase, mapped_phase, 0);
