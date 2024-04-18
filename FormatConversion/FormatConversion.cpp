@@ -11340,9 +11340,32 @@ orbitStateVectors::orbitStateVectors(Mat& stateVectors, double startTime, double
 	this->isOrbitUpdated = false;
 	stateVectors.copyTo(this->stateVectors);
 	if (this->stateVectors.type() != CV_64F) this->stateVectors.convertTo(this->stateVectors, CV_64F);
-	this->dt = 0.00000001;
+	double delta_time = stateVectors.at<double>(1, 0) - stateVectors.at<double>(0, 0);
+	if (fabs(delta_time - 1.0) <= 0.0001)
+	{
+		this->isOrbitUpdated = true;//不用再更新轨道
+		this->stateVectors.copyTo(this->newStateVectors);
+	}
+	this->dt = delta_time;
 	setSceneStartStopTime(startTime, stopTime);
 
+}
+
+orbitStateVectors::orbitStateVectors(Mat& stateVectors, double startTime, double stopTime, double delta_time)
+{
+	this->dt = delta_time;
+	this->isOrbitUpdated = false;
+	stateVectors.copyTo(this->stateVectors);
+	if (this->stateVectors.type() != CV_64F) this->stateVectors.convertTo(this->stateVectors, CV_64F);
+	if (fabs(delta_time - 1.0) <= 0.0001)
+	{
+		this->isOrbitUpdated = true;//不用再更新轨道
+		this->stateVectors.copyTo(this->newStateVectors);
+	}
+	
+	
+	
+	setSceneStartStopTime(startTime, stopTime);
 }
 
 orbitStateVectors::~orbitStateVectors()
@@ -12080,3 +12103,258 @@ int CSK_reader::get_array_attribute(hid_t object_id, const char* attribute_name,
 	H5Sclose(space);
 	return 0;
 }
+
+
+HTHT_reader::HTHT_reader(const char* data_file, const char* xml_file)
+{
+	b_initialized = false;
+	this->HT_data_file = data_file;
+	this->HT_xml_file = xml_file;
+}
+
+HTHT_reader::~HTHT_reader()
+{
+}
+
+int HTHT_reader::init()
+{
+	if (b_initialized) return 0;
+	if (HT_data_file.empty())
+	{
+		fprintf(stderr, "init(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_data(this->HT_xml_file.c_str(), this->HT_data_file.c_str());
+	if (ret < 0)
+	{
+		fprintf(stderr, "init(): read_data failed!\n");
+		return -1;
+	}
+	b_initialized = true;
+	return 0;
+}
+
+int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
+{
+	if (data_file == NULL)
+	{
+		fprintf(stderr, "read_slc(): input check failed!\n");
+		return -1;
+	}
+	GDALAllRegister();	//注册已知驱动
+	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//打开tiff文件
+	if (poDataset == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
+	int xsize = 0;
+	int ysize = 0;
+	//获取指向波段1的指针
+	GDALRasterBand* poBand = poDataset->GetRasterBand(1);	
+	xsize = poBand->GetXSize();		//cols
+	ysize = poBand->GetYSize();		//rows
+	if (xsize < 0 || ysize < 0)
+	{
+		fprintf(stderr, "read_slc(): band rows and cols error!\n");
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+	short* pbuf = NULL;
+	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+	if (!pbuf)
+	{
+		fprintf(stderr, "read_slc(): out of memory!\n");
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+	int i, j;
+	slc.re.create(ysize, xsize, CV_16S);
+	slc.im.create(ysize, xsize, CV_16S);
+	size_t offset = 0;
+	for (i = 0; i < ysize; i++)
+		for (j = 0; j < xsize; j++)
+		{
+			slc.re.ptr<short>(i)[j] = pbuf[offset];
+			offset++;
+		}
+	//获取指向波段2的指针
+	poBand = poDataset->GetRasterBand(2);
+	xsize = poBand->GetXSize();		//cols
+	ysize = poBand->GetYSize();		//rows
+	if (xsize < 0 || ysize < 0)
+	{
+		fprintf(stderr, "read_slc(): band rows and cols error!\n");
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+	offset = 0;
+	for (i = 0; i < ysize; i++)
+		for (j = 0; j < xsize; j++)
+		{
+			slc.im.ptr<short>(i)[j] = pbuf[offset];
+			offset++;
+		}
+	if (pbuf)
+	{
+		free(pbuf);
+		pbuf = NULL;
+	}
+	GDALClose(poDataset);
+	GDALDestroyDriverManager();
+
+	return 0;
+}
+
+int HTHT_reader::read_data(const char* xml_file, const char* data_file)
+{
+	if (!xml_file || !data_file)
+	{
+		fprintf(stderr, "read_data(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_slc(data_file, slc);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't read slc from %s\n", data_file);
+		return -1;
+	}
+	XMLFile xmldoc;
+	ret = xmldoc.XMLFile_load(xml_file);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't load %s\n", xml_file);
+		return -1;
+	}
+
+	//读取轨道参数
+	TiXmlElement* pnode, * pchild, * pchild1;
+	int numOfstateVec;
+	ret = xmldoc.find_node("orbitList", pnode);
+	ret = sscanf(pnode->FirstAttribute()->Value(), "%d", &numOfstateVec);
+
+	ret = xmldoc.find_node("orbit", pnode);
+	double time, x, y, z, vx, vy, vz;
+	state_vec.create(numOfstateVec, 7, CV_64F);
+	for (int i = 0; i < numOfstateVec; i++)
+	{
+		if (!pnode) break;
+		//GPS时间
+		ret = xmldoc._find_node(pnode, "timeStamp", pchild);
+		ret = UTC2GPS(pchild->GetText(), &time);
+		//位置x
+		ret = xmldoc._find_node(pnode, "xPosition", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &x);
+		//位置y
+		ret = xmldoc._find_node(pnode, "yPosition", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &y);
+		//位置z
+		ret = xmldoc._find_node(pnode, "zPosition", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &z);
+		//速度x
+		ret = xmldoc._find_node(pnode, "xVelocity", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vx);
+		//速度y
+		ret = xmldoc._find_node(pnode, "yVelocity", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vy);
+		//速度z
+		ret = xmldoc._find_node(pnode, "zVelocity", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vz);
+
+		//赋值
+		state_vec.at<double>(i, 0) = time;
+		state_vec.at<double>(i, 1) = x;
+		state_vec.at<double>(i, 2) = y;
+		state_vec.at<double>(i, 3) = z;
+		state_vec.at<double>(i, 4) = vx;
+		state_vec.at<double>(i, 5) = vy;
+		state_vec.at<double>(i, 6) = vz;
+		pnode = pnode->NextSiblingElement();
+	}
+
+	//拍摄起始时间
+	ret = xmldoc.get_str_para("imagingStartTime", this->acquisition_start_time);
+	//拍摄结束时间
+	ret = xmldoc.get_str_para("imagingEndTime", this->acquisition_stop_time);
+	//卫星名称
+	ret = xmldoc.get_str_para("satellite", this->sensor);
+	//脉冲重复频率
+	ret = xmldoc.get_double_para("prf", &this->prf);
+	//中心频率
+	ret = xmldoc.get_double_para("radarCenterFrequency", &this->carrier_frequency);
+	this->carrier_frequency = this->carrier_frequency * 1e9;
+	//最近斜距
+	ret = xmldoc.get_double_para("nearRange", &this->slant_range_first_pixel);
+	//距离方位采样间隔/分辨率
+	ret = xmldoc.get_double_para("rangePixelSpacing", &this->range_spacing);
+	ret = xmldoc.get_double_para("azimuthPixelSpacing", &this->azimuth_spacing);
+	ret = xmldoc.get_double_para("rangeResolution", &this->range_resolution);
+	ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
+	//四角经纬度
+	ret = xmldoc.get_double_para("topLeftLat", &this->topleft_lat);
+	ret = xmldoc.get_double_para("topLeftLon", &this->topleft_lon);
+	ret = xmldoc.get_double_para("topRightLat", &this->topright_lat);
+	ret = xmldoc.get_double_para("topRightLon", &this->topright_lon);
+	ret = xmldoc.get_double_para("bottomLeftLat", &this->bottomleft_lat);
+	ret = xmldoc.get_double_para("bottomLeftLon", &this->bottomleft_lon);
+	ret = xmldoc.get_double_para("bottomRightLat", &this->bottomright_lat);
+	ret = xmldoc.get_double_para("bottomRightLon", &this->bottomright_lon);
+
+	return 0;
+}
+
+int HTHT_reader::write_to_h5(const char* dst_h5)
+{
+	if (!dst_h5)
+	{
+		fprintf(stderr, "write_to_h5(): input check failed!\n");
+		return -1;
+	}
+	int ret;
+	if (!b_initialized)
+	{
+		ret = init();
+		if (ret < 0)
+		{
+			fprintf(stderr, "write_to_h5(): init() failed!\n");
+			return -1;
+		}
+	}
+	FormatConversion conversion;
+	ret = conversion.creat_new_h5(dst_h5);
+	if (ret < 0)
+	{
+		fprintf(stderr, "write_to_h5(): failed to create %s!\n", dst_h5);
+		return -1;
+	}
+	conversion.write_array_to_h5(dst_h5, "state_vec", this->state_vec);
+
+	conversion.write_double_to_h5(dst_h5, "azimuth_spacing", this->azimuth_spacing);
+	conversion.write_double_to_h5(dst_h5, "range_spacing", this->range_spacing);
+	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
+	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
+	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
+
+	conversion.write_str_to_h5(dst_h5, "sensor", this->sensor.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_start_time", this->acquisition_start_time.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_stop_time", this->acquisition_stop_time.c_str());
+
+	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
+	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
+	conversion.write_slc_to_h5(dst_h5, slc);
+
+	return 0;
+}
+
+
+
+

@@ -10534,6 +10534,318 @@ int Utils::SAR2UTM(
 	return 0;
 }
 
+int Utils::SAR2UTM(Mat& mapped_lon, Mat& mapped_lat, Mat& phase, Mat& mapped_phase, double grid_size, int interpolation_method, double* lon_east, double* lon_west, double* lat_north, double* lat_south)
+{
+	if (mapped_lat.size() != mapped_lon.size() ||
+		mapped_lat.size() != phase.size() ||
+		phase.rows < 2 ||
+		phase.cols < 2 ||
+		phase.type() != CV_64F ||
+		mapped_lat.type() != mapped_lon.type() ||
+		(mapped_lon.type() != CV_32F && mapped_lon.type() != CV_64F)
+		)
+	{
+		fprintf(stderr, "SAR2UTM(): input check failed!\n");
+		return -1;
+	}
+	//确定经纬度覆盖范围
+	double max_lon = -380.0, min_lon = 380.0, max_lat = -380.0, min_lat = 180.0;
+	if (mapped_lat.type() == CV_32F)
+	{
+		for (int i = 0; i < mapped_lat.rows; i++)
+		{
+			for (int j = 0; j < mapped_lat.cols; j++)
+			{
+				if (mapped_lat.at<float>(i, j) < 350.0)
+				{
+					min_lat = min_lat > mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : min_lat;
+					max_lat = max_lat < mapped_lat.at<float>(i, j) ? mapped_lat.at<float>(i, j) : max_lat;
+					min_lon = min_lon > mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : min_lon;
+					max_lon = max_lon < mapped_lon.at<float>(i, j) ? mapped_lon.at<float>(i, j) : max_lon;
+				}
+			}
+		}
+	}
+	else
+	{
+		for (int i = 0; i < mapped_lat.rows; i++)
+		{
+			for (int j = 0; j < mapped_lat.cols; j++)
+			{
+				if (mapped_lat.at<double>(i, j) < 350.0)
+				{
+					min_lat = min_lat > mapped_lat.at<double>(i, j) ? mapped_lat.at<double>(i, j) : min_lat;
+					max_lat = max_lat < mapped_lat.at<double>(i, j) ? mapped_lat.at<double>(i, j) : max_lat;
+					min_lon = min_lon > mapped_lon.at<double>(i, j) ? mapped_lon.at<double>(i, j) : min_lon;
+					max_lon = max_lon < mapped_lon.at<double>(i, j) ? mapped_lon.at<double>(i, j) : max_lon;
+				}
+			}
+		}
+	}
+	//cv::minMaxLoc(mapped_lon, &min_lon, &max_lon);
+	//cv::minMaxLoc(mapped_lat, &min_lat, &max_lat);
+	double west = max_lon - min_lon > 180.0 ? max_lon : min_lon;
+	if (lon_west) *lon_west = west;
+
+	//确定经纬度采样间隔
+	double lon_interval, lat_interval;
+	lon_interval = 5.0 / 6000.0 / (90.0 / grid_size);
+	lat_interval = lon_interval;
+
+	int rows = phase.rows; int cols = phase.cols;
+
+
+	//计算UTM坐标系相位尺寸
+	int UTM_rows = (max_lat - min_lat) / lat_interval;
+	UTM_rows += 2;
+	double south = max_lat - (double)(UTM_rows - 1) * lat_interval;
+	double north = max_lat;
+	if (lat_north) *lat_north = north;
+	if (lat_south) *lat_south = south;
+	double max_lon_temp = max_lon - min_lon;
+	max_lon_temp = max_lon_temp > 180.0 ? 360.0 - max_lon_temp : max_lon_temp;
+	int UTM_cols = max_lon_temp / lon_interval;
+	UTM_cols += 2;
+	double east = west + (double)(UTM_cols - 1) * lon_interval;
+	east = east > 180.0 ? east - 360.0 : east;
+	if (lon_east) *lon_east = east;
+	Mat b_filled(UTM_rows, UTM_cols, CV_8U); b_filled = 0;
+	mapped_phase.create(UTM_rows, UTM_cols, CV_64F); mapped_phase = 0.0;
+	//开始地理编码
+	if (mapped_lat.type() == CV_32F)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<float>(i, j);
+				if (lon > 350.0) continue;
+				lat = mapped_lat.at<float>(i, j);
+				row = (int)round((max_lat - lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
+				b_filled.at<uchar>(row, col) = b_filled.at<uchar>(row, col) + 1;
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < rows; i++)
+		{
+			for (int j = 0; j < cols; j++)
+			{
+				double lon, lat;
+				int row, col;
+				lon = mapped_lon.at<double>(i, j);
+				if (lon > 350.0) continue;
+				lat = mapped_lat.at<double>(i, j);
+				row = (int)round((max_lat - lat) / lat_interval);
+				lon = fabs(lon - west);
+				lon = lon > 180.0 ? 360.0 - lon : lon;
+				col = (int)round(lon / lon_interval);
+				mapped_phase.at<double>(row, col) = phase.at<double>(i, j);
+				b_filled.at<uchar>(row, col) = b_filled.at<uchar>(row, col) + 1;
+			}
+		}
+	}
+
+//	//插值
+//	if (interpolation_method == 0)
+//	{
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < UTM_rows; i++)
+//		{
+//			for (int j = 0; j < UTM_cols; j++)
+//			{
+//				if (b_filled.at<uchar>(i, j) != 0) continue;
+//				int up, down, left, right, up_count, down_count, left_count, right_count;
+//				double value1, value2, ratio1, ratio2;
+//				//寻找上面有值的点
+//				up = i;
+//				while (true)
+//				{
+//					up--;
+//					if (up < 0) break;
+//					if (b_filled.at<uchar>(up, j) != 0) break;
+//				}
+//				//寻找下面有值的点
+//				down = i;
+//				while (true)
+//				{
+//					down++;
+//					if (down > UTM_rows - 1) break;
+//					if (b_filled.at<uchar>(down, j) != 0) break;
+//				}
+//				//寻找左边有值的点
+//				left = j;
+//				while (true)
+//				{
+//					left--;
+//					if (left < 0) break;
+//					if (b_filled.at<uchar>(i, left) != 0) break;
+//				}
+//				//寻找右边有值的点
+//				right = j;
+//				while (true)
+//				{
+//					right++;
+//					if (right > UTM_cols - 1) break;
+//					if (b_filled.at<uchar>(i, right) != 0) break;
+//				}
+//
+//				//上下左右都有值
+//				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+//				{
+//					int x_i = i, x_j = j;
+//					int down_distance = down - i;
+//					int up_distance = i - up;
+//					int left_distance = j - left;
+//					int right_distance = right - j;
+//					if (down_distance < up_distance && down_distance < left_distance && down_distance < right_distance)
+//					{
+//						x_i = down; x_j = j;
+//					}
+//					else if (up_distance < down_distance && up_distance < left_distance && up_distance < right_distance)
+//					{
+//						x_i = up; x_j = j;
+//					}
+//					else if (left_distance < down_distance && left_distance < up_distance && left_distance < right_distance)
+//					{
+//						x_i = i; x_j = left;
+//					}
+//					else
+//					{
+//						x_i = i; x_j = right;
+//					}
+//					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+//					continue;
+//				}
+//				//上下有值
+//				if (up >= 0 && down <= UTM_rows - 1)
+//				{
+//					int x_i = i, x_j = j;
+//					int down_distance = down - i;
+//					int up_distance = i - up;
+//					if (down_distance < up_distance)
+//					{
+//						x_i = down; x_j = j;
+//					}
+//					else
+//					{
+//						x_i = down; x_j = j;
+//					}
+//					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+//					continue;
+//				}
+//				//左右有值
+//				if (left >= 0 && right <= UTM_cols - 1)
+//				{
+//					int x_i = i, x_j = j;
+//					int left_distance = j - left;
+//					int right_distance = right - j;
+//					if (left_distance < right_distance)
+//					{
+//						x_i = i; x_j = left;
+//					}
+//					else
+//					{
+//						x_i = i; x_j = right;
+//					}
+//					mapped_phase.at<double>(i, j) = mapped_phase.at<double>(x_i, x_j);
+//					continue;
+//				}
+//			}
+//		}
+//	}
+//	else
+//	{
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < UTM_rows; i++)
+//		{
+//			for (int j = 0; j < UTM_cols; j++)
+//			{
+//				if (b_filled.at<uchar>(i, j) != 0) continue;
+//				int up, down, left, right, up_count, down_count, left_count, right_count;
+//				double value1, value2, ratio1, ratio2;
+//				//寻找上面有值的点
+//				up = i;
+//				while (true)
+//				{
+//					up--;
+//					if (up < 0) break;
+//					if (b_filled.at<uchar>(up, j) != 0) break;
+//				}
+//				//寻找下面有值的点
+//				down = i;
+//				while (true)
+//				{
+//					down++;
+//					if (down > UTM_rows - 1) break;
+//					if (b_filled.at<uchar>(down, j) != 0) break;
+//				}
+//				//寻找左边有值的点
+//				left = j;
+//				while (true)
+//				{
+//					left--;
+//					if (left < 0) break;
+//					if (b_filled.at<uchar>(i, left) != 0) break;
+//				}
+//				//寻找右边有值的点
+//				right = j;
+//				while (true)
+//				{
+//					right++;
+//					if (right > UTM_cols - 1) break;
+//					if (b_filled.at<uchar>(i, right) != 0) break;
+//				}
+//
+//				//上下左右都有值
+//				if (left >= 0 && right <= UTM_cols - 1 && up >= 0 && down <= UTM_rows - 1)
+//				{
+//
+//					ratio1 = double(j - left) / double(right - left);
+//					value1 = double(mapped_phase.at<double>(i, left)) +
+//						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+//					ratio2 = double(i - up) / double(down - up);
+//					value2 = double(mapped_phase.at<double>(up, j)) +
+//						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+//					mapped_phase.at<double>(i, j) = (value1 + value2) / 2.0;
+//					continue;
+//				}
+//				//上下有值
+//				if (up >= 0 && down <= UTM_rows - 1)
+//				{
+//					ratio2 = double(i - up) / double(down - up);
+//					value2 = double(mapped_phase.at<double>(up, j)) +
+//						double(mapped_phase.at<double>(down, j) - mapped_phase.at<double>(up, j)) * ratio2;
+//					mapped_phase.at<double>(i, j) = value2;
+//					continue;
+//				}
+//				//左右有值
+//				if (left >= 0 && right <= UTM_cols - 1)
+//				{
+//					ratio1 = double(j - left) / double(right - left);
+//					value1 = double(mapped_phase.at<double>(i, left)) +
+//						double(mapped_phase.at<double>(i, right) - mapped_phase.at<double>(i, right)) * ratio1;
+//					mapped_phase.at<double>(i, j) = value1;
+//					continue;
+//				}
+//			}
+//		}
+//	}
+
+
+	//cv::flip(mapped_phase, mapped_phase, 0);
+	return 0;
+}
+
 int Utils::SAR2UTM(
 	Mat& mapped_lon,
 	Mat& mapped_lat,

@@ -1643,6 +1643,31 @@ public:
 		double* lat_north = NULL,
 		double* lat_south = NULL
 	);
+	/*@brief 相位地理编码：SAR图像坐标系--->墨卡托坐标系
+	* @param mapped_lon                        相位对应的经度
+	* @param mapped_lat                        相位对应的纬度
+	* @param phase                             SAR图像坐标相位
+	* @param mapped_phase                      墨卡托坐标相位（返回值）
+	* @param grid_size                         网格间距（m）
+	* @param interpolation_method              插值方法（0：最临近插值，1：双线性插值。默认为最临近插值）
+	* @param lon_east                          编码图像最东边缘经度（返回值）
+	* @param lon_west                          编码图像最西边缘经度（返回值）
+	* @param lat_north                         编码图像最北边缘纬度（返回值）
+	* @param lat_south                         编码图像最南边缘纬度（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int SAR2UTM(
+		Mat& mapped_lon,
+		Mat& mapped_lat,
+		Mat& phase,
+		Mat& mapped_phase,
+		double grid_size,
+		int interpolation_method = 0,
+		double* lon_east = NULL,
+		double* lon_west = NULL,
+		double* lat_north = NULL,
+		double* lat_south = NULL
+	);
 	/*@brief SLC复图像地理编码：SAR图像坐标系--->墨卡托坐标系
 	* @param mapped_lon                        SLC对应的经度
 	* @param mapped_lat                        SLC对应的纬度

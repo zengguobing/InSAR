@@ -267,10 +267,31 @@ public:
 	* @param mappedLat                              DEM纬度坐标
 	* @param mappedLon                              DEM经度坐标
 	* @param slcH5File                              配准SLC图像h5文件
+	* @param mode                                   收发模式（1：自发自收，2：一发多收，默认为自发自收）
 	* @return 成功返回0，否则返回-1
 	*/
 	int SLC_deramp(
 		ComplexMat& slc,
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		const char* slcH5File,
+		int mode = 1
+	);
+	/*@brief 计算参考斜距和卫星轨道
+	* @param slant_range                            参考斜距（返回值）
+	* @param sate_pos                               卫星位置（返回值）
+	* @param sate_vel                               卫星速度（返回值）
+	* @param mappedDEM                              配准主图像坐标系DEM
+	* @param mappedLat                              DEM纬度坐标
+	* @param mappedLon                              DEM经度坐标
+	* @param slcH5File                              配准SLC图像h5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int slantrange_compute(
+		Mat& slant_range,
+		Mat& sate_pos,
+		Mat& sate_vel,
 		Mat& mappedDEM,
 		Mat& mappedLat,
 		Mat& mappedLon,

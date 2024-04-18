@@ -938,7 +938,8 @@ int Deflat::demMapping(
 	lon_spacing = lon_spacing / (double)interp_times;
 	lat_spacing = lat_spacing / (double)interp_times;
 	//初始化轨道类
-	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime);
+	double delta_t = stateVector.at<double>(1, 0) - stateVector.at<double>(0, 0);
+	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime, delta_t);
 	stateVectors.applyOrbit();
 	int ret;
 	double time_interval = 1.0 / prf;
@@ -1200,7 +1201,7 @@ int Deflat::demMapping(
 	cv::resize(DEM84, DEM, cv::Size(DEM84.cols * interp_times, DEM84.rows * interp_times));
 	Mat DEM_out = Mat::zeros(sceneHeight, sceneWidth, CV_16S);
 	//Mat temp_lonlat = Mat::zeros(sceneHeight, sceneWidth, CV_32F);
-	mappedLat.create(sceneHeight, sceneWidth, CV_32F); mappedLon.create(sceneHeight, sceneWidth, CV_32F);
+	mappedLat.create(sceneHeight, sceneWidth, CV_64F); mappedLon.create(sceneHeight, sceneWidth, CV_64F);
 	mappedLat = -999.0; mappedLon = -999.0;
 	//temp_lonlat = temp_lonlat - 999.0;
 	//temp_lonlat.copyTo(mappedLat); temp_lonlat.copyTo(mappedLon);
@@ -1209,7 +1210,8 @@ int Deflat::demMapping(
 	lon_spacing = lon_spacing / (double)interp_times;
 	lat_spacing = lat_spacing / (double)interp_times;
 	//初始化轨道类
-	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime);
+	double delta_t = stateVector.at<double>(1, 0) - stateVector.at<double>(0, 0);
+	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime, delta_t);
 	stateVectors.applyOrbit();
 	int ret;
 	double time_interval = 1.0 / prf;
@@ -1311,8 +1313,8 @@ int Deflat::demMapping(
 			else
 			{
 				DEM_out.at<short>(azimuthIndex, rangeIndex) = DEM.at<short>(i, j);
-				mappedLon.at<float>(azimuthIndex, rangeIndex) = lon;
-				mappedLat.at<float>(azimuthIndex, rangeIndex) = lat;
+				mappedLon.at<double>(azimuthIndex, rangeIndex) = lon;
+				mappedLat.at<double>(azimuthIndex, rangeIndex) = lat;
 			}
 		}
 	}
@@ -1422,7 +1424,7 @@ int Deflat::demMapping(
 	{
 		for (int j = 0; j < sceneWidth; j++)
 		{
-			if (mappedLon.at<float>(i, j) > -998.0) continue;
+			if (mappedLon.at<double>(i, j) > -998.0) continue;
 			int up, down, left, right, up_count, down_count, left_count, right_count;
 			double value1, value2, ratio1, ratio2;
 			//寻找上面有值的点
@@ -1431,7 +1433,7 @@ int Deflat::demMapping(
 			{
 				up--;
 				if (up < 0) break;
-				if (mappedLat.at<float>(up, j) > -998.0) break;
+				if (mappedLat.at<double>(up, j) > -998.0) break;
 			}
 			//寻找下面有值的点
 			down = i;
@@ -1439,7 +1441,7 @@ int Deflat::demMapping(
 			{
 				down++;
 				if (down > sceneHeight - 1) break;
-				if (mappedLat.at<float>(down, j) > -998.0) break;
+				if (mappedLat.at<double>(down, j) > -998.0) break;
 			}
 			//寻找左边有值的点
 			left = j;
@@ -1447,7 +1449,7 @@ int Deflat::demMapping(
 			{
 				left--;
 				if (left < 0) break;
-				if (mappedLat.at<float>(i, left) > -998.0) break;
+				if (mappedLat.at<double>(i, left) > -998.0) break;
 			}
 			//寻找右边有值的点
 			right = j;
@@ -1455,28 +1457,28 @@ int Deflat::demMapping(
 			{
 				right++;
 				if (right > sceneWidth - 1) break;
-				if (mappedLat.at<float>(i, right) > -998.0) break;
+				if (mappedLat.at<double>(i, right) > -998.0) break;
 			}
 
 			//上下左右都有值
 			if (left >= 0 && right <= sceneWidth - 1 && up >= 0 && down <= sceneHeight - 1)
 			{
 				ratio1 = double(j - left) / double(right - left);
-				value1 = double(mappedLat.at<float>(i, left)) +
-					double(mappedLat.at<float>(i, right) - mappedLat.at<float>(i, left)) * ratio1;
+				value1 = double(mappedLat.at<double>(i, left)) +
+					double(mappedLat.at<double>(i, right) - mappedLat.at<double>(i, left)) * ratio1;
 				ratio2 = double(i - up) / double(down - up);
-				value2 = double(mappedLat.at<float>(up, j)) +
-					double(mappedLat.at<float>(down, j) - mappedLat.at<float>(up, j)) * ratio2;
-				mappedLat.at<float>(i, j) = (value1 + value2) / 2.0;
+				value2 = double(mappedLat.at<double>(up, j)) +
+					double(mappedLat.at<double>(down, j) - mappedLat.at<double>(up, j)) * ratio2;
+				mappedLat.at<double>(i, j) = (value1 + value2) / 2.0;
 
 
 				ratio1 = double(j - left) / double(right - left);
-				value1 = double(mappedLon.at<float>(i, left)) +
-					double(mappedLon.at<float>(i, right) - mappedLon.at<float>(i, left)) * ratio1;
+				value1 = double(mappedLon.at<double>(i, left)) +
+					double(mappedLon.at<double>(i, right) - mappedLon.at<double>(i, left)) * ratio1;
 				ratio2 = double(i - up) / double(down - up);
-				value2 = double(mappedLon.at<float>(up, j)) +
-					double(mappedLon.at<float>(down, j) - mappedLon.at<float>(up, j)) * ratio2;
-				mappedLon.at<float>(i, j) = (value1 + value2) / 2.0;
+				value2 = double(mappedLon.at<double>(up, j)) +
+					double(mappedLon.at<double>(down, j) - mappedLon.at<double>(up, j)) * ratio2;
+				mappedLon.at<double>(i, j) = (value1 + value2) / 2.0;
 
 				continue;
 			}
@@ -1484,67 +1486,67 @@ int Deflat::demMapping(
 			if (up >= 0 && down <= sceneHeight - 1)
 			{
 				ratio2 = double(i - up) / double(down - up);
-				value2 = double(mappedLat.at<float>(up, j)) +
-					double(mappedLat.at<float>(down, j) - mappedLat.at<float>(up, j)) * ratio2;
-				mappedLat.at<float>(i, j) = value2;
+				value2 = double(mappedLat.at<double>(up, j)) +
+					double(mappedLat.at<double>(down, j) - mappedLat.at<double>(up, j)) * ratio2;
+				mappedLat.at<double>(i, j) = value2;
 
 
 				ratio2 = double(i - up) / double(down - up);
-				value2 = double(mappedLon.at<float>(up, j)) +
-					double(mappedLon.at<float>(down, j) - mappedLon.at<float>(up, j)) * ratio2;
-				mappedLon.at<float>(i, j) = value2;
+				value2 = double(mappedLon.at<double>(up, j)) +
+					double(mappedLon.at<double>(down, j) - mappedLon.at<double>(up, j)) * ratio2;
+				mappedLon.at<double>(i, j) = value2;
 				continue;
 			}
 			//左右有值
 			if (left >= 0 && right <= sceneWidth - 1)
 			{
 				ratio1 = double(j - left) / double(right - left);
-				value1 = double(mappedLat.at<float>(i, left)) +
-					double(mappedLat.at<float>(i, right) - mappedLat.at<float>(i, left)) * ratio1;
-				mappedLat.at<float>(i, j) = value1;
+				value1 = double(mappedLat.at<double>(i, left)) +
+					double(mappedLat.at<double>(i, right) - mappedLat.at<double>(i, left)) * ratio1;
+				mappedLat.at<double>(i, j) = value1;
 
 
 				ratio1 = double(j - left) / double(right - left);
-				value1 = double(mappedLon.at<float>(i, left)) +
-					double(mappedLon.at<float>(i, right) - mappedLon.at<float>(i, left)) * ratio1;
-				mappedLon.at<float>(i, j) = value1;
+				value1 = double(mappedLon.at<double>(i, left)) +
+					double(mappedLon.at<double>(i, right) - mappedLon.at<double>(i, left)) * ratio1;
+				mappedLon.at<double>(i, j) = value1;
 				continue;
 			}
 			//上边有值
 			if (up >= 0)
 			{
-				mappedLat.at<float>(i, j) = mappedLat.at<float>(up, j);
+				mappedLat.at<double>(i, j) = mappedLat.at<double>(up, j);
 
-				mappedLon.at<float>(i, j) = mappedLon.at<float>(up, j);
+				mappedLon.at<double>(i, j) = mappedLon.at<double>(up, j);
 				continue;
 			}
 			//下边有值
 			if (down <= sceneHeight - 1)
 			{
-				mappedLat.at<float>(i, j) = mappedLat.at<float>(down, j);
+				mappedLat.at<double>(i, j) = mappedLat.at<double>(down, j);
 
-				mappedLon.at<float>(i, j) = mappedLon.at<float>(down, j);
+				mappedLon.at<double>(i, j) = mappedLon.at<double>(down, j);
 				continue;
 			}
 			//左边有值
 			if (left >= 0)
 			{
-				mappedLat.at<float>(i, j) = mappedLat.at<float>(i, left);
+				mappedLat.at<double>(i, j) = mappedLat.at<double>(i, left);
 
-				mappedLon.at<float>(i, j) = mappedLon.at<float>(i, left);
+				mappedLon.at<double>(i, j) = mappedLon.at<double>(i, left);
 				continue;
 			}
 			//右边有值
 			if (right <= sceneWidth - 1)
 			{
-				mappedLat.at<float>(i, j) = mappedLat.at<float>(i, right);
+				mappedLat.at<double>(i, j) = mappedLat.at<double>(i, right);
 
-				mappedLon.at<float>(i, j) = mappedLon.at<float>(i, right);
+				mappedLon.at<double>(i, j) = mappedLon.at<double>(i, right);
 				continue;
 			}
 			//上下左右都没有值
-			mappedLat.at<float>(i, j) = 0;
-			mappedLon.at<float>(i, j) = 0;
+			mappedLat.at<double>(i, j) = 0;
+			mappedLon.at<double>(i, j) = 0;
 		}
 	}
 	//投影纬度插值
@@ -1554,21 +1556,15 @@ int Deflat::demMapping(
 	return 0;
 }
 
-int Deflat::SLC_deramp(
-	ComplexMat& slc,
-	Mat& mappedDEM,
-	Mat& mappedLat,
-	Mat& mappedLon,
-	const char* slcH5File
-)
+int Deflat::SLC_deramp(ComplexMat& slc, Mat& mappedDEM, Mat& mappedLat, Mat& mappedLon, const char* slcH5File, int mode)
 {
 	if (mappedDEM.rows != mappedLat.rows ||
 		mappedDEM.rows != mappedLon.rows ||
 		mappedDEM.cols != mappedLat.cols ||
 		mappedDEM.cols != mappedLon.cols ||
 		mappedDEM.type() != CV_16S ||
-		mappedLat.type() != CV_32F ||
-		mappedLon.type() != CV_32F ||
+		mappedLat.type() != CV_64F ||
+		mappedLon.type() != CV_64F ||
 		mappedDEM.empty() ||
 		!slcH5File
 		)
@@ -1617,15 +1613,16 @@ int Deflat::SLC_deramp(
 	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 	if (slc.type() != CV_32F) slc.convertTo(slc, CV_32F);
 	Mat sate1 = Mat::zeros(sceneHeight, 3, CV_64F);
-	orbitStateVectors stateVectors(statevec, start, end);
+	double delta_t = statevec.at<double>(1, 0) - statevec.at<double>(0, 0);
+	orbitStateVectors stateVectors(statevec, start, end, delta_t);
 	stateVectors.applyOrbit();
 
 	double dopplerFrequency = 0.0;
 
 	Position groundPosition;
 	double lat, lon, height;
-	lat = mappedLat.at<float>(0, 0);
-	lon = mappedLon.at<float>(0, 0);
+	lat = mappedLat.at<double>(0, 0);
+	lon = mappedLon.at<double>(0, 0);
 	lon = lon > 180.0 ? (lon - 360.0) : lon;
 	height = mappedDEM.at<short>(0, 0);
 	Utils::ell2xyz(lon, lat, height, groundPosition);
@@ -1708,8 +1705,8 @@ int Deflat::SLC_deramp(
 		sate1.at<double>(i, 1) = pos.y;
 		sate1.at<double>(i, 2) = pos.z;
 	}
-	//ComplexMat slc2;
-	//slc2.re.create(sceneHeight, sceneWidth, CV_32F); slc2.im.create(sceneHeight, sceneWidth, CV_32F);
+	double constant = (mode == 1 ? 4.0 * PI : 2.0 * PI);
+
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < sceneHeight; i++)
 	{
@@ -1717,13 +1714,13 @@ int Deflat::SLC_deramp(
 		{
 			double r, real, imagine, real2, imagine2;
 			Mat XYZ, LLH(1, 3, CV_64F), tt;
-			LLH.at<double>(0, 0) = mappedLat.at<float>(i, j);
-			LLH.at<double>(0, 1) = mappedLon.at<float>(i, j);
+			LLH.at<double>(0, 0) = mappedLat.at<double>(i, j);
+			LLH.at<double>(0, 1) = mappedLon.at<double>(i, j);
 			LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
 			util.ell2xyz(LLH, XYZ);
 			tt = XYZ - sate1(cv::Range(i, i + 1), cv::Range(0, 3));
 			r = cv::norm(tt, cv::NORM_L2);
-			r = - r / wavelength * 4 * PI;
+			r = -r / wavelength * constant;
 			real = cos(r);
 			imagine = sin(r);
 			real2 = slc.re.at<float>(i, j);
@@ -1732,7 +1729,166 @@ int Deflat::SLC_deramp(
 			slc.im.at<float>(i, j) = real * imagine2 - real2 * imagine;
 		}
 	}
-	//slc.Mul(slc2, slc, true);
+	return 0;
+}
+
+int Deflat::slantrange_compute(Mat& slant_range, Mat& sate_pos,
+	Mat& sate_vel, Mat& mappedDEM, Mat& mappedLat, Mat& mappedLon, const char* slcH5File)
+{
+	if (mappedDEM.rows != mappedLat.rows ||
+		mappedDEM.rows != mappedLon.rows ||
+		mappedDEM.cols != mappedLat.cols ||
+		mappedDEM.cols != mappedLon.cols ||
+		mappedDEM.type() != CV_16S ||
+		mappedLat.type() != CV_64F ||
+		mappedLon.type() != CV_64F ||
+		mappedDEM.empty() ||
+		!slcH5File
+		)
+	{
+		fprintf(stderr, "SLC_deramp(): input check failed!\n");
+		return -1;
+	}
+	FormatConversion conversion; Deflat flat; Utils util;
+	int ret;
+	double lonMax, lonMin, latMax, latMin, lon_upperleft, lat_upperleft, rangeSpacing,
+		nearRangeTime, wavelength, prf, start, end;
+	int sceneHeight, sceneWidth, offset_row, offset_col;
+	Mat lon_coef, lat_coef, statevec;
+	string start_time, end_time;
+	ret = conversion.read_int_from_h5(slcH5File, "range_len", &sceneWidth);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(slcH5File, "azimuth_len", &sceneHeight);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(slcH5File, "prf", &prf);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(slcH5File, "carrier_frequency", &wavelength);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	wavelength = VEL_C / wavelength;
+	ret = conversion.read_str_from_h5(slcH5File, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.utc2gps(start_time.c_str(), &start);
+	ret = conversion.read_str_from_h5(slcH5File, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(end_time.c_str(), &end);
+	ret = conversion.read_array_from_h5(slcH5File, "state_vec", statevec);
+	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+
+	slant_range.create(sceneHeight, sceneWidth, CV_64F);
+	sate_pos.create(sceneHeight, 3, CV_64F);
+	sate_vel.create(sceneHeight, 3, CV_64F);
+	double delta_t = statevec.at<double>(1, 0) - statevec.at<double>(0, 0);
+	orbitStateVectors stateVectors(statevec, start, end, delta_t);
+	stateVectors.applyOrbit();
+
+	double dopplerFrequency = 0.0;
+
+	Position groundPosition;
+	double lat, lon, height;
+	lat = mappedLat.at<double>(0, 0);
+	lon = mappedLon.at<double>(0, 0);
+	lon = lon > 180.0 ? (lon - 360.0) : lon;
+	height = mappedDEM.at<short>(0, 0);
+	Utils::ell2xyz(lon, lat, height, groundPosition);
+	int numOrbitVec = stateVectors.newStateVectors.rows;
+	double firstVecTime = 0.0;
+	double secondVecTime = 0.0;
+	double firstVecFreq = 0.0;
+	double secondVecFreq = 0.0;
+	double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+	for (int ii = 0; ii < numOrbitVec; ii++) {
+		Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+			stateVectors.newStateVectors.at<double>(ii, 3));
+		Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+			stateVectors.newStateVectors.at<double>(ii, 6));
+		currentFreq = 0;
+		xdiff = groundPosition.x - orb_pos.x;
+		ydiff = groundPosition.y - orb_pos.y;
+		zdiff = groundPosition.z - orb_pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+		if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+			firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+			firstVecFreq = currentFreq;
+		}
+		else {
+			secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+			secondVecFreq = currentFreq;
+			break;
+		}
+	}
+
+	if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+		fprintf(stderr, "SLC_deramp(): orbit mismatch!\n");
+		return -1;
+	}
+
+	double lowerBoundTime = firstVecTime;
+	double upperBoundTime = secondVecTime;
+	double lowerBoundFreq = firstVecFreq;
+	double upperBoundFreq = secondVecFreq;
+	double midTime, midFreq;
+	double diffTime = fabs(upperBoundTime - lowerBoundTime);
+	double absLineTimeInterval = 1.0 / prf;
+
+	int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+	int numIterations = 0; Position pos; Velocity vel;
+	while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+		midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+		stateVectors.getPosition(midTime, pos);
+		stateVectors.getVelocity(midTime, vel);
+		xdiff = groundPosition.x - pos.x;
+		ydiff = groundPosition.y - pos.y;
+		zdiff = groundPosition.z - pos.z;
+		distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+		midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+		if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+			lowerBoundTime = midTime;
+			lowerBoundFreq = midFreq;
+		}
+		else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+			upperBoundTime = midTime;
+			upperBoundFreq = midFreq;
+		}
+		else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+			zeroDopplerTime = midTime;
+			break;
+		}
+
+		diffTime = fabs(upperBoundTime - lowerBoundTime);
+		numIterations++;
+	}
+	zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		double time = zeroDopplerTime + (double)i * (1.0 / prf);
+		stateVectors.getPosition(time, pos);
+		stateVectors.getVelocity(time, vel);
+		sate_pos.at<double>(i, 0) = pos.x;
+		sate_pos.at<double>(i, 1) = pos.y;
+		sate_pos.at<double>(i, 2) = pos.z;
+		sate_vel.at<double>(i, 0) = vel.vx;
+		sate_vel.at<double>(i, 1) = vel.vy;
+		sate_vel.at<double>(i, 2) = vel.vz;
+	}
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		for (int j = 0; j < sceneWidth; j++)
+		{
+			double r, real, imagine, real2, imagine2;
+			Mat XYZ, LLH(1, 3, CV_64F), tt;
+			LLH.at<double>(0, 0) = mappedLat.at<double>(i, j);
+			LLH.at<double>(0, 1) = mappedLon.at<double>(i, j);
+			LLH.at<double>(0, 2) = mappedDEM.at<short>(i, j);
+			util.ell2xyz(LLH, XYZ);
+			tt = XYZ - sate_pos(cv::Range(i, i + 1), cv::Range(0, 3));
+			r = cv::norm(tt, cv::NORM_L2);
+			slant_range.at<double>(i, j) = r;
+		}
+	}
 	return 0;
 }
 

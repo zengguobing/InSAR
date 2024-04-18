@@ -316,11 +316,13 @@ int Filter::slope_adaptive_filter(Mat& phase, Mat& phase_filter, int wndsize_fil
 	double phi0 = 2.0 * pi / ((double)mn); /*CZT变换参数*/
 	int ret;
 	volatile bool parallel_flag = true;
-#pragma omp parallel for schedule(guided) \
-	private(ret)
+//#pragma omp parallel for schedule(guided) \
+//	private(ret)
 	for (int i = Radius; i < nr_new - Radius; i++)
 	{
-		if (!parallel_flag) continue;
+#pragma omp parallel for schedule(guided) \
+		private(ret)
+		//if (!parallel_flag) continue;
 		for (int j = Radius; j < nc_new - Radius; j++)
 		{
 			if (!parallel_flag) continue;
@@ -421,8 +423,10 @@ int Filter::slope_adaptive_filter(Mat& phase, Mat& phase_filter, int wndsize_fil
 			/*转换为相位*/
 			phase_filtered.at<double>(i, j) = atan2(phase_0.at<Vec2d>(0, 0)[1], phase_0.at<Vec2d>(0, 0)[0]);
 		}
+
+		fprintf(stdout, "process: %lf %\n", double(i - Radius) / double(nr_new - 2 * Radius + 1) * 100);
 	}
-	if (parallel_check(parallel_flag, "slope_adaptive_filter()", parallel_error_head)) return -1;
+	//if (parallel_check(parallel_flag, "slope_adaptive_filter()", parallel_error_head)) return -1;
 	phase_filtered(Range(Radius, nr_new - Radius), Range(Radius, nc_new - Radius)).copyTo(phase_filter);
 	return 0;
 }

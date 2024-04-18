@@ -1109,6 +1109,7 @@ class InSAR_API orbitStateVectors
 {
 public:
 	orbitStateVectors(Mat& stateVectors, double startTime, double stopTime);
+	orbitStateVectors(Mat& stateVectors, double startTime, double stopTime, double delta_time);
 	~orbitStateVectors();
 	/*@brief 设置场景拍摄起始终止时间
 	* @param startTime
@@ -1240,7 +1241,68 @@ private:
 
 };
 
+/*------------------------------------------------*/
+/*               航天宏图数据读取工具             */
+/*------------------------------------------------*/
+class InSAR_API HTHT_reader
+{
+public:
+	HTHT_reader(const char* data_file, const char* xml_file);
+	~HTHT_reader();
+	/*@brief 初始化
+	* @return 成功返回0，否则返回-1
+	*/
+	int init();
 
+	/*@brief 将数据写入到指定h5文件
+	* @param dst_h5                          指定hdf5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_to_h5(
+		const char* dst_h5
+	);
+
+private:
+
+	/*@brief 从宏图L1产品中读取数据
+	@param xml_file                    宏图xml数据文件（.xml）
+	@param data_file                   宏图xml数据文件（.tiff）
+	@return 成功返回0，否则返回-1
+	*/
+	int read_data(
+		const char* xml_file,
+		const char* data_file
+	);
+	/*@brief 从宏图数据L1产品中读取单视复图像
+	* @param data_file                        宏图图像数据文件（.tiff）
+	* @param slc                              读出的单视复数据矩阵
+	* @return 成功返回0，否则返回-1
+	*/
+
+	int read_slc(
+		const char* data_file,
+		ComplexMat& slc
+	);
+private:
+	string HT_data_file, HT_xml_file;
+	bool b_initialized;
+	string acquisition_start_time;
+	string acquisition_stop_time;
+	double azimuth_resolution;
+	double azimuth_spacing;
+	double carrier_frequency;
+	double prf;
+	double range_resolution;
+	double range_spacing;
+	double slant_range_first_pixel;
+	double slant_range_last_pixel;
+	double topleft_lon, topright_lon, bottomleft_lon, bottomright_lon,
+		topleft_lat, topright_lat, bottomleft_lat, bottomright_lat;
+	Mat state_vec;
+	string sensor;
+	ComplexMat slc;
+
+};
 
 /*------------------------------------------------*/
 /*               哨兵一号数据读取工具             */
