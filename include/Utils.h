@@ -1514,6 +1514,35 @@ public:
 		double* lonMin,
 		double* latMin
 	);
+	/*@brief 根据图像四角点经纬度，计算图像的地理边界（最大最小经纬度）
+	@param topleft_lon                             左上角经度
+	@param topleft_lat                             左上角纬度
+	@param topright_lon                            右上角经度
+	@param topright_lat                            右上角纬度
+	@param bottomleft_lon                          左下角经度
+	@param bottomleft_lat                          左下角纬度
+	@param bottomright_lon                         右下角经度
+	@param bottomright_lat                         右下角纬度
+	@param lonMax                                  最大经度（返回值）
+	@param latMax                                  最大纬度（返回值）
+	@param lonMin                                  最小经度（返回值）
+	@param latMin                                  最小纬度（返回值）
+	@return 成功返回0，否则返回-1
+	*/
+	static int computeImageGeoBoundry(
+		double topleft_lon,
+		double topleft_lat,
+		double topright_lon,
+		double topright_lat,
+		double bottomleft_lon,
+		double bottomleft_lat,
+		double bottomright_lon,
+		double bottomright_lat,
+		double* lonMax,
+		double* latMax,
+		double* lonMin,
+		double* latMin
+	);
 	/*@brief 根据地理边界信息获取SRTM高程
 	* @param filepath                     下载的SRTM高程文件保存路径
 	* @param DEM_out                      DEM数据（返回值，short型）

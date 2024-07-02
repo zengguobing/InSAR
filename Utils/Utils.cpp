@@ -7971,6 +7971,45 @@ int Utils::computeImageGeoBoundry(
 	return 0;
 }
 
+int Utils::computeImageGeoBoundry(
+	double topleft_lon,
+	double topleft_lat,
+	double topright_lon, 
+	double topright_lat,
+	double bottomleft_lon, 
+	double bottomleft_lat, 
+	double bottomright_lon,
+	double bottomright_lat, 
+	double* lonMax,
+	double* latMax,
+	double* lonMin,
+	double* latMin
+)
+{
+	Mat lon, lat;
+	lon.create(1, 4, CV_64F);
+	lat.create(1, 4, CV_64F);
+
+	lon.at<double>(0, 0) = topleft_lon;
+	lon.at<double>(0, 1) = topright_lon;
+	lon.at<double>(0, 2) = bottomleft_lon;
+	lon.at<double>(0, 3) = bottomright_lon;
+
+	lat.at<double>(0, 0) = topleft_lat;
+	lat.at<double>(0, 1) = topright_lat;
+	lat.at<double>(0, 2) = bottomleft_lat;
+	lat.at<double>(0, 3) = bottomright_lat;
+
+	cv::minMaxLoc(lon, lonMin, lonMax);
+	cv::minMaxLoc(lat, latMin, latMax);
+	double extra = 5.0 / 6000;
+	*lonMin = *lonMin - extra * 20;
+	*lonMax = *lonMax + extra * 20;
+	*latMin = *latMin - extra * 20;
+	*latMax = *latMax + extra * 20;
+	return 0;
+}
+
 int Utils::getSRTMDEM(
 	const char* filepath,
 	Mat& DEM_out,

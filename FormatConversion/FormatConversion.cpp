@@ -12444,8 +12444,8 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 	for (i = 0; i < ysize; i++)
 		for (j = 0; j < xsize; j++)
 		{
-			slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
-			slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
+			slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
+			slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
 		}
 	if (pbuf)
 	{
