@@ -7834,6 +7834,30 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	///*列偏移量*/
 	//if (!read_array_from_h5(Input_file, "offset_col", tmp_mat))
 	//	write_array_to_h5(Output_file, "offset_col", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "topLeftLon", tmp_mat))
+		write_array_to_h5(Output_file, "topLeftLon", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "topLeftLat", tmp_mat))
+		write_array_to_h5(Output_file, "topLeftLat", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "topRightLon", tmp_mat))
+		write_array_to_h5(Output_file, "topRightLon", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "topRightLat", tmp_mat))
+		write_array_to_h5(Output_file, "topRightLat", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "bottomLeftLon", tmp_mat))
+		write_array_to_h5(Output_file, "bottomLeftLon", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "bottomLeftLat", tmp_mat))
+		write_array_to_h5(Output_file, "bottomLeftLat", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "bottomRightLon", tmp_mat))
+		write_array_to_h5(Output_file, "bottomRightLon", tmp_mat);
+	/*最近斜距*/
+	if (!read_array_from_h5(Input_file, "bottomRightLat", tmp_mat))
+		write_array_to_h5(Output_file, "bottomRightLat", tmp_mat);
 	return 0;
 }
 

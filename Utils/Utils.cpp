@@ -8003,10 +8003,10 @@ int Utils::computeImageGeoBoundry(
 	cv::minMaxLoc(lon, lonMin, lonMax);
 	cv::minMaxLoc(lat, latMin, latMax);
 	double extra = 5.0 / 6000;
-	*lonMin = *lonMin - extra * 20;
-	*lonMax = *lonMax + extra * 20;
-	*latMin = *latMin - extra * 20;
-	*latMax = *latMax + extra * 20;
+	*lonMin = *lonMin - extra * 100;
+	*lonMax = *lonMax + extra * 100;
+	*latMin = *latMin - extra * 100;
+	*latMax = *latMax + extra * 100;
 	return 0;
 }
 
