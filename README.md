@@ -6,5 +6,4 @@
 
 # 目前支持的SAR卫星
 
-国外：哨兵一号（sentinel-1A/1B）、TerraSAR-X/TanDEM-X、ALOS2、COSMO-SkyMed.
-国内：宏图一号星座、天仪涪城1号。
+哨兵一号（sentinel-1A/1B）、TerraSAR-X/TanDEM-X、ALOS2、COSMO-SkyMed、宏图一号星座、天仪涪城1号。
