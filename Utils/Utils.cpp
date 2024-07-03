@@ -6356,6 +6356,155 @@ int Utils::baseline_estimation(
 	return 0;
 }
 
+int Utils::baseline_estimation(
+	const Mat& stateVec1, 
+	const Mat& stateVec2, 
+	double lon_center,
+	double lat_center, 
+	int offset_row, 
+	int offset_col, 
+	int scene_height,
+	int scene_width, 
+	double time_interval,
+	double time_interval2,
+	double* B_effect,
+	double* B_parallel
+)
+{
+	if (stateVec1.cols != 7 ||
+		stateVec1.rows < 7 ||
+		stateVec2.cols != 7 ||
+		stateVec2.rows < 7 ||
+		stateVec1.type() != CV_64F ||
+		stateVec2.type() != CV_64F ||
+		B_effect == NULL ||
+		B_parallel == NULL ||
+		time_interval < 0.0 ||
+		time_interval2 < 0.0 ||
+		scene_height < 7 ||
+		scene_width < 0
+		)
+	{
+		fprintf(stderr, "baseline_estimation(): input check failed!\n");
+		return -1;
+	}
+	FormatConversion conversion;
+	int ret;
+	int rows = scene_height; int cols = scene_width;
+	/*
+	* 轨道插值
+	*/
+	Mat state_vec1, state_vec2;
+	stateVec1.copyTo(state_vec1);
+	stateVec2.copyTo(state_vec2);
+	ret = stateVec_interp(state_vec1, time_interval, state_vec1);
+	if (return_check(ret, "stateVec_interp()", error_head)) return -1;
+	ret = stateVec_interp(state_vec2, time_interval2, state_vec2);
+	if (return_check(ret, "stateVec_interp()", error_head)) return -1;
+
+	Mat sate1_xyz, sate2_xyz, sate1_v, sate2_v;
+	state_vec1(cv::Range(0, state_vec1.rows), cv::Range(1, 4)).copyTo(sate1_xyz);
+	state_vec1(cv::Range(0, state_vec1.rows), cv::Range(4, 7)).copyTo(sate1_v);
+	state_vec2(cv::Range(0, state_vec2.rows), cv::Range(1, 4)).copyTo(sate2_xyz);
+	state_vec2(cv::Range(0, state_vec2.rows), cv::Range(4, 7)).copyTo(sate2_v);
+
+	/*
+	* 图像1成像点位置计算
+	*/
+
+	Mat sate1 = Mat::zeros(rows, 3, CV_64F);
+	Mat sate2 = Mat::zeros(rows, 3, CV_64F);
+	Mat satev1 = Mat::zeros(rows, 3, CV_64F);
+	Mat satev2 = Mat::zeros(rows, 3, CV_64F);
+	for (int i = 0; i < 1; i++)
+	{
+		Mat tmp(1, 3, CV_64F); Mat xyz;
+		tmp.at<double>(0, 0) = lat_center;
+		tmp.at<double>(0, 1) = lon_center;
+		tmp.at<double>(0, 2) = 0;
+		ell2xyz(tmp, xyz);
+
+		//找到零多普勒位置
+		Mat dop = Mat::zeros(sate1_xyz.rows, 1, CV_64F);
+		Mat r;
+		for (int j = 0; j < sate1_xyz.rows; j++)
+		{
+			r = xyz - sate1_xyz(Range(j, j + 1), Range(0, 3));
+			dop.at<double>(j, 0) = fabs(cv::sum(r.mul(sate1_v(Range(j, j + 1), Range(0, 3))))[0]);
+		}
+		Point peak_loc;
+		cv::minMaxLoc(dop, NULL, NULL, &peak_loc, NULL);
+		int xxxx;
+		for (int j = 0; j < rows; j++)
+		{
+			xxxx = (peak_loc.y + j) > (sate1_xyz.rows - 1) ? (sate1_xyz.rows - 1) : (peak_loc.y + j);
+			sate1_xyz(Range(xxxx, xxxx + 1), Range(0, 3)).copyTo(sate1(Range(j, j + 1), Range(0, 3)));
+			sate1_v(Range(xxxx, xxxx + 1), Range(0, 3)).copyTo(satev1(Range(j, j + 1), Range(0, 3)));
+		}
+	}
+
+	/*
+	* 图像2成像点位置计算
+	*/
+
+
+	for (int i = 0; i < 1; i++)
+	{
+		Mat tmp(1, 3, CV_64F); Mat xyz;
+		tmp.at<double>(0, 0) = lat_center;
+		tmp.at<double>(0, 1) = lon_center;
+		tmp.at<double>(0, 2) = 0;
+		ell2xyz(tmp, xyz);
+
+		//找到零多普勒位置
+		Mat dop = Mat::zeros(sate2_xyz.rows, 1, CV_64F);
+		Mat r;
+		for (int j = 0; j < sate2_xyz.rows; j++)
+		{
+			r = xyz - sate2_xyz(Range(j, j + 1), Range(0, 3));
+			dop.at<double>(j, 0) = fabs(cv::sum(r.mul(sate2_v(Range(j, j + 1), Range(0, 3))))[0]);
+		}
+		Point peak_loc;
+		cv::minMaxLoc(dop, NULL, NULL, &peak_loc, NULL);
+		int xxxx;
+		for (int j = 0; j < rows; j++)
+		{
+			xxxx = (peak_loc.y + j) > (sate2_xyz.rows - 1) ? (sate2_xyz.rows - 1) : (peak_loc.y + j);
+			sate2_xyz(Range(xxxx, xxxx + 1), Range(0, 3)).copyTo(sate2(Range(j, j + 1), Range(0, 3)));
+			sate2_v(Range(xxxx, xxxx + 1), Range(0, 3)).copyTo(satev2(Range(j, j + 1), Range(0, 3)));
+		}
+	}
+
+	/*
+	*估计基线
+	*/
+	Mat R, B, tmp, xyz, effect_dir; double r;
+	tmp = Mat::zeros(1, 3, CV_64F);
+	tmp.at<double>(0, 0) = lat_center;
+	tmp.at<double>(0, 1) = lon_center;
+	tmp.at<double>(0, 2) = 0;
+	ell2xyz(tmp, xyz);
+
+	R = xyz - sate1(Range(0, 1), Range(0, 3));
+	r = sqrt(sum(R.mul(R))[0]);
+	R = R / r;
+	B = sate2(Range(0, 1), Range(0, 3)) - sate1(Range(0, 1), Range(0, 3));
+	*B_parallel = sum(R.mul(B))[0];//平行基线
+
+	tmp = satev1(Range(0, 1), Range(0, 3));
+	cross(tmp, R, effect_dir);
+	r = sqrt(sum(effect_dir.mul(effect_dir))[0]);
+	effect_dir = effect_dir / r;
+	r = sqrt(sum(xyz.mul(xyz))[0]);
+	xyz = xyz / r;
+	r = sum(xyz.mul(effect_dir))[0];
+	effect_dir = r < 0.0 ? -effect_dir : effect_dir;
+	*B_effect = sum(effect_dir.mul(B))[0];//平行基线
+
+
+	return 0;
+}
+
 int Utils::homogeneous_selection_and_phase_linking(
 	vector<ComplexMat>& slc_stack,
 	vector<ComplexMat>& slc_stack_filtered,

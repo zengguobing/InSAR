@@ -1331,6 +1331,35 @@ public:
 		double* sigma_B_effect = NULL,
 		double* sigma_B_parallel = NULL
 	);
+	/** @brief 基线估计
+
+	@param stateVec1               主星轨道（未插值）
+	@param stateVec2               辅星轨道（未插值）
+	@param lon_center              主图像场景中心坐标（经度）
+	@param lat_center              主图像场景中心坐标（维度）
+	@param offset_row              主图像左上角在原始图像中的行偏移量
+	@param offset_col              主图像左上角在原始图像中的列偏移量
+	@param scene_height            场景高度(像素行数)
+	@param scene_width             场景宽度(像素列数)
+	@param interp_interval1        主星轨道插值时间间隔（1/prf）
+	@param interp_interval2        辅星轨道插值时间间隔（1/prf）
+	@param B_effect                垂直基线长度（返回值）
+	@param B_parallel              平行基线长度（返回值）
+	*/
+	int baseline_estimation(
+		const Mat& stateVec1,
+		const Mat& stateVec2,
+		double lon_center,
+		double lat_center,
+		int offset_row,
+		int offset_col,
+		int scene_height,
+		int scene_width,
+		double interp_interval1,
+		double interp_interval2,
+		double* B_effect,
+		double* B_parallel
+	);
 	/*@brief 相关矩阵法同质检验 + phase linking
 	* @param slc_stack                           待处理SLC数据堆栈（支持32位float型数据类型）
 	* @param slc_stack_filtered                  phase-linking后的结果（返回值）
