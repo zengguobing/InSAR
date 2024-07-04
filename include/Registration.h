@@ -75,12 +75,16 @@ public:
 	@param slave               辅图像
 	@param blocksize           主图像参考块分块大小（blocksize×blocksize，blocksize为2的n次幂）
 	@param interp_times        插值倍数(InSAR要求至少8倍插值)
+	@param offset_row          辅图像行偏移量（返回值）
+	@param offset_col          辅图像列偏移量（返回值）
 	*/
 	int coregistration_subpixel(
 		ComplexMat& master,
 		ComplexMat& slave,
 		int blocksize,
-		int interp_times
+		int interp_times,
+		int* offset_row = NULL,
+		int* offset_col = NULL
 	);
 	/*拟合像素偏移量
 	 参数1 行序列号

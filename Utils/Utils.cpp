@@ -7883,15 +7883,15 @@ int Utils::spatialTemporalBaselineEstimation(
 	Utils util; FormatConversion conversion;
 	int ret, offset_row, offset_col, num_images, sceneHeight, sceneWidth;
 	double prf1, prf2, acquisitionTime1, acquisitionTime2, B_temporal, B_spatial_para, B_spatial_effect;
+	double topleft_lon, topright_lon, bottomleft_lon, bottomright_lon,
+		topleft_lat, topright_lat, bottomleft_lat, bottomright_lat;
 	Mat lon_coef, lat_coef, statevec1, statevec2;
 	string start;
 	num_images = SLCH5Files.size();
 	temporal.create(1, num_images, CV_64F); spatial.create(1, num_images, CV_64F);
 	temporal.at<double>(0, reference - 1) = 0; spatial.at<double>(0, reference - 1) = 0;
 	ret = conversion.read_array_from_h5(SLCH5Files[reference - 1].c_str(), "lon_coefficient", lon_coef);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(SLCH5Files[reference - 1].c_str(), "lat_coefficient", lat_coef);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_array_from_h5(SLCH5Files[reference - 1].c_str(), "state_vec", statevec1);
 	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
 	ret = conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "prf", &prf1);
@@ -7907,6 +7907,23 @@ int Utils::spatialTemporalBaselineEstimation(
 	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
 	ret = conversion.read_int_from_h5(SLCH5Files[reference - 1].c_str(), "azimuth_len", &sceneHeight);
 	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	int ret2 = 0;
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "topLeftLon", &topleft_lon);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "topLeftLat", &topleft_lat);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "topRightLon", &topright_lon);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "topRightLat", &topright_lat);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "bottomLeftLon", &bottomleft_lon);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "bottomLeftLat", &bottomleft_lat);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "bottomRightLon", &bottomright_lon);
+	ret2 += conversion.read_double_from_h5(SLCH5Files[reference - 1].c_str(), "bottomRightLat", &bottomright_lat);
+	double lon_center, lat_center;
+	if (ret2 == 0)
+	{
+		lon_center = (topleft_lon + topright_lon + bottomleft_lon + bottomright_lon) / 4.0;
+		lat_center = (topleft_lat + topright_lat + bottomleft_lat + bottomright_lat) / 4.0;
+	}
+
 	for (int i = 0; i < num_images; i++)
 	{
 		if (i == reference - 1) continue;
@@ -7917,9 +7934,18 @@ int Utils::spatialTemporalBaselineEstimation(
 		ret = conversion.utc2gps(start.c_str(), &acquisitionTime2);
 		ret = conversion.read_double_from_h5(SLCH5Files[i].c_str(), "prf", &prf2);
 		if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
-		ret = util.baseline_estimation(statevec1, statevec2, lon_coef, lat_coef, offset_row, offset_col,
-			sceneHeight, sceneWidth, 1.0 / prf1, 1.0 / prf2, &B_spatial_effect, &B_spatial_para);
-		if (return_check(ret, "baseline_estimation()", error_head)) return -1;
+		if (ret2 == 0)
+		{
+			util.baseline_estimation(statevec1, statevec2, lon_center, lat_center,
+				offset_row, offset_col, sceneHeight, sceneWidth, 1.0 / prf1, 1.0 / prf2, &B_spatial_effect, &B_spatial_para);
+			if (return_check(ret, "baseline_estimation()", error_head)) return -1;
+		}
+		else
+		{
+			ret = util.baseline_estimation(statevec1, statevec2, lon_coef, lat_coef, offset_row, offset_col,
+				sceneHeight, sceneWidth, 1.0 / prf1, 1.0 / prf2, &B_spatial_effect, &B_spatial_para);
+			if (return_check(ret, "baseline_estimation()", error_head)) return -1;
+		}
 		B_temporal = (acquisitionTime2 - acquisitionTime1) / 60 / 60 / 24;
 		temporal.at<double>(0, i) = B_temporal;
 		spatial.at<double>(0, i) = B_spatial_effect;

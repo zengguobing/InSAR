@@ -760,7 +760,8 @@ int Registration::registration_subpixel(ComplexMat& Master, ComplexMat& Slave, i
 	return 0;
 }
 
-int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave, int blocksize, int interp_times)
+int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave, int blocksize, int interp_times, int* offset_row,
+	int* offset_col)
 {
 	if (master.isempty() ||
 		slave.GetCols() != master.GetCols() ||
@@ -962,6 +963,15 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	/*---------------------------------------*/
 	/*    双线性插值获取重采样后的辅图像     */
 	/*---------------------------------------*/
+
+	Mat tt(1, 3, CV_64F);
+	tt.at<double>(0, 0) = 1.0;
+	tt.at<double>(0, 1) = (0.0 - offset_x) / scale_x;
+	tt.at<double>(0, 2) = (0.0 - offset_y) / scale_y;
+	if (offset_row) *offset_row = sum(tt * coef_r)[0];
+	if (offset_col) *offset_col = sum(tt * coef_c)[0];
+
+
 	int rows = master.GetRows(); int cols = master.GetCols();
 	ComplexMat slave_tmp;
 	int master_type = master.type();

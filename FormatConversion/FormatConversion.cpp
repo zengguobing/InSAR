@@ -12383,6 +12383,10 @@ int HTHT_reader::write_to_h5(const char* dst_h5)
 
 	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
 	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
+
+	conversion.write_int_to_h5(dst_h5, "offset_row", 0);
+	conversion.write_int_to_h5(dst_h5, "offset_col", 0);
+
 	conversion.write_slc_to_h5(dst_h5, slc);
 
 	return 0;
@@ -12668,6 +12672,10 @@ int Spacety_reader::write_to_h5(const char* dst_h5)
 
 	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
 	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
+
+	conversion.write_int_to_h5(dst_h5, "offset_row", 0);
+	conversion.write_int_to_h5(dst_h5, "offset_col", 0);
+
 	conversion.write_slc_to_h5(dst_h5, slc);
 
 	return 0;
