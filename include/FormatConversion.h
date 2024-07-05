@@ -1291,6 +1291,7 @@ private:
 	double azimuth_resolution;
 	double azimuth_spacing;
 	double carrier_frequency;
+	double inc_center;
 	double prf;
 	double range_resolution;
 	double range_spacing;
@@ -1355,6 +1356,7 @@ private:
 	double azimuth_resolution;
 	double azimuth_spacing;
 	double carrier_frequency;
+	double inc_center;
 	double prf;
 	double range_resolution;
 	double range_spacing;

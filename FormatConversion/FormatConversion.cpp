@@ -7768,6 +7768,9 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*脉冲重复频率*/
 	if (!read_array_from_h5(Input_file, "prf", tmp_mat))
 		write_array_to_h5(Output_file, "prf", tmp_mat);
+	/*中心下视角*/
+	if (!read_array_from_h5(Input_file, "inc_center", tmp_mat))
+		write_array_to_h5(Output_file, "inc_center", tmp_mat);
 	/*gcps数据*/
 	if (!read_array_from_h5(Input_file, "gcps", tmp_mat))
 		write_array_to_h5(Output_file, "gcps", tmp_mat);
@@ -7858,6 +7861,10 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*最近斜距*/
 	if (!read_array_from_h5(Input_file, "bottomRightLat", tmp_mat))
 		write_array_to_h5(Output_file, "bottomRightLat", tmp_mat);
+	/*收发模式*/
+	if (!read_array_from_h5(Input_file, "TR_mode", tmp_mat))
+		write_array_to_h5(Output_file, "TR_mode", tmp_mat);
+	//收发模式：1-收发同置，2-收发分置
 	return 0;
 }
 
@@ -12323,6 +12330,10 @@ int HTHT_reader::read_data(const char* xml_file, const char* data_file)
 	ret = xmldoc.get_double_para("azimuthPixelSpacing", &this->azimuth_spacing);
 	ret = xmldoc.get_double_para("rangeResolution", &this->range_resolution);
 	ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
+
+	//中心下视角incidenceAngleMidSwath
+	ret = xmldoc.get_double_para("incidenceCenter", &this->inc_center);
+
 	//四角经纬度
 	ret = xmldoc.get_double_para("topLeftLat", &this->topleft_lat);
 	ret = xmldoc.get_double_para("topLeftLon", &this->topleft_lon);
@@ -12367,6 +12378,7 @@ int HTHT_reader::write_to_h5(const char* dst_h5)
 	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
 	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
 	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
+	conversion.write_double_to_h5(dst_h5, "inc_center", this->inc_center);
 
 	conversion.write_double_to_h5(dst_h5, "topLeftLat", this->topleft_lat);
 	conversion.write_double_to_h5(dst_h5, "topLeftLon", this->topleft_lon);
@@ -12386,6 +12398,9 @@ int HTHT_reader::write_to_h5(const char* dst_h5)
 
 	conversion.write_int_to_h5(dst_h5, "offset_row", 0);
 	conversion.write_int_to_h5(dst_h5, "offset_col", 0);
+
+	//收发模式：1-收发同置，2-收发分置
+	conversion.write_int_to_h5(dst_h5, "TR_mode", 2);
 
 	conversion.write_slc_to_h5(dst_h5, slc);
 
@@ -12574,7 +12589,10 @@ int Spacety_reader::read_data(const char* xml_file, const char* data_file)
 	ret = xmldoc.get_double_para("azimuthPixelSpacing", &this->azimuth_spacing);
 	//ret = xmldoc.get_double_para("rangeResolution", &this->range_resolution);
 	//ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
-	// 
+	
+	//中心下视角incidenceAngleMidSwath
+	ret = xmldoc.get_double_para("incidenceAngleMidSwath", &this->inc_center);
+
 	//四角经纬度
 	int num_geolocation_points = 0;
 	ret = xmldoc.find_node("geolocationGridPointList", pnode);
@@ -12656,6 +12674,7 @@ int Spacety_reader::write_to_h5(const char* dst_h5)
 	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
 	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
 	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
+	conversion.write_double_to_h5(dst_h5, "inc_center", this->inc_center);
 
 	conversion.write_double_to_h5(dst_h5, "topLeftLat", this->topleft_lat);
 	conversion.write_double_to_h5(dst_h5, "topLeftLon", this->topleft_lon);
