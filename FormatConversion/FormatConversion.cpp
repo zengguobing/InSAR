@@ -12136,11 +12136,12 @@ int CSK_reader::get_array_attribute(hid_t object_id, const char* attribute_name,
 }
 
 
-HTHT_reader::HTHT_reader(const char* data_file, const char* xml_file)
+HTHT_reader::HTHT_reader(const char* data_file, const char* xml_file, int mode)
 {
 	b_initialized = false;
 	this->HT_data_file = data_file;
 	this->HT_xml_file = xml_file;
+	this->mode = mode;
 }
 
 HTHT_reader::~HTHT_reader()
@@ -12400,7 +12401,7 @@ int HTHT_reader::write_to_h5(const char* dst_h5)
 	conversion.write_int_to_h5(dst_h5, "offset_col", 0);
 
 	//收发模式：1-收发同置，2-收发分置
-	conversion.write_int_to_h5(dst_h5, "TR_mode", 2);
+	conversion.write_int_to_h5(dst_h5, "TR_mode", this->mode + 1);
 
 	conversion.write_slc_to_h5(dst_h5, slc);
 

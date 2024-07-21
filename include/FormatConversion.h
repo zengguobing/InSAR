@@ -1247,7 +1247,7 @@ private:
 class InSAR_API HTHT_reader
 {
 public:
-	HTHT_reader(const char* data_file, const char* xml_file);
+	HTHT_reader(const char* data_file, const char* xml_file, int mode = 0);//mode=0为单星模式,mode=1为多星干涉模式
 	~HTHT_reader();
 	/*@brief 初始化
 	* @return 成功返回0，否则返回-1
@@ -1302,6 +1302,7 @@ private:
 	Mat state_vec;
 	string sensor;
 	ComplexMat slc;
+	int mode = 0;
 
 };
 
