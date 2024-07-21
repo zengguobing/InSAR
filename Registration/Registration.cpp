@@ -764,8 +764,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	int* offset_col)
 {
 	if (master.isempty() ||
-		slave.GetCols() != master.GetCols() ||
-		slave.GetRows() != slave.GetRows() ||
+		slave.isempty() ||
 		//blocksize * 5 > (slave.GetCols() < slave.GetRows() ? slave.GetCols() : slave.GetRows()) ||
 		blocksize < 8||interp_times < 1 ||
 		master.type() != slave.type() ||
@@ -775,6 +774,55 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 		fprintf(stderr, "coregistration_pixel(): input check failed!\n");
 		return -1;
 	}
+
+	//粗配准
+	ComplexMat slave_r, master_small, slave_small;
+	slave_r = master;
+	slave_r.re = 0.0; slave_r.im = 0.0;
+	int nr0 = master.GetRows() > 5000 ? 5000 : master.GetRows();
+	int nc0 = master.GetCols() > 5000 ? 5000 : master.GetCols();
+	nr0 = slave.GetRows() > nr0 ? nr0 : slave.GetRows();
+	nc0 = slave.GetCols() > nc0 ? nc0 : slave.GetCols();
+
+	master_small = master(cv::Range(0, nr0), cv::Range(0, nc0));
+	slave_small = slave(cv::Range(0, nr0), cv::Range(0, nc0));
+	master_small.convertTo(master_small, CV_64F);
+	slave_small.convertTo(slave_small, CV_64F);
+	int offset_rows_pre, offset_cols_pre;
+	real_coherent(master_small, slave_small, &offset_rows_pre, &offset_cols_pre);
+
+	int start_r, start_r2, end_r, end_r2, start_c, end_c, start_c2, end_c2;
+	if (offset_rows_pre > 0)
+	{
+		start_r = offset_rows_pre;
+		start_r2 = 0;
+		end_r = (master.GetRows() - offset_rows_pre) > slave.GetRows() ? (offset_rows_pre + slave.GetRows()) : master.GetRows();
+		end_r2 = (master.GetRows() - offset_rows_pre) > slave.GetRows() ? slave.GetRows() : (master.GetRows()- offset_rows_pre);
+	}
+	else
+	{
+		start_r = 0;
+		start_r2 = -offset_rows_pre;
+		end_r = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? master.GetRows() : (slave.GetRows() + offset_rows_pre);
+		end_r2 = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? (master.GetRows() - offset_rows_pre) : slave.GetRows();
+	}
+	if (offset_cols_pre > 0)
+	{
+		start_c = offset_cols_pre;
+		start_c2 = 0;
+		end_c = (master.GetCols() - offset_cols_pre) > slave.GetCols() ? (offset_cols_pre + slave.GetCols()) : master.GetCols();
+		end_c2 = (master.GetCols() - offset_cols_pre) > slave.GetCols() ? slave.GetCols() : (master.GetCols() - offset_cols_pre);
+	}
+	else
+	{
+		start_c = 0;
+		start_c2 = -offset_cols_pre;
+		end_c = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? master.GetCols() : (slave.GetCols() + offset_cols_pre);
+		end_c2 = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? (master.GetCols() - offset_cols_pre) : slave.GetCols();
+	}
+	slave.re(cv::Range(start_r, end_r), cv::Range(start_c, end_c)).copyTo(slave_r.re(cv::Range(start_r2, end_r2), cv::Range(start_c2, end_c2)));
+	slave.im(cv::Range(start_r, end_r), cv::Range(start_c, end_c)).copyTo(slave_r.im(cv::Range(start_r2, end_r2), cv::Range(start_c2, end_c2)));
+	slave = slave_r;
 
 	/*---------------------------------------*/
 	/*              求取偏移量矩阵           */
@@ -791,6 +839,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
 	Mat offset_coord_row = Mat::zeros(m, n, CV_64F); 
 	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
+	Mat sentinel0 = Mat::zeros(m, n, CV_64F);
 	//子块中心坐标
 	for (int i = 0; i < m; i++)
 	{
@@ -804,6 +853,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	for (int i = 0; i < m; i++)
 	{
 		ComplexMat master_sub, slave_sub, master_sub_interp, slave_sub_interp;
+		Mat amplitude_slave, sign;
 		int offset_row, offset_col;
 		for (int j = 0; j < n; j++)
 		{
@@ -816,6 +866,21 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			slave.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave_sub.re);
 			slave.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave_sub.im);
 			if (slave_sub.type() != CV_64F) slave_sub.convertTo(slave_sub, CV_64F);
+			amplitude_slave = slave_sub.re;
+			int count_zero = 0;
+			for (int ii = 0; ii < amplitude_slave.rows; ii++)
+			{
+				for (int jj = 0; jj < amplitude_slave.cols; jj++)
+				{
+					if (fabs(amplitude_slave.at<double>(ii, jj)) < 0.0000001) count_zero++;
+				}
+			}
+			//sign = amplitude_slave < 0.0000001;
+			int thresh = blocksize * blocksize / 4;
+			if (count_zero > thresh)
+			{
+				sentinel0.at<double>(i, j) = 1.0;
+			}
 			interp_paddingzero(slave_sub, slave_sub_interp, interp_times);
 			//求取偏移量
 			real_coherent(master_sub_interp, slave_sub_interp, &offset_row, &offset_col);
@@ -866,7 +931,14 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 			delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
 			if (fabs(delta) >= thresh) count++;
 
-			if (count > 2) { sentinel.at<double>(i, j) = 1.0; c++; }
+			if (count > 2) { sentinel.at<double>(i, j) = 1.0; }
+		}
+	}
+	for (int i = 0; i < m; i++)
+	{
+		for (int j = 0; j < n; j++)
+		{
+			if (sentinel.at<double>(i, j) > 0.5 || sentinel0.at<double>(i, j) > 0.5) c++;
 		}
 	}
 	Mat offset_c_0, offset_r_0, offset_coord_row_0 , offset_coord_col_0;
@@ -879,7 +951,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	{
 		for (int j = 0; j < n; j++)
 		{
-			if (sentinel.at<double>(i, j) < 0.5)
+			if (sentinel.at<double>(i, j) < 0.5 && sentinel0.at<double>(i, j) < 0.5)
 			{
 				offset_r_0.at<double>(count, 0) = offset_r.at<double>(i, j);
 				offset_c_0.at<double>(count, 0) = offset_c.at<double>(i, j);
