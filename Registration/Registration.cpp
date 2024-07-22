@@ -779,8 +779,8 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	ComplexMat slave_r, master_small, slave_small;
 	slave_r = master;
 	slave_r.re = 0.0; slave_r.im = 0.0;
-	int nr0 = master.GetRows() > 5000 ? 5000 : master.GetRows();
-	int nc0 = master.GetCols() > 5000 ? 5000 : master.GetCols();
+	int nr0 = master.GetRows() > 10000 ? 10000 : master.GetRows();
+	int nc0 = master.GetCols() > 10000 ? 10000 : master.GetCols();
 	nr0 = slave.GetRows() > nr0 ? nr0 : slave.GetRows();
 	nc0 = slave.GetCols() > nc0 ? nc0 : slave.GetCols();
 
@@ -796,29 +796,29 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	{
 		start_r = offset_rows_pre;
 		start_r2 = 0;
-		end_r = (master.GetRows() - offset_rows_pre) > slave.GetRows() ? (offset_rows_pre + slave.GetRows()) : master.GetRows();
-		end_r2 = (master.GetRows() - offset_rows_pre) > slave.GetRows() ? slave.GetRows() : (master.GetRows()- offset_rows_pre);
+		end_r = (slave.GetRows() - offset_rows_pre) > master.GetRows() ? (offset_rows_pre + master.GetRows()) : slave.GetRows();
+		end_r2 = start_r2 + (end_r - start_r);
 	}
 	else
 	{
-		start_r = 0;
-		start_r2 = -offset_rows_pre;
-		end_r = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? master.GetRows() : (slave.GetRows() + offset_rows_pre);
-		end_r2 = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? (master.GetRows() - offset_rows_pre) : slave.GetRows();
+		start_r = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? (slave.GetRows() + offset_rows_pre - master.GetRows()) : 0;
+		start_r2 = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? 0 : (master.GetRows() - slave.GetRows() - offset_rows_pre);
+		end_r = slave.GetRows() + offset_rows_pre;
+		end_r2 = master.GetRows();
 	}
 	if (offset_cols_pre > 0)
 	{
 		start_c = offset_cols_pre;
 		start_c2 = 0;
-		end_c = (master.GetCols() - offset_cols_pre) > slave.GetCols() ? (offset_cols_pre + slave.GetCols()) : master.GetCols();
-		end_c2 = (master.GetCols() - offset_cols_pre) > slave.GetCols() ? slave.GetCols() : (master.GetCols() - offset_cols_pre);
+		end_c = (slave.GetCols() - offset_cols_pre) > master.GetCols() ? (offset_cols_pre + master.GetCols()) : slave.GetCols();
+		end_c2 = start_c2 + (end_c - start_c);
 	}
 	else
 	{
-		start_c = 0;
-		start_c2 = -offset_cols_pre;
-		end_c = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? master.GetCols() : (slave.GetCols() + offset_cols_pre);
-		end_c2 = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? (master.GetCols() - offset_cols_pre) : slave.GetCols();
+		start_c = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? (slave.GetCols() + offset_cols_pre - master.GetCols()) : 0;
+		start_c2 = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? 0 : (master.GetCols() - slave.GetCols() - offset_cols_pre);
+		end_c = slave.GetCols() + offset_cols_pre;
+		end_c2 = master.GetCols();
 	}
 	slave.re(cv::Range(start_r, end_r), cv::Range(start_c, end_c)).copyTo(slave_r.re(cv::Range(start_r2, end_r2), cv::Range(start_c2, end_c2)));
 	slave.im(cv::Range(start_r, end_r), cv::Range(start_c, end_c)).copyTo(slave_r.im(cv::Range(start_r2, end_r2), cv::Range(start_c2, end_c2)));
