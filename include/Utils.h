@@ -1658,6 +1658,19 @@ public:
 		const char* IW3_h5file,
 		const char* merged_phase_h5file
 	);
+	/*@brief 拼接哨兵一号3个子带单视复图像
+	* @param IW1_h5file                     子带1单视复图像h5文件
+	* @param IW2_h5file                     子带2单视复图像h5文件
+	* @param IW3_h5file                     子带3单视复图像h5文件
+	* @param merged_slc_h5file            拼接后单视复图像h5文件（覆盖写入）
+	* @return 成功返回0，否则返回-1
+	*/
+	int S1_subswath_merge_slc(
+		const char* IW1_h5file,
+		const char* IW2_h5file,
+		const char* IW3_h5file,
+		const char* merged_slc_h5file
+	);
 	/*@brief 拼接哨兵一号同一轨道相邻frame的干涉相位
 	* @param h5files                        同一子带不同frame干涉相位h5数据文件
 	* @param merged_phase_h5                拼接后的干涉相位h5文件

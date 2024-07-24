@@ -7825,6 +7825,9 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	/*下视角拟合系数r*/
 	if (!read_array_from_h5(Input_file, "inc_coefficient_r", tmp_mat))
 		write_array_to_h5(Output_file, "inc_coefficient_r", tmp_mat);
+	/*中心下视角*/
+	if (!read_array_from_h5(Input_file, "incidence_center", tmp_mat))
+		write_array_to_h5(Output_file, "incidence_center", tmp_mat);
 	/*行坐标拟合系数*/
 	if (!read_array_from_h5(Input_file, "row_coefficient", tmp_mat))
 		write_array_to_h5(Output_file, "row_coefficient", tmp_mat);
@@ -9722,7 +9725,7 @@ int Sentinel1Utils::deburst(const char* outFile)
 	//deburst
 	ComplexMat tmp, tmp2, slc;
 	ret = conversion.read_slc_from_h5(this->h5File.c_str(), tmp);
-	tmp.convertTo(tmp, CV_32F);
+	//tmp.convertTo(tmp, CV_32F);
 	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
 	slc = tmp(cv::Range(start.at<int>(0, 0), end.at<int>(0, 0)), cv::Range(0, this->samplesPerBurst));
 	for (int i = 1; i < this->burstCount; i++)

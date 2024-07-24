@@ -3123,8 +3123,17 @@ int Utils::saveSLC(const char* filename, double db, ComplexMat& SLC)
 	}
 	int nr = mod.rows;
 	int nc = mod.cols;
+	size_t imagesize = nr * nc;
+	if (imagesize > 10000 * 10000)
+	{
+		int mul_times = (int)sqrt(double(imagesize / 10000.0 / 10000.0));
+		mul_times = mul_times < 1 ? 1 : mul_times;
+		multilook_SAR(mod, mod, mul_times, mul_times);
+	}
 	double max, min, std;
 	this->std(mod, &std);
+	nr = mod.rows;
+	nc = mod.cols;
 	double mean = cv::mean(mod)[0];
 	if (SLC.type() == CV_64F)
 	{
@@ -9379,6 +9388,280 @@ int Utils::S1_subswath_merge(
 	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_1_IW3", source_1.c_str());
 	ret = conversion.read_str_from_h5(IW3_h5file, "source_1", source_1);
 	ret = conversion.write_str_to_h5(merged_phase_h5file, "source_2_IW3", source_2.c_str());
+
+	return 0;
+}
+
+int Utils::S1_subswath_merge_slc(const char* IW1_h5file, const char* IW2_h5file, const char* IW3_h5file, const char* merged_phase_h5file)
+{
+	if (!IW1_h5file || !IW2_h5file || !IW3_h5file || !merged_phase_h5file)
+	{
+		fprintf(stderr, "S1_subswath_merge_slc(): input check failed\n");
+		return -1;
+	}
+	double start1, start2, start3, end1, end2, end3, first_pixel1, first_pixel2, first_pixel3,
+		range_spacing, prf;
+	int mul_az, mul_rg, mul_az1, mul_rg1, rows1, rows2, rows3, cols1, cols2, cols3;
+	string sensor1, sensor2, sensor3;
+	FormatConversion conversion;
+	string start_time, end_time;
+	int ret;
+	ret = conversion.read_str_from_h5(IW1_h5file, "sensor", sensor1);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW2_h5file, "sensor", sensor2);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW3_h5file, "sensor", sensor3);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	if (sensor1 != "sentinel" || sensor2 != "sentinel" || sensor3 != "sentinel")
+	{
+		fprintf(stderr, "S1_subswath_merge_slc(): not sentinel1 data!\n");
+		return -1;
+	}
+
+	ret = conversion.read_double_from_h5(IW1_h5file, "prf", &prf);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(IW1_h5file, "slant_range_first_pixel", &first_pixel1);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(IW2_h5file, "slant_range_first_pixel", &first_pixel2);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	ret = conversion.read_double_from_h5(IW3_h5file, "slant_range_first_pixel", &first_pixel3);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+	if (first_pixel1 >= first_pixel2 || first_pixel2 >= first_pixel3)
+	{
+		fprintf(stderr, "S1_subswath_merge_slc(): please rearrange input swath order!\n");
+		return -1;
+	}
+	ret = conversion.read_double_from_h5(IW3_h5file, "range_spacing", &range_spacing);
+	if (return_check(ret, "read_double_from_h5()", error_head)) return -1;
+
+
+	ret = conversion.read_int_from_h5(IW1_h5file, "range_len", &cols1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW1_h5file, "azimuth_len", &rows1);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(IW2_h5file, "range_len", &cols2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW2_h5file, "azimuth_len", &rows2);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+	ret = conversion.read_int_from_h5(IW3_h5file, "range_len", &cols3);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+	ret = conversion.read_int_from_h5(IW3_h5file, "azimuth_len", &rows3);
+	if (return_check(ret, "read_int_from_h5()", error_head)) return -1;
+
+
+
+	ret = conversion.read_str_from_h5(IW1_h5file, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW1_h5file, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(start_time.c_str(), &start1);
+	conversion.utc2gps(end_time.c_str(), &end1);
+
+	ret = conversion.read_str_from_h5(IW2_h5file, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW2_h5file, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(start_time.c_str(), &start2);
+	conversion.utc2gps(end_time.c_str(), &end2);
+
+	ret = conversion.read_str_from_h5(IW3_h5file, "acquisition_start_time", start_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	ret = conversion.read_str_from_h5(IW3_h5file, "acquisition_stop_time", end_time);
+	if (return_check(ret, "read_str_from_h5()", error_head)) return -1;
+	conversion.utc2gps(start_time.c_str(), &start3);
+	conversion.utc2gps(end_time.c_str(), &end3);
+
+	//IW1和IW2拼接
+
+	int x = (double(cols1) - round((first_pixel2 - first_pixel1) / range_spacing)) / 2.0;
+	int col_end_last = x + (int)round((first_pixel2 - first_pixel1) / range_spacing);
+	int col_start_next = x;
+	int total_cols = col_end_last + (cols2 - col_start_next);
+	int row_offset = (start1 - start2) * prf;
+	int total_rows = (((end1 > end2 ? end1 : end2) - (start1 < start2 ? start1 : start2)) * prf + 1) + 1;
+	ComplexMat slc1, slc2, slc3, slc_tmp, slc_tmp2;
+	ret = conversion.read_slc_from_h5(IW1_h5file, slc1);
+	ret = conversion.read_slc_from_h5(IW2_h5file, slc2);
+	if (slc1.type() != slc2.type())
+	{
+		fprintf(stderr, "S1_subswath_merge_slc(): data type mismatch!\n");
+		return -1;
+	}
+	slc_tmp.re.create(total_rows, total_cols, slc1.type()); slc_tmp.im.create(total_rows, total_cols, slc1.type());
+	slc_tmp.re = 0; slc_tmp.im = 0;
+	if (row_offset < 0)
+	{
+		slc1.re(cv::Range(0, slc1.re.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp.re(cv::Range(0, slc1.re.rows), cv::Range(0, col_end_last)));
+		slc1.im(cv::Range(0, slc1.im.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp.im(cv::Range(0, slc1.im.rows), cv::Range(0, col_end_last)));
+
+		slc2.re(cv::Range(0, slc2.re.rows), cv::Range(col_start_next, cols2)).copyTo
+		(slc_tmp.re(cv::Range(-row_offset, slc2.re.rows - row_offset), cv::Range(col_end_last, total_cols)));
+		slc2.im(cv::Range(0, slc2.im.rows), cv::Range(col_start_next, cols2)).copyTo
+		(slc_tmp.im(cv::Range(-row_offset, slc2.im.rows - row_offset), cv::Range(col_end_last, total_cols)));
+	}
+	else
+	{
+		slc1.re(cv::Range(0, slc1.re.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp.re(cv::Range(row_offset, slc1.re.rows + row_offset), cv::Range(0, col_end_last)));
+		slc1.im(cv::Range(0, slc1.im.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp.im(cv::Range(row_offset, slc1.im.rows + row_offset), cv::Range(0, col_end_last)));
+
+		slc2.re(cv::Range(0, slc2.re.rows), cv::Range(col_start_next, cols2)).copyTo
+		(slc_tmp.re(cv::Range(0, slc2.re.rows), cv::Range(col_end_last, total_cols)));
+		slc2.im(cv::Range(0, slc2.im.rows), cv::Range(col_start_next, cols2)).copyTo
+		(slc_tmp.im(cv::Range(0, slc2.im.rows), cv::Range(col_end_last, total_cols)));
+	}
+
+	//拼接IW3
+
+	x = (double(total_cols) - round((first_pixel3 - first_pixel1) / range_spacing)) / 2.0;
+	col_end_last = x + (int)round((first_pixel3 - first_pixel1) / range_spacing);
+	col_start_next = x;
+	total_cols = col_end_last + (cols3 - col_start_next);
+	double start11 = start1 < start2 ? start1 : start2;
+	double end11 = end1 > end2 ? end1 : end2;
+	row_offset = (start11 - start3) * prf;
+	total_rows = (((end11 > end3 ? end11 : end3) - (start11 < start3 ? start11 : start3)) * prf + 1) + 1;
+	slc_tmp2.re.create(total_rows, total_cols, slc1.type()); slc_tmp2.im.create(total_rows, total_cols, slc1.type());
+	slc_tmp2.re = 0; slc_tmp2.im = 0;
+	ret = conversion.read_slc_from_h5(IW3_h5file, slc2);
+	if (slc1.type() != slc2.type())
+	{
+		fprintf(stderr, "S1_subswath_merge_slc(): data type mismatch!\n");
+		return -1;
+	}
+	if (row_offset < 0)
+	{
+		slc_tmp.re(cv::Range(0, slc_tmp.re.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp2.re(cv::Range(0, slc_tmp.re.rows), cv::Range(0, col_end_last)));
+		slc_tmp.im(cv::Range(0, slc_tmp.im.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp2.im(cv::Range(0, slc_tmp.im.rows), cv::Range(0, col_end_last)));
+
+		slc2.re(cv::Range(0, slc2.re.rows), cv::Range(col_start_next, cols3)).copyTo
+		(slc_tmp2.re(cv::Range(-row_offset, slc2.re.rows - row_offset), cv::Range(col_end_last, total_cols)));
+		slc2.im(cv::Range(0, slc2.im.rows), cv::Range(col_start_next, cols3)).copyTo
+		(slc_tmp2.im(cv::Range(-row_offset, slc2.im.rows - row_offset), cv::Range(col_end_last, total_cols)));
+	}
+	else
+	{
+		slc_tmp.re(cv::Range(0, slc_tmp.re.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp2.re(cv::Range(row_offset, slc_tmp.re.rows + row_offset), cv::Range(0, col_end_last)));
+		slc_tmp.im(cv::Range(0, slc_tmp.im.rows), cv::Range(0, col_end_last)).copyTo
+		(slc_tmp2.im(cv::Range(row_offset, slc_tmp.im.rows + row_offset), cv::Range(0, col_end_last)));
+
+		slc2.re(cv::Range(0, slc2.re.rows), cv::Range(col_start_next, cols3)).copyTo
+		(slc_tmp2.re(cv::Range(0, slc2.re.rows), cv::Range(col_end_last, total_cols)));
+		slc2.im(cv::Range(0, slc2.im.rows), cv::Range(col_start_next, cols3)).copyTo
+		(slc_tmp2.im(cv::Range(0, slc2.im.rows), cv::Range(col_end_last, total_cols)));
+	}
+	ret = conversion.creat_new_h5(merged_phase_h5file);
+	if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+	ret = conversion.write_slc_to_h5(merged_phase_h5file, slc_tmp2);
+	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+
+
+	conversion.write_int_to_h5(merged_phase_h5file, "azimuth_len", slc_tmp2.re.rows);
+	conversion.write_int_to_h5(merged_phase_h5file, "range_len", slc_tmp2.re.cols);
+
+	/////写入其它参数
+	//拍摄起始时间
+	if (start1 < start2 && start1 < start3)
+	{
+		ret = conversion.read_str_from_h5(IW1_h5file, "acquisition_start_time", start_time);
+		conversion.write_str_to_h5(merged_phase_h5file, "acquisition_start_time", start_time.c_str());
+	}
+	else if (start2 < start1 && start2 < start3)
+	{
+		ret = conversion.read_str_from_h5(IW2_h5file, "acquisition_start_time", start_time);
+		conversion.write_str_to_h5(merged_phase_h5file, "acquisition_start_time", start_time.c_str());
+	}
+	else
+	{
+		ret = conversion.read_str_from_h5(IW3_h5file, "acquisition_start_time", start_time);
+		conversion.write_str_to_h5(merged_phase_h5file, "acquisition_start_time", start_time.c_str());
+	}
+	//拍摄结束时间
+	if (end1 > end2 && end1 > end3)
+	{
+		ret = conversion.read_str_from_h5(IW1_h5file, "acquisition_stop_time", end_time);
+		conversion.write_str_to_h5(merged_phase_h5file, "acquisition_stop_time", end_time.c_str());
+	}
+	else if (end2 > end1 && end2 > end3)
+	{
+		ret = conversion.read_str_from_h5(IW2_h5file, "acquisition_stop_time", end_time);
+		conversion.write_str_to_h5(merged_phase_h5file, "acquisition_stop_time", end_time.c_str());
+	}
+	else
+	{
+		ret = conversion.read_str_from_h5(IW3_h5file, "acquisition_stop_time", end_time);
+		conversion.write_str_to_h5(merged_phase_h5file, "acquisition_stop_time", end_time.c_str());
+	}
+	//最近斜距
+	conversion.write_double_to_h5(merged_phase_h5file, "slant_range_first_pixel", first_pixel1);
+
+	//采样间隔
+	conversion.write_double_to_h5(merged_phase_h5file, "range_spacing", range_spacing);
+	conversion.read_double_from_h5(IW3_h5file, "azimuth_spacing", &range_spacing);
+	conversion.write_double_to_h5(merged_phase_h5file, "azimuth_spacing", range_spacing);
+	//中心下视角
+	conversion.read_double_from_h5(IW2_h5file, "incidence_center", &range_spacing);
+	conversion.write_double_to_h5(merged_phase_h5file, "incidence_center", range_spacing);
+	//prf
+	conversion.write_double_to_h5(merged_phase_h5file, "prf", prf);
+	//载频
+	conversion.read_double_from_h5(IW3_h5file, "carrier_frequency", &range_spacing);
+	conversion.write_double_to_h5(merged_phase_h5file, "carrier_frequency", range_spacing);
+	//极化、swath、传感器名
+	ret = conversion.read_str_from_h5(IW3_h5file, "polarization", end_time);
+	conversion.write_str_to_h5(merged_phase_h5file, "polarization", end_time.c_str());
+	conversion.write_str_to_h5(merged_phase_h5file, "swath", "IW123");
+	//conversion.write_str_to_h5(merged_phase_h5file, "sensor", "sentinel");
+	//轨道
+	Mat state_vec;
+	ret = conversion.read_array_from_h5(IW3_h5file, "state_vec", state_vec);
+	conversion.write_array_to_h5(merged_phase_h5file, "state_vec", state_vec);
+	//控制点
+	Mat gcps1, gcps2, gcps3, lon, lat;
+	ret = conversion.read_array_from_h5(IW1_h5file, "gcps", gcps1);
+	ret = conversion.read_array_from_h5(IW2_h5file, "gcps", gcps2);
+	ret = conversion.read_array_from_h5(IW3_h5file, "gcps", gcps3);
+	cv::vconcat(gcps1, gcps2, gcps2);
+	cv::vconcat(gcps2, gcps3, gcps3);
+	gcps3(cv::Range(0, gcps3.rows), cv::Range(0, 1)).copyTo(lon);
+	gcps3(cv::Range(0, gcps3.rows), cv::Range(1, 2)).copyTo(lat);
+
+	double topleft_lon, topright_lon, bottomleft_lon, bottomright_lon,
+		topleft_lat, topright_lat, bottomleft_lat, bottomright_lat, lonMin, lonMax, latMin, latMax;
+
+	cv::minMaxLoc(lon, &lonMin, &lonMax);
+	cv::minMaxLoc(lat, &latMin, &latMax);
+	double extra = 5.0 / 6000;
+	lonMin = lonMin - extra * 100;
+	lonMax = lonMax + extra * 100;
+	latMin = latMin - extra * 100;
+	latMax = latMax + extra * 100;
+	topleft_lon = lonMin;
+	topright_lon = lonMax;
+	bottomleft_lon = lonMin;
+	bottomright_lon = lonMax;
+	topleft_lat = latMax;
+	topright_lat = latMax;
+	bottomleft_lat = latMin;
+	bottomright_lat = latMin;
+
+	conversion.write_double_to_h5(merged_phase_h5file, "topLeftLat", topleft_lat);
+	conversion.write_double_to_h5(merged_phase_h5file, "topLeftLon", topleft_lon);
+	conversion.write_double_to_h5(merged_phase_h5file, "topRightLat", topright_lat);
+	conversion.write_double_to_h5(merged_phase_h5file, "topRightLon", topright_lon);
+	conversion.write_double_to_h5(merged_phase_h5file, "bottomLeftLat", bottomleft_lat);
+	conversion.write_double_to_h5(merged_phase_h5file, "bottomLeftLon", bottomleft_lon);
+	conversion.write_double_to_h5(merged_phase_h5file, "bottomRightLat", bottomright_lat);
+	conversion.write_double_to_h5(merged_phase_h5file, "bottomRightLon", bottomright_lon);
+
 
 	return 0;
 }
