@@ -1954,8 +1954,8 @@ int Utils::complex_coherence(
 
 	if ((na < est_wndsize_az) ||
 		(nr < est_wndsize_rg) ||
-		master_image.type() != CV_64F ||
-		slave_image.type() != CV_64F ||
+		master_image.type() != slave_image.type() ||
+		(slave_image.type() != CV_64F && slave_image.type() != CV_32F) ||
 		master_image.GetCols() != slave_image.GetCols() ||
 		master_image.GetRows() != slave_image.GetRows() ||
 		est_wndsize_az % 2 == 0||
@@ -1973,41 +1973,81 @@ int Utils::complex_coherence(
 
 	int na_new = na - 2 * win_a;
 	int nr_new = nr - 2 * win_r;
-
-	Mat Coherence(na_new, nr_new, CV_64F, Scalar::all(0));
-#pragma omp parallel for schedule(guided)
-	for (int i = win_a + 1; i <= na - win_a; i++)
+	if (master_image.type() == CV_64F)
 	{
-		for (int j = win_r + 1; j <= nr - win_r; j++)
+		Mat Coherence(na_new, nr_new, CV_64F, Scalar::all(0));
+#pragma omp parallel for schedule(guided)
+		for (int i = win_a + 1; i <= na - win_a; i++)
 		{
-			Mat planes_master[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
-			Mat planes_slave[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
-			Mat planes[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
-			Mat s1, s2;
-			double up, down, sum1, sum2;
-			master_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[0]);
-			master_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[1]);
+			for (int j = win_r + 1; j <= nr - win_r; j++)
+			{
+				Mat planes_master[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
+				Mat planes_slave[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
+				Mat planes[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_64F) };
+				Mat s1, s2;
+				double up, down, sum1, sum2;
+				master_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[0]);
+				master_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[1]);
 
-			slave_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[0]);
-			slave_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[1]);
+				slave_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[0]);
+				slave_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[1]);
 
-			merge(planes_master, 2, s1);
-			merge(planes_slave, 2, s2);
-			mulSpectrums(s1, s2, s1, 0, true);
-			split(s1, planes);
-			sum1 = sum(planes[0])[0];
-			sum2 = sum(planes[1])[0];
-			up = sqrt(sum1 * sum1 + sum2 * sum2);
-			magnitude(planes_master[0], planes_master[1], planes_master[0]);
-			magnitude(planes_slave[0], planes_slave[1], planes_slave[0]);
-			sum1 = sum(planes_master[0].mul(planes_master[0]))[0];
-			sum2 = sum(planes_slave[0].mul(planes_slave[0]))[0];
-			down = sqrt(sum1 * sum2);
-			Coherence.at<double>(i - 1 - win_a, j - 1 - win_r) = up / (down + 0.0000001);
+				merge(planes_master, 2, s1);
+				merge(planes_slave, 2, s2);
+				mulSpectrums(s1, s2, s1, 0, true);
+				split(s1, planes);
+				sum1 = sum(planes[0])[0];
+				sum2 = sum(planes[1])[0];
+				up = sqrt(sum1 * sum1 + sum2 * sum2);
+				magnitude(planes_master[0], planes_master[1], planes_master[0]);
+				magnitude(planes_slave[0], planes_slave[1], planes_slave[0]);
+				sum1 = sum(planes_master[0].mul(planes_master[0]))[0];
+				sum2 = sum(planes_slave[0].mul(planes_slave[0]))[0];
+				down = sqrt(sum1 * sum2);
+				Coherence.at<double>(i - 1 - win_a, j - 1 - win_r) = up / (down + 0.0000001);
+			}
 		}
+		copyMakeBorder(Coherence, Coherence, win_a, win_a, win_r, win_r, BORDER_REFLECT);
+		Coherence.copyTo(coherence);
 	}
-	copyMakeBorder(Coherence, Coherence, win_a, win_a, win_r, win_r, BORDER_REFLECT);
-	Coherence.copyTo(coherence);
+	else
+	{
+		Mat Coherence(na_new, nr_new, CV_32F, Scalar::all(0));
+#pragma omp parallel for schedule(guided)
+		for (int i = win_a + 1; i <= na - win_a; i++)
+		{
+			for (int j = win_r + 1; j <= nr - win_r; j++)
+			{
+				Mat planes_master[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_32F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_32F) };
+				Mat planes_slave[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_32F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_32F) };
+				Mat planes[] = { Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_32F), Mat::zeros(2 * win_a + 1, 2 * win_r + 1, CV_32F) };
+				Mat s1, s2;
+				double up, down, sum1, sum2;
+				master_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[0]);
+				master_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_master[1]);
+
+				slave_image.re(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[0]);
+				slave_image.im(Range(i - 1 - win_a, i + win_a), Range(j - 1 - win_r, j + win_r)).copyTo(planes_slave[1]);
+
+				merge(planes_master, 2, s1);
+				merge(planes_slave, 2, s2);
+				mulSpectrums(s1, s2, s1, 0, true);
+				split(s1, planes);
+				sum1 = sum(planes[0])[0];
+				sum2 = sum(planes[1])[0];
+				up = sqrt(sum1 * sum1 + sum2 * sum2);
+				magnitude(planes_master[0], planes_master[1], planes_master[0]);
+				magnitude(planes_slave[0], planes_slave[1], planes_slave[0]);
+				sum1 = sum(planes_master[0].mul(planes_master[0]))[0];
+				sum2 = sum(planes_slave[0].mul(planes_slave[0]))[0];
+				down = sqrt(sum1 * sum2);
+				Coherence.at<float>(i - 1 - win_a, j - 1 - win_r) = up / (down + 0.0000001);
+			}
+		}
+		copyMakeBorder(Coherence, Coherence, win_a, win_a, win_r, win_r, BORDER_REFLECT);
+		Coherence.copyTo(coherence);
+	}
+	
 	return 0;
 }
 
@@ -3358,6 +3398,73 @@ int Utils::savephase(const char* filename, const char* colormap, Mat phase)
 		return -1;
 	}
 	tmp = (tmp - min) / (max - min)*255.0;
+	tmp.convertTo(tmp, CV_8U);
+	if (!gray)
+	{
+		cv::applyColorMap(tmp, tmp, type);
+	}
+	bool ret = cv::imwrite(filename, tmp);
+	if (!ret)
+	{
+		fprintf(stderr, "cv::imwrite(): can't write to %s\n\n", filename);
+		return -1;
+	}
+	return 0;
+}
+
+int Utils::save_coherence(const char* filename, const char* colormap, Mat coherence)
+{
+	if (filename == NULL ||
+		colormap == NULL ||
+		coherence.rows < 1 ||
+		coherence.cols < 1 ||
+		(coherence.type() != CV_32F && coherence.type() != CV_64F) ||
+		coherence.channels() != 1)
+	{
+		fprintf(stderr, "save_coherence(): input check failed!\n\n");
+		return -1;
+	}
+	bool gray = false;
+	cv::ColormapTypes type = cv::COLORMAP_PARULA;
+	if (strcmp(colormap, "jet") == 0) type = cv::COLORMAP_JET;
+	if (strcmp(colormap, "hsv") == 0) type = cv::COLORMAP_HSV;
+	if (strcmp(colormap, "cool") == 0) type = cv::COLORMAP_COOL;
+	if (strcmp(colormap, "rainbow") == 0) type = cv::COLORMAP_RAINBOW;
+	if (strcmp(colormap, "spring") == 0) type = cv::COLORMAP_SPRING;
+	if (strcmp(colormap, "summer") == 0) type = cv::COLORMAP_SUMMER;
+	if (strcmp(colormap, "winter") == 0) type = cv::COLORMAP_WINTER;
+	if (strcmp(colormap, "autumn") == 0) type = cv::COLORMAP_AUTUMN;
+	if (strcmp(colormap, "gray") == 0) gray = true;
+
+	double min, max;
+	Mat tmp;
+	coherence.copyTo(tmp);
+	if (coherence.type() == CV_64F)
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < tmp.rows; i++)
+		{
+			for (int j = 0; j < tmp.cols; j++)
+			{
+				if (tmp.at<double>(i, j) < 0.0) tmp.at<double>(i, j) = 0.0;
+				if (tmp.at<double>(i, j) > 1.0) tmp.at<double>(i, j) = 1.0;
+			}
+		}
+	}
+	else
+	{
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < tmp.rows; i++)
+		{
+			for (int j = 0; j < tmp.cols; j++)
+			{
+				if (tmp.at<float>(i, j) < 0.0) tmp.at<float>(i, j) = 0.0;
+				if (tmp.at<float>(i, j) > 1.0) tmp.at<float>(i, j) = 1.0;
+			}
+		}
+	}
+	min = 0.0; max = 1.0;
+	tmp = (tmp - min) / (max - min) * 255.0;
 	tmp.convertTo(tmp, CV_8U);
 	if (!gray)
 	{

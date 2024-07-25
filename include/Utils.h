@@ -880,6 +880,12 @@ public:
 	* 参数3 待保存相位
 	*/
 	int savephase(const char* filename, const char* colormap, Mat phase);
+	/*保存干涉相位图
+	* 参数1 目标文件名
+	* 参数2 颜色映射（jet/hsv/cool/parula等）
+	* 参数3 待保存相位
+	*/
+	int save_coherence(const char* filename, const char* colormap, Mat coherence);
 	/*@brief 保存干涉相位图（掩膜区域为黑色）
 	* @param filename                            目标文件名
 	* @param colormap                            颜色映射（jet/hsv/cool/parula等）
