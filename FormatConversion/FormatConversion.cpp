@@ -7871,6 +7871,262 @@ int FormatConversion::Copy_para_from_h5_2_h5(const char* Input_file, const char*
 	return 0;
 }
 
+int FormatConversion::read_height_metric_from_GEDI_L2B(
+	const char* gedi_h5_file, 
+	Mat& rh100,
+	Mat& elev_lowestmode,
+	Mat& elev_highestreturn,
+	Mat& lon,
+	Mat& lat,
+	Mat& dem
+)
+{
+	if (!gedi_h5_file)
+	{
+		fprintf(stderr, "read_height_metric_from_GEDI_L2B(): input check failed!\n");
+		return -1;
+	}
+	vector<string> beam_name_list;
+	beam_name_list.push_back("/BEAM0000/");
+	beam_name_list.push_back("/BEAM0001/");
+	beam_name_list.push_back("/BEAM0010/");
+	beam_name_list.push_back("/BEAM0011/");
+	beam_name_list.push_back("/BEAM0101/");
+	beam_name_list.push_back("/BEAM0110/");
+	beam_name_list.push_back("/BEAM1000/");
+	beam_name_list.push_back("/BEAM1011/");
+	hid_t file_id = H5Fopen(gedi_h5_file, H5F_ACC_RDWR, H5P_DEFAULT);
+	if (file_id < 0)
+	{
+		fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open %s!\n", gedi_h5_file);
+		return -1;
+	}
+	Mat rh100_tmp, zg_tmp, zt_tmp, lon_tmp, lat_tmp, dem_tmp;
+	for (int i = 0; i < beam_name_list.size(); i++)
+	{
+		//读取RH100参数
+		string str = beam_name_list[i] + "rh100";
+		hid_t dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		hid_t space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		hsize_t dims[3];
+		int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		hid_t type = H5Dget_type(dataset_id);
+		herr_t status;
+		rh100_tmp.create(dims[0], 1, CV_16S); rh100_tmp = 0;
+		status = H5Dread(dataset_id, H5T_NATIVE_INT16, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)rh100_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取zg参数
+		str = beam_name_list[i] + "geolocation/elev_lowestmode";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		zg_tmp.create(dims[0], 1, CV_32F); zg_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)zg_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取zt参数
+		str = beam_name_list[i] + "geolocation/elev_highestreturn";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		zt_tmp.create(dims[0], 1, CV_32F); zt_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)zt_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取lat参数
+		str = beam_name_list[i] + "geolocation/lat_highestreturn";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		lat_tmp.create(dims[0], 1, CV_64F); lat_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)lat_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取lon参数
+		str = beam_name_list[i] + "geolocation/lon_highestreturn";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		lon_tmp.create(dims[0], 1, CV_64F); lon_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)lon_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取dem参数
+		str = beam_name_list[i] + "geolocation/digital_elevation_model";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		dem_tmp.create(dims[0], 1, CV_32F); dem_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)dem_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		if (i == 0)
+		{
+			rh100_tmp.copyTo(rh100);
+			zg_tmp.copyTo(elev_lowestmode);
+			zt_tmp.copyTo(elev_highestreturn);
+			lon_tmp.copyTo(lon);
+			lat_tmp.copyTo(lat);
+			dem_tmp.copyTo(dem);
+		}
+		else
+		{
+			cv::vconcat(rh100, rh100_tmp, rh100);
+			cv::vconcat(elev_lowestmode, zg_tmp, elev_lowestmode);
+			cv::vconcat(elev_highestreturn, zt_tmp, elev_highestreturn);
+			cv::vconcat(lon, lon_tmp, lon);
+			cv::vconcat(lat, lat_tmp, lat);
+			cv::vconcat(dem, dem_tmp, dem);
+		}
+		
+
+		H5Dclose(dataset_id);
+		H5Sclose(space_id);
+		H5Tclose(type);
+	}
+
+	H5Fclose(file_id);
+
+	return 0;
+}
+
 /*------------------------------------------------*/
 /*               哨兵一号数据读取工具             */
 /*------------------------------------------------*/

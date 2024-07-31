@@ -921,7 +921,7 @@ public:
 
 
 	/*------------------------------------------------*/
-	/*              ALOS1/2产品数据导入工具               */
+	/*            ALOS1/2产品数据导入工具             */
 	/*------------------------------------------------*/
 
 	/*
@@ -964,6 +964,23 @@ public:
 	@param Output_file       输出h5文件
 	*/
 	int Copy_para_from_h5_2_h5(const char* Input_file, const char* Output_file);
+
+	/*------------------------------------------------*/
+	/*               GEDI产品数据导入工具             */
+	/*------------------------------------------------*/
+
+	/** @brief 从GEDI L2B级产品中读取DSM、DTM以及地理坐标等信息
+	* @param gedi_h5_file                        GEDI L2B级产品文件（HDF5格式）
+	* @param rh100                               rh100参数
+	* @param elev_lowestmode                     林下地形参数（DTM）
+	* @param elev_highestreturn                  冠层高度信息（DSM）
+	* @param lon                                 经度信息
+	* @param lat                                 纬度信息
+	* @param dem                                 TanDEM-X 90m 高程信息
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_height_metric_from_GEDI_L2B(const char* gedi_h5_file, Mat& rh100, Mat& elev_lowestmode, Mat& elev_highestreturn, Mat& lon, Mat& lat, Mat& dem);
+
 
 private:
 	char error_head[256];
