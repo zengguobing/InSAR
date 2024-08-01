@@ -977,9 +977,10 @@ public:
 	* @param lon                                 经度信息
 	* @param lat                                 纬度信息
 	* @param dem                                 TanDEM-X 90m 高程信息
+	* @param quality_index                       质量信息
 	* @return 成功返回0，否则返回-1
 	*/
-	int read_height_metric_from_GEDI_L2B(const char* gedi_h5_file, Mat& rh100, Mat& elev_lowestmode, Mat& elev_highestreturn, Mat& lon, Mat& lat, Mat& dem);
+	int read_height_metric_from_GEDI_L2B(const char* gedi_h5_file, Mat& rh100, Mat& elev_lowestmode, Mat& elev_highestreturn, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index);
 
 
 private:

@@ -7878,7 +7878,8 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 	Mat& elev_highestreturn,
 	Mat& lon,
 	Mat& lat,
-	Mat& dem
+	Mat& dem,
+	Mat& quality_index
 )
 {
 	if (!gedi_h5_file)
@@ -7901,7 +7902,7 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 		fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open %s!\n", gedi_h5_file);
 		return -1;
 	}
-	Mat rh100_tmp, zg_tmp, zt_tmp, lon_tmp, lat_tmp, dem_tmp;
+	Mat rh100_tmp, zg_tmp, zt_tmp, lon_tmp, lat_tmp, dem_tmp, quality_index_tmp;
 	for (int i = 0; i < beam_name_list.size(); i++)
 	{
 		//读取RH100参数
@@ -8097,6 +8098,38 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 			return -1;
 		}
 
+		//读取quality_index参数
+		str = beam_name_list[i] + "l2b_quality_flag";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		quality_index_tmp.create(dims[0], 1, CV_8U); quality_index_tmp = 0;
+		status = H5Dread(dataset_id, H5T_NATIVE_INT8, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)quality_index_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
 		if (i == 0)
 		{
 			rh100_tmp.copyTo(rh100);
@@ -8105,6 +8138,7 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 			lon_tmp.copyTo(lon);
 			lat_tmp.copyTo(lat);
 			dem_tmp.copyTo(dem);
+			quality_index_tmp.copyTo(quality_index);
 		}
 		else
 		{
@@ -8114,6 +8148,7 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 			cv::vconcat(lon, lon_tmp, lon);
 			cv::vconcat(lat, lat_tmp, lat);
 			cv::vconcat(dem, dem_tmp, dem);
+			cv::vconcat(quality_index, quality_index_tmp, quality_index);
 		}
 		
 
@@ -8121,7 +8156,7 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 		H5Sclose(space_id);
 		H5Tclose(type);
 	}
-
+	quality_index.convertTo(quality_index, CV_16S);
 	H5Fclose(file_id);
 
 	return 0;
