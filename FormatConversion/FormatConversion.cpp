@@ -7888,10 +7888,10 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 		return -1;
 	}
 	vector<string> beam_name_list;
-	beam_name_list.push_back("/BEAM0000/");
-	beam_name_list.push_back("/BEAM0001/");
-	beam_name_list.push_back("/BEAM0010/");
-	beam_name_list.push_back("/BEAM0011/");
+	//beam_name_list.push_back("/BEAM0000/");
+	//beam_name_list.push_back("/BEAM0001/");
+	//beam_name_list.push_back("/BEAM0010/");
+	//beam_name_list.push_back("/BEAM0011/");
 	beam_name_list.push_back("/BEAM0101/");
 	beam_name_list.push_back("/BEAM0110/");
 	beam_name_list.push_back("/BEAM1000/");
