@@ -12752,46 +12752,114 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 		return -1;
 	}
 	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
-	int xsize = 0;
-	int ysize = 0;
-	//获取指向波段1的指针
-	GDALRasterBand* poBand = poDataset->GetRasterBand(1);
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+	if (nBand == 1)
 	{
-		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-		return -1;
-	}
-	GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	int* pbuf = NULL;
-	pbuf = (int*)malloc(sizeof(int) * xsize * ysize);		//分配数据指针空间
-	if (!pbuf)
-	{
-		fprintf(stderr, "read_slc_from_TSXcos(): out of memory!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-		return -1;
-	}
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	int i, j;
-	slc.re.create(ysize, xsize, CV_16S);
-	slc.im.create(ysize, xsize, CV_16S);
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
+		int xsize = 0;
+		int ysize = 0;
+		//获取指向波段1的指针
+		GDALRasterBand* poBand = poDataset->GetRasterBand(1);
+		xsize = poBand->GetXSize();		//cols
+		ysize = poBand->GetYSize();		//rows
+		if (xsize < 0 || ysize < 0)
 		{
-			slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
-			slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
+			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+			GDALClose(poDataset);
+			GDALDestroyDriverManager();
+			return -1;
 		}
-	if (pbuf)
-	{
-		free(pbuf);
-		pbuf = NULL;
+		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+		int* pbuf = NULL;
+		pbuf = (int*)malloc(sizeof(int) * xsize * ysize);		//分配数据指针空间
+		if (!pbuf)
+		{
+			fprintf(stderr, "read_slc_from_TSXcos(): out of memory!\n");
+			GDALClose(poDataset);
+			GDALDestroyDriverManager();
+			return -1;
+		}
+		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+		int i, j;
+		slc.re.create(ysize, xsize, CV_16S);
+		slc.im.create(ysize, xsize, CV_16S);
+		for (i = 0; i < ysize; i++)
+			for (j = 0; j < xsize; j++)
+			{
+				slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
+				slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
+			}
+		if (pbuf)
+		{
+			free(pbuf);
+			pbuf = NULL;
+		}
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
 	}
-	GDALClose(poDataset);
-	GDALDestroyDriverManager();
+	else
+	{
+		int xsize = 0;
+		int ysize = 0;
+		//获取指向波段1的指针
+		GDALRasterBand* poBand = poDataset->GetRasterBand(1);
+		xsize = poBand->GetXSize();		//cols
+		ysize = poBand->GetYSize();		//rows
+		if (xsize < 0 || ysize < 0)
+		{
+			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+			GDALClose(poDataset);
+			GDALDestroyDriverManager();
+			return -1;
+		}
+		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+		short* pbuf = NULL;
+		pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+		if (!pbuf)
+		{
+			fprintf(stderr, "read_slc(): out of memory!\n");
+			GDALClose(poDataset);
+			GDALDestroyDriverManager();
+			return -1;
+		}
+		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+		int i, j;
+		slc.re.create(ysize, xsize, CV_16S);
+		slc.im.create(ysize, xsize, CV_16S);
+		size_t offset = 0;
+		for (i = 0; i < ysize; i++)
+			for (j = 0; j < xsize; j++)
+			{
+				slc.re.ptr<short>(i)[j] = pbuf[offset];
+				offset++;
+			}
+		//获取指向波段2的指针
+		poBand = poDataset->GetRasterBand(2);
+		xsize = poBand->GetXSize();		//cols
+		ysize = poBand->GetYSize();		//rows
+		if (xsize < 0 || ysize < 0)
+		{
+			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+			GDALClose(poDataset);
+			GDALDestroyDriverManager();
+			return -1;
+		}
+		dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+		offset = 0;
+		for (i = 0; i < ysize; i++)
+			for (j = 0; j < xsize; j++)
+			{
+				slc.im.ptr<short>(i)[j] = pbuf[offset];
+				offset++;
+			}
+		if (pbuf)
+		{
+			free(pbuf);
+			pbuf = NULL;
+		}
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+	}
+	
 
 	return 0;
 }
