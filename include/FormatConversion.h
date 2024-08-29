@@ -1337,6 +1337,10 @@ public:
 	* @return 成功返回0，否则返回-1
 	*/
 	int init();
+	/*@brief 初始化（聚束模式数据测试用）
+	* @return 成功返回0，否则返回-1
+	*/
+	int init_test();
 
 	/*@brief 将数据写入到指定h5文件
 	* @param dst_h5                          指定hdf5文件
@@ -1354,6 +1358,15 @@ private:
 	@return 成功返回0，否则返回-1
 	*/
 	int read_data(
+		const char* xml_file,
+		const char* data_file
+	);
+	/*@brief 从天仪L1产品中读取数据（聚束模式数据测试用）
+	@param xml_file                    天仪xml数据文件（.xml）
+	@param data_file                   天仪xml数据文件（.tiff）
+	@return 成功返回0，否则返回-1
+	*/
+	int read_data_test(
 		const char* xml_file,
 		const char* data_file
 	);

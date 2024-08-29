@@ -12736,6 +12736,24 @@ int Spacety_reader::init()
 	return 0;
 }
 
+int Spacety_reader::init_test()
+{
+	if (b_initialized) return 0;
+	if (Spacety_data_file.empty())
+	{
+		fprintf(stderr, "init(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_data_test(this->Spacety_xml_file.c_str(), this->Spacety_data_file.c_str());
+	if (ret < 0)
+	{
+		fprintf(stderr, "init(): read_data failed!\n");
+		return -1;
+	}
+	b_initialized = true;
+	return 0;
+}
+
 int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 {
 	if (data_file == NULL)
@@ -13002,6 +13020,119 @@ int Spacety_reader::read_data(const char* xml_file, const char* data_file)
 		}
 		pnode = pnode->NextSiblingElement();
 	}
+
+	return 0;
+}
+
+int Spacety_reader::read_data_test(const char* xml_file, const char* data_file)
+{
+	if (!xml_file || !data_file)
+	{
+		fprintf(stderr, "read_data(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_slc(data_file, slc);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't read slc from %s\n", data_file);
+		return -1;
+	}
+	XMLFile xmldoc;
+	ret = xmldoc.XMLFile_load(xml_file);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't load %s\n", xml_file);
+		return -1;
+	}
+
+	//读取轨道参数
+	TiXmlElement* pnode, * pchild, * pchild1;
+	int numOfstateVec = 6;
+	pnode = NULL;
+	double time, x, y, z, vx, vy, vz;
+	state_vec.create(numOfstateVec, 7, CV_64F);
+	for (int i = 0; i < numOfstateVec; i++)
+	{
+		if (i == 0) ret = xmldoc.find_node("GPSParam", pnode);
+		
+		//GPS时间
+		ret = xmldoc._find_node(pnode, "TimeStamp", pchild);
+		string tmp = pchild->GetText();
+		int rpos = tmp.rfind("-");
+		string tmp2 = tmp.substr(0, rpos) + "T" + tmp.substr(rpos + 1, tmp.length() - rpos - 1);
+		ret = UTC2GPS(tmp2.c_str(), &time);
+		//位置x
+		ret = xmldoc._find_node(pnode, "xPosition", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &x);
+		//位置y
+		ret = xmldoc._find_node(pnode, "yPosition", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &y);
+		//位置z
+		ret = xmldoc._find_node(pnode, "zPosition", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &z);
+
+		//速度x
+		ret = xmldoc._find_node(pnode, "xVelocity", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vx);
+		//速度y
+		ret = xmldoc._find_node(pnode, "yVelocity", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vy);
+		//速度z
+		ret = xmldoc._find_node(pnode, "zVelocity", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vz);
+
+		//赋值
+		state_vec.at<double>(i, 0) = time;
+		state_vec.at<double>(i, 1) = x;
+		state_vec.at<double>(i, 2) = y;
+		state_vec.at<double>(i, 3) = z;
+		state_vec.at<double>(i, 4) = vx;
+		state_vec.at<double>(i, 5) = vy;
+		state_vec.at<double>(i, 6) = vz;
+		pnode = pnode->NextSiblingElement();
+	}
+
+	//拍摄起始时间
+	ret = xmldoc.get_str_para("imagingTimestart", this->acquisition_start_time);
+	string tmp = this->acquisition_start_time;
+	int rpos = tmp.rfind("-");
+	this->acquisition_start_time = tmp.substr(0, rpos) + "T" + tmp.substr(rpos + 1, tmp.length() - rpos - 1);
+	//拍摄结束时间
+	ret = xmldoc.get_str_para("imagingTimeend", this->acquisition_stop_time);
+	tmp = this->acquisition_stop_time;
+	rpos = tmp.rfind("-");
+	this->acquisition_stop_time = tmp.substr(0, rpos) + "T" + tmp.substr(rpos + 1, tmp.length() - rpos - 1);
+	//卫星名称
+	this->sensor = "fucheng-1";
+	//脉冲重复频率
+	ret = xmldoc.get_double_para("eqvPRF", &this->prf);
+	//中心频率
+	ret = xmldoc.get_double_para("RadarCenterFrequency", &this->carrier_frequency);
+	this->carrier_frequency = this->carrier_frequency * 1e9;
+	//最近斜距
+	ret = xmldoc.get_double_para("nearRange", &this->slant_range_first_pixel);
+	//this->slant_range_first_pixel = this->slant_range_first_pixel * VEL_C / 2.0;
+	//距离方位采样间隔/分辨率
+	ret = xmldoc.get_double_para("widthspace", &this->range_spacing);
+	ret = xmldoc.get_double_para("heightspace", &this->azimuth_spacing);
+	//ret = xmldoc.get_double_para("rangeResolution", &this->range_resolution);
+	//ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
+
+	//中心下视角incidenceAngleMidSwath
+	ret = xmldoc.get_double_para("incidenceAngleNearRange", &this->inc_center);
+
+	//四角经纬度
+	double latitude, longitude;
+	ret = xmldoc.get_double_para("latitude", &latitude);
+	ret = xmldoc.get_double_para("longitude", &longitude);
+	this->topleft_lat = latitude + 0.2;
+	this->bottomleft_lat = latitude - 0.2;
+	this->topright_lat = latitude + 0.2;
+	this->bottomright_lat = latitude - 0.2;
+	this->topleft_lon = longitude - 0.2;
+	this->topright_lon = longitude + 0.2;
+	this->bottomleft_lon = longitude - 0.2;
+	this->bottomright_lon = longitude + 0.2;
 
 	return 0;
 }
