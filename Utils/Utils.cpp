@@ -3020,66 +3020,48 @@ int Utils::xyz2ell(Mat xyz, Mat& llh)
 		fprintf(stderr, "xyz2ell(): input check failed!\n\n");
 		return -1;
 	}
+
+	const double epsilon = 0.000000000000001;
+	const double pi = 3.14159265358979323846;
+	const double d2r = pi / 180;
+	const double r2d = 180 / pi;
+
+	const double a = 6378137.0;		//Õ÷«Ú≥§∞Î÷·
+	const double f_inverse = 298.257223563;			//±‚¬ µπ ˝
+	const double b = a - a / f_inverse;
+	//const double b = 6356752.314245;			//Õ÷«Ú∂Ã∞Î÷·
+
+	const double e = sqrt(a * a - b * b) / a;
+
 	double x = xyz.at<double>(0, 0);
 	double y = xyz.at<double>(0, 1);
 	double z = xyz.at<double>(0, 2);
-	double Rad_earth_e = 6378136.49;
-	double f = 1 / 298.257223563;
-	double t = Rad_earth_e * (1 - f);
-	double e = sqrt((Rad_earth_e * Rad_earth_e - t * t) / (Rad_earth_e * Rad_earth_e));
-	double r = x * x + y * y;
-	if (fabs(r) < 1e-15)
+
+	double tmpX = x;
+	double temY = y;
+	double temZ = z;
+
+	double curB = 0;
+	double N = 0;
+	double calB = atan2(temZ, sqrt(tmpX * tmpX + temY * temY));
+
+	int counter = 0;
+	while (abs(curB - calB) * r2d > epsilon && counter < 25)
 	{
-		r = 1e-14;
+		curB = calB;
+		N = a / sqrt(1 - e * e * sin(curB) * sin(curB));
+		calB = atan2(temZ + N * e * e * sin(curB), sqrt(tmpX * tmpX + temY * temY));
+		counter++;
 	}
-	if (fabs(x) < 1e-15)
-	{
-		x = 1e-14;
-	}
-	double lat = atan(z / r);
-	double lon = atan(y / x);
-	double N, height;
-	double tmp = 0.0;
-	double pi = 3.1415926535;
-	for (int k = 0; k < 10; k++)
-	{
-		tmp = (sqrt(1 - e * e * sin(lat) * sin(lat)));
-		if (fabs(tmp) < 1e-15)
-		{
-			tmp = 1e-14;
-		}
-		N = Rad_earth_e / tmp;
-		tmp = sin(lat);
-		if (fabs(tmp) < 1e-15)
-		{
-			tmp = 1e-14;
-		}
-		height = z / tmp - N * (1 - e * e);
-		tmp = (sqrt(x * x + y * y) * (N * (1 - e * e) + height));
-		if (fabs(tmp) < 1e-15)
-		{
-			tmp = 1e-14;
-		}
-		lat = atan(z * (N + height) / tmp);
-	}
-	if (x > 0 && y < 0)
-	{
-		lon = -lon;
-	}
-	else if (x < 0 && y > 0)
-	{
-		lon = pi + lon;
-	}
-	else if (x < 0 && y < 0)
-	{
-		lon = -pi + lon;
-	}
-	lat = lat * 180 / pi;
-	lon = lon * 180 / pi;
+
+	x = atan2(temY, tmpX) * r2d;
+	y = curB * r2d;
+	z = temZ / sin(curB) - N * (1 - e * e);
+
 	llh = Mat::zeros(1, 3, CV_64F);
-	llh.at<double>(0, 0) = lat;
-	llh.at<double>(0, 1) = lon;
-	llh.at<double>(0, 2) = height;
+	llh.at<double>(0, 0) = y;
+	llh.at<double>(0, 1) = x;
+	llh.at<double>(0, 2) = z;
 	return 0;
 }
 
@@ -3094,19 +3076,29 @@ int Utils::ell2xyz(Mat llh, Mat& xyz)
 		fprintf(stderr, "ell2xyz(): input check failed!\n\n");
 		return -1;
 	}
-	double e2 = 0.00669438003551279091;
-	double lat = llh.at<double>(0, 0);
-	double lon = llh.at<double>(0, 1);
-	double height = llh.at<double>(0, 2);
-	lat = lat / 180.0 * PI;
-	lon = lon / 180.0 * PI;
-	double Ea = 6378136.49;
-	double N = Ea / sqrt(1 - e2 * (sin(lat) * sin(lat)));
-	double Nph = N + height;
-	double x = Nph * cos(lat) * cos(lon);
-	double y = Nph * cos(lat) * sin(lon);
-	double z = (Nph - e2 * N) * sin(lat);
-	Mat tmp = Mat::zeros(1, 3, CV_64F);
+	const double epsilon = 0.000000000000001;
+	const double pi = 3.14159265358979323846;
+	const double d2r = pi / 180;
+	const double r2d = 180 / pi;
+
+	const double a = 6378137.0;		//Õ÷«Ú≥§∞Î÷·
+	const double f_inverse = 298.257223563;			//±‚¬ µπ ˝
+	const double b = a - a / f_inverse;
+	const double e = sqrt(a * a - b * b) / a;
+
+	double y = llh.at<double>(0, 0);
+	double x = llh.at<double>(0, 1);
+	double z = llh.at<double>(0, 2);
+
+	double L = x * d2r;
+	double B = y * d2r;
+	double H = z;
+	double N = a / sqrt(1 - e * e * sin(B) * sin(B));
+	x = (N + H) * cos(B) * cos(L);
+	y = (N + H) * cos(B) * sin(L);
+	z = (N * (1 - e * e) + H) * sin(B);
+	Mat tmp;
+	tmp.create(1, 3, CV_64F);
 	tmp.at<double>(0, 0) = x;
 	tmp.at<double>(0, 1) = y;
 	tmp.at<double>(0, 2) = z;
@@ -3121,16 +3113,27 @@ int Utils::ell2xyz(double lon, double lat, double elevation, Position& xyz)
 		fprintf(stderr, "ell2xyz(): input check failed!\n");
 		return -1;
 	}
-	double e2 = 0.00669438003551279091;
-	double height = elevation;
-	lat = lat / 180.0 * PI;
-	lon = lon / 180.0 * PI;
-	double Ea = 6378136.49;
-	double N = Ea / sqrt(1 - e2 * (sin(lat) * sin(lat)));
-	double Nph = N + height;
-	xyz.x = Nph * cos(lat) * cos(lon);
-	xyz.y = Nph * cos(lat) * sin(lon);
-	xyz.z = (Nph - e2 * N) * sin(lat);
+	const double epsilon = 0.000000000000001;
+	const double pi = 3.14159265358979323846;
+	const double d2r = pi / 180;
+	const double r2d = 180 / pi;
+	const double a = 6378137.0;		//Õ÷«Ú≥§∞Î÷·
+	const double f_inverse = 298.257223563;			//±‚¬ µπ ˝
+	const double b = a - a / f_inverse;
+	const double e = sqrt(a * a - b * b) / a;
+	double y = lat;
+	double x = lon;
+	double z = elevation;
+	double L = x * d2r;
+	double B = y * d2r;
+	double H = z;
+	double N = a / sqrt(1 - e * e * sin(B) * sin(B));
+	x = (N + H) * cos(B) * cos(L);
+	y = (N + H) * cos(B) * sin(L);
+	z = (N * (1 - e * e) + H) * sin(B);
+	xyz.x = x;
+	xyz.y = y;
+	xyz.z = z;
 	return 0;
 }
 

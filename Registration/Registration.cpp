@@ -768,7 +768,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 		//blocksize * 5 > (slave.GetCols() < slave.GetRows() ? slave.GetCols() : slave.GetRows()) ||
 		blocksize < 8||interp_times < 1 ||
 		master.type() != slave.type() ||
-		(master.type() != CV_64F && master.type() != CV_16S)
+		(master.type() != CV_64F && master.type() != CV_32F && master.type() != CV_16S)
 		)
 	{
 		fprintf(stderr, "coregistration_pixel(): input check failed!\n");
@@ -1081,6 +1081,11 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 					slave_tmp.re.at<double>(i, j) = 0.0;
 					slave_tmp.im.at<double>(i, j) = 0.0;
 				}
+				else if (master_type == CV_32F)
+				{
+					slave_tmp.re.at<float>(i, j) = 0.0;
+					slave_tmp.im.at<float>(i, j) = 0.0;
+				}
 				else
 				{
 					slave_tmp.re.at<short>(i, j) = 0.0;
@@ -1102,6 +1107,17 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 					upper = slave.im.at<double>(mm, nn) + (slave.im.at<double>(mm, nn1) - slave.im.at<double>(mm, nn)) * (jj - (double)nn);
 					lower = slave.im.at<double>(mm1, nn) + (slave.im.at<double>(mm1, nn1) - slave.im.at<double>(mm1, nn)) * (jj - (double)nn);
 					slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+				}
+				else if (master_type == CV_32F)
+				{
+					//实部插值
+					upper = slave.re.at<float>(mm, nn) + (slave.re.at<float>(mm, nn1) - slave.re.at<float>(mm, nn)) * (jj - (double)nn);
+					lower = slave.re.at<float>(mm1, nn) + (slave.re.at<float>(mm1, nn1) - slave.re.at<float>(mm1, nn)) * (jj - (double)nn);
+					slave_tmp.re.at<float>(i, j) = upper + (lower - upper) * (ii - (double)mm);
+					//虚部插值
+					upper = slave.im.at<float>(mm, nn) + (slave.im.at<float>(mm, nn1) - slave.im.at<float>(mm, nn)) * (jj - (double)nn);
+					lower = slave.im.at<float>(mm1, nn) + (slave.im.at<float>(mm1, nn1) - slave.im.at<float>(mm1, nn)) * (jj - (double)nn);
+					slave_tmp.im.at<float>(i, j) = upper + (lower - upper) * (ii - (double)mm);
 				}
 				else
 				{

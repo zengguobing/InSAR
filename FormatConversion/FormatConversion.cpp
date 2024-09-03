@@ -11666,7 +11666,7 @@ orbitStateVectors::orbitStateVectors(Mat& stateVectors, double startTime, double
 	stateVectors.copyTo(this->stateVectors);
 	if (this->stateVectors.type() != CV_64F) this->stateVectors.convertTo(this->stateVectors, CV_64F);
 	double delta_time = stateVectors.at<double>(1, 0) - stateVectors.at<double>(0, 0);
-	if (fabs(delta_time - 1.0) <= 0.0001)
+	if (fabs(delta_time) <= 1.0)
 	{
 		this->isOrbitUpdated = true;//不用再更新轨道
 		this->stateVectors.copyTo(this->newStateVectors);
@@ -11682,7 +11682,7 @@ orbitStateVectors::orbitStateVectors(Mat& stateVectors, double startTime, double
 	this->isOrbitUpdated = false;
 	stateVectors.copyTo(this->stateVectors);
 	if (this->stateVectors.type() != CV_64F) this->stateVectors.convertTo(this->stateVectors, CV_64F);
-	if (fabs(delta_time - 1.0) <= 0.0001)
+	if (fabs(delta_time) <= 1.0)
 	{
 		this->isOrbitUpdated = true;//不用再更新轨道
 		this->stateVectors.copyTo(this->newStateVectors);
