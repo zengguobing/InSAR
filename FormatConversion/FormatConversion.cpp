@@ -1,5 +1,3 @@
-//#include<io.h>
-//#include<Windows.h>
 #include"pch.h"
 #include"gdal_priv.h"
 #include"..\include\FormatConversion.h"
