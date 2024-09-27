@@ -6,7 +6,6 @@
 #include"..\include\Utils.h"
 
 
-
 class InSAR_API Deflat
 {
 public:
