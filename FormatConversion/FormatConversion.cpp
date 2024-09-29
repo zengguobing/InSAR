@@ -299,7 +299,7 @@ int FormatConversion::read_array_from_h5(const char* filename, const char* datas
 	hsize_t dims[2];
 	int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
 	hid_t type = H5Dget_type(dataset_id);
-	herr_t status;
+	herr_t status = -1;
 	if (H5Tequal(type, H5T_NATIVE_INT16) > 0)
 	{
 		out_array.create(dims[0], dims[1], CV_16S);
@@ -751,6 +751,7 @@ int FormatConversion::read_str_from_h5(const char* filename, const char* dataset
 		H5Tclose(memtype);
 		H5Fclose(file_id);
 		free(rdata);
+		return -1;
 	}
 	string tmp(rdata);
 	free(rdata);
