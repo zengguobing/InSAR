@@ -1135,6 +1135,14 @@ public:
 	* @return 成功返回0，否则返回-1
 	*/
 	int setSceneStartStopTime(double startTime, double stopTime);
+	/*@brief 获取拍摄起始时刻
+	* @return 返回拍摄起始时刻
+	*/
+	double get_start_time();
+	/*@brief 获取拍摄结束时刻
+	* @return 返回拍摄结束时刻
+	*/
+	double get_stop_time();
 	/*@brief 获取卫星三维位置信息（拉格朗日插值）
 	* @param azimuthTime                   方位向时间
 	* @param position                      卫星三维位置

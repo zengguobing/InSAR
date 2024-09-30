@@ -11703,6 +11703,16 @@ int orbitStateVectors::setSceneStartStopTime(double startTime, double stopTime)
 	return 0;
 }
 
+double orbitStateVectors::get_start_time()
+{
+	return startTime;
+}
+
+double orbitStateVectors::get_stop_time()
+{
+	return stopTime;
+}
+
 int orbitStateVectors::getPosition(double azimuthTime, Position& position)
 {
 	if (newStateVectors.cols != 7 || newStateVectors.rows < 2 || !isOrbitUpdated)
