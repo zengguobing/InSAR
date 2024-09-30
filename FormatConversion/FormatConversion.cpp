@@ -138,6 +138,79 @@ int FormatConversion::creat_new_h5(const char* filename)
 	return 0;
 }
 
+int FormatConversion::write_zero_array_to_h5(const char* filename, const char* dataset_name, int type, int rows, int cols)
+{
+	if (filename == NULL ||
+		dataset_name == NULL ||
+		(type != CV_64F && type != CV_16S && type != CV_32S && type != CV_32F && type != CV_8U)
+		)
+	{
+		fprintf(stderr, "write_zero_array_to_h5(): input check  failed!\n");
+		return -1;
+	}
+	hid_t file_id = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+	if (file_id < 0)
+	{
+		int ret = creat_new_h5(filename);
+		if (ret < 0)
+		{
+			fprintf(stderr, "write_zero_array_to_h5(): can't create %s\n", filename);
+			return -1;
+		}
+		file_id = H5Fopen(filename, H5F_ACC_RDWR, H5P_DEFAULT);
+	}
+	string s = "/";
+	s.append(dataset_name);
+	hid_t dataset_id;
+	if ((H5Lexists(file_id, dataset_name, H5P_DEFAULT)) == 0)
+	{
+		hsize_t dims[2];
+		dims[0] = rows;
+		dims[1] = cols;
+		hid_t dataspace_id = H5Screate_simple(2, dims, NULL);
+		if (type == CV_16S)
+		{
+			dataset_id = H5Dcreate(file_id, s.c_str(), H5T_NATIVE_INT16, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+		}
+		else if (type == CV_64F)
+		{
+			dataset_id = H5Dcreate(file_id, s.c_str(), H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+		}
+		else if (type == CV_32S)
+		{
+			dataset_id = H5Dcreate(file_id, s.c_str(), H5T_NATIVE_INT32, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+		}
+		else if (type == CV_8U)
+		{
+			dataset_id = H5Dcreate(file_id, s.c_str(), H5T_NATIVE_UINT8, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+		}
+		else
+		{
+			dataset_id = H5Dcreate(file_id, s.c_str(), H5T_NATIVE_FLOAT, dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+		}
+
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "write_array_to_h5(): failed to create dataset %s !\n", dataset_name);
+			H5Sclose(dataspace_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		
+		H5Dclose(dataset_id);
+		H5Sclose(dataspace_id);
+		H5Fclose(file_id);
+
+	}
+	else
+	{
+		fprintf(stderr, "write_zero_array_to_h5(): dataset %s already exists!\n", dataset_name);
+		H5Fclose(file_id);
+		return -1;
+	}
+	return 0;
+}
+
 int FormatConversion::write_array_to_h5(const char* filename, const char* dataset_name, const Mat& input_array)
 {
 	if (filename == NULL ||

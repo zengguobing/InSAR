@@ -626,6 +626,15 @@ public:
 	@param filename     文件名
 	*/
 	int creat_new_h5(const char* filename);
+	/*@brief 功能：向h5文件中写入零矩阵
+	* @param filename                文件名
+	* @param dataset_name            dataset名
+	* @param type                    数据类型（CV_8U/CV_16S/CV_32S/CV_32F/CV_64F）
+	* @param rows                    dataset行数
+	* @param cols                    dataset列数
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_zero_array_to_h5(const char* filename, const char* dataset_name, int type, int rows, int cols);
 	/*
 	* 功能：向h5文件中写入实数矩阵（干涉相位，相干系数等）,input_array可以是16位整型或者double/float型
 	* 参数1：文件名
