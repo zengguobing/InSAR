@@ -11060,6 +11060,7 @@ int Utils::SAR2UTM(
 	//开始地理编码
 	if (mapped_lat.type() == CV_32F)
 	{
+#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < rows; i++)
 		{
 			for (int j = 0; j < cols; j++)
@@ -11080,6 +11081,7 @@ int Utils::SAR2UTM(
 	}
 	else
 	{
+#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < rows; i++)
 		{
 			for (int j = 0; j < cols; j++)
@@ -11103,6 +11105,7 @@ int Utils::SAR2UTM(
 	//插值
 	if (interpolation_method == 0)
 	{
+#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < UTM_rows; i++)
 		{
 			for (int j = 0; j < UTM_cols; j++)
@@ -11209,6 +11212,7 @@ int Utils::SAR2UTM(
 	}
 	else
 	{
+#pragma omp parallel for schedule(guided)
 		for (int i = 0; i < UTM_rows; i++)
 		{
 			for (int j = 0; j < UTM_cols; j++)
