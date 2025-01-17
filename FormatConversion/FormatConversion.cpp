@@ -71,6 +71,7 @@ int UTC2GPS(const char* utc_time, double* gps_time)
 	TM.tm_hour = hour;
 	TM.tm_min = minute;
 	TM.tm_sec = second;
+	TM.tm_isdst = 0;
 	*gps_time = double(mktime(&TM) - 315964809) + sec;
 	return 0;
 }
@@ -112,6 +113,7 @@ int FormatConversion::utc2gps(const char* utc_time, double* gps_time)
 	TM.tm_hour = hour;
 	TM.tm_min = minute;
 	TM.tm_sec = second;
+	TM.tm_isdst = 0;
 	*gps_time = double(mktime(&TM) - 315964809) + sec;
 	return 0;
 }
