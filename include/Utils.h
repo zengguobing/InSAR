@@ -2051,6 +2051,12 @@ public:
 		Mat& mapped_slc_az,
 		Mat& mapped_h0
 	);
+	// 根据经纬度获取大地水准面高差
+	static double getGeoidHeight(
+		const std::string& geoidFilePath,
+		double lon, 
+		double lat
+	);
 private:
 	static constexpr const char* SRTMURL = "https://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/";
 	static constexpr const char* error_head = "UTILS_DLL_ERROR: error happens when using ";

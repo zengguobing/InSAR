@@ -13465,6 +13465,53 @@ int Utils::geo2sar_DLR(
 	return 0;
 }
 
+// 根据经纬度获取大地水准面高差
+double Utils::getGeoidHeight(const std::string& geoidFilePath, double lon, double lat) {
+	// 注册 GDAL 驱动
+	GDALAllRegister();
+
+	// 打开 Geoid 文件
+	GDALDataset* poDataset = (GDALDataset*)GDALOpen(geoidFilePath.c_str(), GA_ReadOnly);
+	if (poDataset == nullptr) {
+		std::cerr << "无法打开 Geoid 文件: " << geoidFilePath << std::endl;
+		return 0.0;
+	}
+
+	// 获取第一个波段（Geoid 数据）
+	GDALRasterBand* poBand = poDataset->GetRasterBand(1);
+	if (poBand == nullptr) {
+		std::cerr << "无法获取波段数据" << std::endl;
+		GDALClose(poDataset);
+		return 0.0;
+	}
+
+	// 获取 Geoid 文件的地理变换信息
+	double adfGeoTransform[6];
+	if (poDataset->GetGeoTransform(adfGeoTransform) != CE_None) {
+		std::cerr << "无法获取地理变换信息" << std::endl;
+		GDALClose(poDataset);
+		return 0.0;
+	}
+
+	// 将经纬度转换为像素坐标
+	double x = (lon - adfGeoTransform[0]) / adfGeoTransform[1];
+	double y = (lat - adfGeoTransform[3]) / adfGeoTransform[5];
+
+	// 插值获取 Geoid Height
+	float geoidHeight = 0.0;
+	if (poBand->RasterIO(GF_Read, static_cast<int>(x), static_cast<int>(y), 1, 1,
+		&geoidHeight, 1, 1, GDT_Float32, 0, 0) != CE_None) {
+		std::cerr << "无法读取 Geoid 数据" << std::endl;
+		GDALClose(poDataset);
+		return 0.0;
+	}
+
+	// 关闭数据集
+	GDALClose(poDataset);
+
+	return static_cast<double>(geoidHeight);
+}
+
 
 
 

@@ -852,11 +852,27 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < m; i++)
 	{
-		ComplexMat master_sub, slave_sub, master_sub_interp, slave_sub_interp;
-		Mat amplitude_slave, sign;
+		ComplexMat master_sub, slave_sub, master_sub_interp, slave_sub_interp, master1, slave1;
+		Mat amplitude_slave, sign, coh1;
 		int offset_row, offset_col;
+		double mean_coh, coh_thresh = 0.65;
 		for (int j = 0; j < n; j++)
 		{
+			//计算相关系数判断是否是有效数据
+			master.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master1.re);
+			master.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master1.im);
+			if (master1.type() != CV_64F) master1.convertTo(master1, CV_64F);
+			slave.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave1.re);
+			slave.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave1.im);
+			if (slave1.type() != CV_64F) slave1.convertTo(slave1, CV_64F);
+			registration_pixel(master1, slave1);
+			util.complex_coherence(master1, slave1, 7, 7, coh1);
+			mean_coh = cv::mean(coh1)[0];
+			if (mean_coh < coh_thresh)
+			{
+				sentinel0.at<double>(i, j) = 1.0;
+				continue;
+			}
 			//主图像子块插值
 			master.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master_sub.re);
 			master.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master_sub.im);
@@ -876,11 +892,11 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 				}
 			}
 			//sign = amplitude_slave < 0.0000001;
-			int thresh = blocksize * blocksize / 4;
+			/*int thresh = blocksize * blocksize / 4;
 			if (count_zero > thresh)
 			{
 				sentinel0.at<double>(i, j) = 1.0;
-			}
+			}*/
 			interp_paddingzero(slave_sub, slave_sub_interp, interp_times);
 			//求取偏移量
 			real_coherent(master_sub_interp, slave_sub_interp, &offset_row, &offset_col);
@@ -898,42 +914,42 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	* 拟合公式为 offser_row/offser_col = a0 + a1*x + a2*y
 	*/
 	
-	//剔除outliers
+	////剔除outliers
 	Mat sentinel = Mat::zeros(m, n, CV_64F);
 	int ix, iy, count = 0, c = 0; double delta, thresh = 2.0;
-	for (int i = 0; i < m; i++)
-	{
-		for (int j = 0; j < n; j++)
-		{
-			count = 0;
-			//上
-			ix = j; 
-			iy = i - 1; iy = iy < 0 ? 0 : iy;
-			delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-			delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-			if (fabs(delta) >= thresh) count++;
-			//下
-			ix = j;
-			iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
-			delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-			delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-			if (fabs(delta) >= thresh) count++;
-			//左
-			ix = j - 1; ix = ix < 0 ? 0 : ix;
-			iy = i; 
-			delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-			delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-			if (fabs(delta) >= thresh) count++;
-			//右
-			ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
-			iy = i;
-			delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-			delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-			if (fabs(delta) >= thresh) count++;
+	//for (int i = 0; i < m; i++)
+	//{
+	//	for (int j = 0; j < n; j++)
+	//	{
+	//		count = 0;
+	//		//上
+	//		ix = j; 
+	//		iy = i - 1; iy = iy < 0 ? 0 : iy;
+	//		delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+	//		delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+	//		if (fabs(delta) >= thresh) count++;
+	//		//下
+	//		ix = j;
+	//		iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
+	//		delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+	//		delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+	//		if (fabs(delta) >= thresh) count++;
+	//		//左
+	//		ix = j - 1; ix = ix < 0 ? 0 : ix;
+	//		iy = i; 
+	//		delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+	//		delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+	//		if (fabs(delta) >= thresh) count++;
+	//		//右
+	//		ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
+	//		iy = i;
+	//		delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+	//		delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+	//		if (fabs(delta) >= thresh) count++;
 
-			if (count > 2) { sentinel.at<double>(i, j) = 1.0; }
-		}
-	}
+	//		if (count > 2) { sentinel.at<double>(i, j) = 1.0; }
+	//	}
+	//}
 	for (int i = 0; i < m; i++)
 	{
 		for (int j = 0; j < n; j++)
