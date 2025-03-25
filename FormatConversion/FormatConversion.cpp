@@ -12786,7 +12786,296 @@ int HTHT_reader::write_to_h5(const char* dst_h5)
 	return 0;
 }
 
+LUTAN_reader::LUTAN_reader(const char* data_file, const char* xml_file, int mode)
+{
+	b_initialized = false;
+	this->LT_data_file = data_file;
+	this->LT_xml_file = xml_file;
+	this->mode = mode;
+}
 
+LUTAN_reader::~LUTAN_reader()
+{
+}
+
+int LUTAN_reader::init()
+{
+	if (b_initialized) return 0;
+	if (LT_data_file.empty())
+	{
+		fprintf(stderr, "init(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_data(this->LT_xml_file.c_str(), this->LT_data_file.c_str());
+	if (ret < 0)
+	{
+		fprintf(stderr, "init(): read_data failed!\n");
+		return -1;
+	}
+	b_initialized = true;
+	return 0;
+}
+
+int LUTAN_reader::read_slc(const char* data_file, ComplexMat& slc)
+{
+	if (data_file == NULL)
+	{
+		fprintf(stderr, "read_slc(): input check failed!\n");
+		return -1;
+	}
+	GDALAllRegister();	//注册已知驱动
+	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//打开tiff文件
+	if (poDataset == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
+	int xsize = 0;
+	int ysize = 0;
+	//获取指向波段1的指针
+	GDALRasterBand* poBand = poDataset->GetRasterBand(1);
+	xsize = poBand->GetXSize();		//cols
+	ysize = poBand->GetYSize();		//rows
+	if (xsize < 0 || ysize < 0)
+	{
+		fprintf(stderr, "read_slc(): band rows and cols error!\n");
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+	short* pbuf = NULL;
+	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+	if (!pbuf)
+	{
+		fprintf(stderr, "read_slc(): out of memory!\n");
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+	int i, j;
+	slc.re.create(ysize, xsize, CV_16S);
+	slc.im.create(ysize, xsize, CV_16S);
+	size_t offset = 0;
+	for (i = 0; i < ysize; i++)
+		for (j = 0; j < xsize; j++)
+		{
+			slc.re.ptr<short>(i)[j] = pbuf[offset];
+			offset++;
+		}
+	//获取指向波段2的指针
+	poBand = poDataset->GetRasterBand(2);
+	xsize = poBand->GetXSize();		//cols
+	ysize = poBand->GetYSize();		//rows
+	if (xsize < 0 || ysize < 0)
+	{
+		fprintf(stderr, "read_slc(): band rows and cols error!\n");
+		GDALClose(poDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+	dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
+	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
+	offset = 0;
+	for (i = 0; i < ysize; i++)
+		for (j = 0; j < xsize; j++)
+		{
+			slc.im.ptr<short>(i)[j] = pbuf[offset];
+			offset++;
+		}
+	if (pbuf)
+	{
+		free(pbuf);
+		pbuf = NULL;
+	}
+	GDALClose(poDataset);
+	GDALDestroyDriverManager();
+
+	return 0;
+}
+
+int LUTAN_reader::read_data(const char* xml_file, const char* data_file)
+{
+	if (!xml_file || !data_file)
+	{
+		fprintf(stderr, "read_data(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_slc(data_file, slc);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't read slc from %s\n", data_file);
+		return -1;
+	}
+	XMLFile xmldoc;
+	ret = xmldoc.XMLFile_load(xml_file);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't load %s\n", xml_file);
+		return -1;
+	}
+
+	//读取轨道参数
+	TiXmlElement* pnode, * pchild, * pchild1;
+	int numOfstateVec;
+	ret = xmldoc.get_int_para("numStateVectors", &numOfstateVec);
+
+	ret = xmldoc.find_node("stateVec", pnode);
+	double time, x, y, z, vx, vy, vz;
+	state_vec.create(numOfstateVec, 7, CV_64F);
+	for (int i = 0; i < numOfstateVec; i++)
+	{
+		if (!pnode) break;
+		//GPS时间
+		ret = xmldoc._find_node(pnode, "timeUTC", pchild);
+		ret = UTC2GPS(pchild->GetText(), &time);
+		//位置x
+		ret = xmldoc._find_node(pnode, "posX", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &x);
+		//位置y
+		ret = xmldoc._find_node(pnode, "posY", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &y);
+		//位置z
+		ret = xmldoc._find_node(pnode, "posZ", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &z);
+		//速度x
+		ret = xmldoc._find_node(pnode, "velX", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vx);
+		//速度y
+		ret = xmldoc._find_node(pnode, "velY", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vy);
+		//速度z
+		ret = xmldoc._find_node(pnode, "velZ", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vz);
+
+		//赋值
+		state_vec.at<double>(i, 0) = time;
+		state_vec.at<double>(i, 1) = x;
+		state_vec.at<double>(i, 2) = y;
+		state_vec.at<double>(i, 3) = z;
+		state_vec.at<double>(i, 4) = vx;
+		state_vec.at<double>(i, 5) = vy;
+		state_vec.at<double>(i, 6) = vz;
+		pnode = pnode->NextSiblingElement();
+	}
+
+	//拍摄起始时间
+	ret = xmldoc.find_node("start", pnode);
+	ret = xmldoc._find_node(pnode, "timeUTC", pchild);
+	this->acquisition_start_time = pchild->GetText();
+	//拍摄结束时间
+	ret = xmldoc.find_node("stop", pnode);
+	ret = xmldoc._find_node(pnode, "timeUTC", pchild);
+	this->acquisition_stop_time = pchild->GetText();
+	//卫星名称
+	ret = xmldoc.get_str_para("mission", this->sensor);
+	//脉冲重复频率
+	ret = xmldoc.get_double_para("PRF", &this->prf);
+	//中心频率
+	ret = xmldoc.get_double_para("centerFrequency", &this->carrier_frequency);
+	//最近斜距
+	ret = xmldoc.get_double_para("firstPixel", &this->slant_range_first_pixel);
+	this->slant_range_first_pixel = this->slant_range_first_pixel * VEL_C / 2.0;
+	//距离方位采样间隔/分辨率
+	ret = xmldoc.get_double_para("columnSpacing", &this->range_spacing);
+	ret = xmldoc.get_double_para("rowSpacing", &this->azimuth_spacing);
+	ret = xmldoc.get_double_para("slantRangeResolution", &this->range_resolution);
+	ret = xmldoc.get_double_para("azimuthResolution", &this->azimuth_resolution);
+
+	//中心下视角incidenceAngleMidSwath
+	ret = xmldoc.get_double_para("incidenceAngle", &this->inc_center);
+
+	//四角经纬度
+	ret = xmldoc.find_node("sceneCornerCoord", pnode);
+	//bottomleft
+	ret = xmldoc._find_node(pnode, "lat", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->bottomleft_lat);
+	ret = xmldoc._find_node(pnode, "lon", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->bottomleft_lon);
+	//bottomRight
+	pnode = pnode->NextSiblingElement();
+	ret = xmldoc._find_node(pnode, "lat", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->bottomright_lat);
+	ret = xmldoc._find_node(pnode, "lon", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->bottomright_lon);
+	//topLeft
+	pnode = pnode->NextSiblingElement();
+	ret = xmldoc._find_node(pnode, "lat", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->topleft_lat);
+	ret = xmldoc._find_node(pnode, "lon", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->topleft_lon);
+	//topRight
+	pnode = pnode->NextSiblingElement();
+	ret = xmldoc._find_node(pnode, "lat", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->topright_lat);
+	ret = xmldoc._find_node(pnode, "lon", pchild);
+	ret = sscanf(pchild->GetText(), "%lf", &this->topright_lon);
+
+	return 0;
+}
+
+int LUTAN_reader::write_to_h5(const char* dst_h5)
+{
+	if (!dst_h5)
+	{
+		fprintf(stderr, "write_to_h5(): input check failed!\n");
+		return -1;
+	}
+	int ret;
+	if (!b_initialized)
+	{
+		ret = init();
+		if (ret < 0)
+		{
+			fprintf(stderr, "write_to_h5(): init() failed!\n");
+			return -1;
+		}
+	}
+	FormatConversion conversion;
+	ret = conversion.creat_new_h5(dst_h5);
+	if (ret < 0)
+	{
+		fprintf(stderr, "write_to_h5(): failed to create %s!\n", dst_h5);
+		return -1;
+	}
+	conversion.write_array_to_h5(dst_h5, "state_vec", this->state_vec);
+
+	conversion.write_double_to_h5(dst_h5, "azimuth_spacing", this->azimuth_spacing);
+	conversion.write_double_to_h5(dst_h5, "range_spacing", this->range_spacing);
+	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
+	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
+	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
+	conversion.write_double_to_h5(dst_h5, "inc_center", this->inc_center);
+
+	conversion.write_double_to_h5(dst_h5, "topLeftLat", this->topleft_lat);
+	conversion.write_double_to_h5(dst_h5, "topLeftLon", this->topleft_lon);
+	conversion.write_double_to_h5(dst_h5, "topRightLat", this->topright_lat);
+	conversion.write_double_to_h5(dst_h5, "topRightLon", this->topright_lon);
+	conversion.write_double_to_h5(dst_h5, "bottomLeftLat", this->bottomleft_lat);
+	conversion.write_double_to_h5(dst_h5, "bottomLeftLon", this->bottomleft_lon);
+	conversion.write_double_to_h5(dst_h5, "bottomRightLat", this->bottomright_lat);
+	conversion.write_double_to_h5(dst_h5, "bottomRightLon", this->bottomright_lon);
+
+	conversion.write_str_to_h5(dst_h5, "sensor", this->sensor.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_start_time", this->acquisition_start_time.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_stop_time", this->acquisition_stop_time.c_str());
+
+	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
+	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
+
+	conversion.write_int_to_h5(dst_h5, "offset_row", 0);
+	conversion.write_int_to_h5(dst_h5, "offset_col", 0);
+
+	//收发模式：1-收发同置，2-收发分置
+	conversion.write_int_to_h5(dst_h5, "TR_mode", this->mode);
+
+	conversion.write_slc_to_h5(dst_h5, slc);
+
+	return 0;
+}
 
 
 
