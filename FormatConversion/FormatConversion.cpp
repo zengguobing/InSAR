@@ -2798,10 +2798,20 @@ int FormatConversion::import_sentinel(
 		xmlhead = "products1a" + subswath + "slc" + polar;
 		tiffhead = "s1a" + subswath + "slc" + polar;
 	}
-	else//sentinel-1B
+	else if (0 == strcmp(tmp.substr(0, 10).c_str(), "products1b"))//sentinel-1B
 	{
 		xmlhead = "products1b" + subswath + "slc" + polar;
 		tiffhead = "s1b" + subswath + "slc" + polar;
+	}
+	else if (0 == strcmp(tmp.substr(0, 10).c_str(), "products1c"))//sentinel-1C
+	{
+		xmlhead = "products1c" + subswath + "slc" + polar;
+		tiffhead = "s1c" + subswath + "slc" + polar;
+	}
+	else//sentinel-1D
+	{
+		xmlhead = "products1d" + subswath + "slc" + polar;
+		tiffhead = "s1d" + subswath + "slc" + polar;
 	}
 
 	string tiff_filename, xml_filename;
