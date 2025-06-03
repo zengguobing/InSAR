@@ -1,8 +1,6 @@
 #include"pch.h"
 #include"gdal_priv.h"
 #include"..\include\FormatConversion.h"
-#include"..\include\Registration.h"
-#include"Utils.h"
 //#include<atlconv.h>
 //#include<tchar.h>
 #include<urlmon.h>
@@ -10,12 +8,8 @@
 
 #ifdef _DEBUG
 #pragma comment(lib,"ComplexMat_d.lib")
-#pragma comment(lib,"Registration_d.lib")
-#pragma comment(lib,"Utils_d.lib")
 #else
 #pragma comment(lib,"ComplexMat.lib")
-#pragma comment(lib,"Registration.lib")
-#pragma comment(lib,"Utils.lib")
 
 #endif // _DEBUG
 
@@ -3230,14 +3224,13 @@ int FormatConversion::deburst_overlapSize(ComplexMat& last_burst, ComplexMat& th
 	
 
 	//求取偏移量
-	Registration regis;
 	//ComplexMat t1, t2;
 	//regis.interp_paddingzero(match_wnd, t1, 8);
 	//regis.interp_paddingzero(match_wnd2, t2, 8);
 	//Utils util;
 	//util.saveSLC("E:/working_dir/projects/software/InSAR/bin/match_wnd.jpg", 65, last_burst);
 	//util.saveSLC("E:/working_dir/projects/software/InSAR/bin/match_wnd2.jpg", 65, this_burst);
-	ret = regis.real_coherent(match_wnd, match_wnd2, &offset_row, &offset_col);
+	ret = real_coherent(match_wnd, match_wnd2, &offset_row, &offset_col);
 	if (return_check(ret, "real_coherent()", error_head)) return -1;
 
 	//水平搬移this_burst
@@ -8246,6 +8239,222 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 	return 0;
 }
 
+int FormatConversion::ell2xyz(double lon, double lat, double elevation, Position& xyz)
+{
+	if (fabs(lon) > 180.0 || fabs(lat) > 90.0)
+	{
+		fprintf(stderr, "ell2xyz(): input check failed!\n");
+		return -1;
+	}
+	const double epsilon = 0.000000000000001;
+	const double pi = 3.14159265358979323846;
+	const double d2r = pi / 180;
+	const double r2d = 180 / pi;
+	const double a = 6378137.0;		//椭球长半轴
+	const double f_inverse = 298.257223563;			//扁率倒数
+	const double b = a - a / f_inverse;
+	const double e = sqrt(a * a - b * b) / a;
+	double y = lat;
+	double x = lon;
+	double z = elevation;
+	double L = x * d2r;
+	double B = y * d2r;
+	double H = z;
+	double N = a / sqrt(1 - e * e * sin(B) * sin(B));
+	x = (N + H) * cos(B) * cos(L);
+	y = (N + H) * cos(B) * sin(L);
+	z = (N * (1 - e * e) + H) * sin(B);
+	xyz.x = x;
+	xyz.y = y;
+	xyz.z = z;
+	return 0;
+}
+
+int FormatConversion::phase2cos(const Mat& phase, Mat& cos, Mat& sin)
+{
+	if (phase.rows < 1 ||
+		phase.cols < 1 ||
+		(phase.type() != CV_64F && phase.type() != CV_32F) ||
+		phase.channels() != 1)
+	{
+		fprintf(stderr, "phase2cos(): input check failed!\n\n");
+		return -1;
+	}
+	int nr = phase.rows;
+	int nc = phase.cols;
+	if (phase.type() == CV_32F)
+	{
+		cos.create(nr, nc, CV_32F);
+		sin.create(nr, nc, CV_32F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				cos.at<float>(i, j) = std::cos(phase.at<float>(i, j));
+				sin.at<float>(i, j) = std::sin(phase.at<float>(i, j));
+			}
+		}
+	}
+	else
+	{
+		cos.create(nr, nc, CV_64F);
+		sin.create(nr, nc, CV_64F);
+#pragma omp parallel for schedule(guided)
+		for (int i = 0; i < nr; i++)
+		{
+			for (int j = 0; j < nc; j++)
+			{
+				cos.at<double>(i, j) = std::cos(phase.at<double>(i, j));
+				sin.at<double>(i, j) = std::sin(phase.at<double>(i, j));
+			}
+		}
+	}
+	return 0;
+}
+
+int FormatConversion::createVandermondeMatrix(Mat& inArray, Mat& vandermondeMatrix, int degree)
+{
+	if (inArray.cols != 1 || inArray.rows < 1 || degree < 1)
+	{
+		fprintf(stderr, "createVandermondeMatrix(): input check failed!\n");
+		return -1;
+	}
+	vandermondeMatrix.create(inArray.rows, degree + 1, CV_64F);
+	if (inArray.type() != CV_64F) inArray.convertTo(inArray, CV_64F);
+	for (int i = 0; i < inArray.rows; i++)
+	{
+		for (int j = 0; j < degree + 1; j++)
+		{
+			vandermondeMatrix.at<double>(i, j) = pow(inArray.at<double>(i, 0), (double)j);
+		}
+	}
+	return 0;
+}
+
+int FormatConversion::ployFit(Mat& a, Mat& B, Mat& x)
+{
+	Mat A, b;
+	a.copyTo(A);
+	B.copyTo(b);
+	if (A.rows != b.rows || A.cols > A.rows || A.empty())
+	{
+		fprintf(stderr, "ployFit(): input check failed!\n");
+		return -1;
+	}
+	if (A.type() != CV_64F) A.convertTo(A, CV_64F);
+	if (b.type() != CV_64F) b.convertTo(b, CV_64F);
+	Mat A_t;
+	cv::transpose(A, A_t);
+	A = A_t * A;
+	b = A_t * b;
+	if (!cv::solve(A, b, x, cv::DECOMP_LU))
+	{
+		fprintf(stderr, "ployFit(): matrix defficiency!\n");
+		return -1;
+	}
+	return 0;
+}
+
+int FormatConversion::polyVal(Mat& coefficient, double x, double* val)
+{
+	if (!val || coefficient.rows < 1 || coefficient.cols != 1) return -1;
+	double sum = 0.0;
+	if (coefficient.type() != CV_64F) coefficient.convertTo(coefficient, CV_64F);
+	for (int i = 0; i < coefficient.rows; i++)
+	{
+		sum += coefficient.at<double>(i, 0) * pow(x, (double)i);
+	}
+	*val = sum;
+	return 0;
+}
+
+int FormatConversion::real_coherent(ComplexMat& Master, ComplexMat& Slave, int* offset_row, int* offset_col)
+{
+	if (Master.GetRows() < 1 ||
+		Master.GetCols() < 1 ||
+		Master.GetRows() != Slave.GetRows() ||
+		Master.GetCols() != Slave.GetCols())
+	{
+		fprintf(stderr, "real_coherent(): input check failed!\n\n");
+		return -1;
+	}
+	int ret;
+	Mat img1;
+	Mat img2;
+	img1 = Master.GetMod();
+	img2 = Slave.GetMod();
+	Mat im1fft;
+	Mat im2fft;
+	ret = fft2(img1, im1fft);
+	if (return_check(ret, "fft2(*, *)", error_head)) return -1;
+	ret = fft2(img2, im2fft);
+	if (return_check(ret, "fft2(*, *)", error_head)) return -1;
+	Mat spectrum;
+	mulSpectrums(im1fft, im2fft, spectrum, 0, true);
+
+	Mat result;
+	idft(spectrum, result, cv::DFT_REAL_OUTPUT);//需要显示图像时可以用DFT_SCALE
+
+	ret = fftshift2(result);
+	if (return_check(ret, "fftshift2(*)", error_head)) return -1;
+	normalize(result, result, 0, 1, cv::NORM_MINMAX);
+
+	int r = result.rows / 2;
+	int c = result.cols / 2;
+	cv::Point peak_loc;
+	minMaxLoc(result, NULL, NULL, NULL, &peak_loc);
+
+	*offset_row = r - peak_loc.y;
+	*offset_col = c - peak_loc.x;
+	return 0;
+}
+
+int FormatConversion::fftshift2(Mat& matrix)
+{
+	if (matrix.rows < 2 ||
+		matrix.cols < 2 ||
+		matrix.channels() != 1)
+	{
+		fprintf(stderr, "fftshift2(): input check failed!\n\n");
+		return -1;
+	}
+	matrix = matrix(cv::Rect(0, 0, matrix.cols & -2, matrix.rows & -2));
+	int cx = matrix.cols / 2;
+	int cy = matrix.rows / 2;
+	Mat tmp;
+	Mat q0(matrix, cv::Rect(0, 0, cx, cy));
+	Mat q1(matrix, cv::Rect(cx, 0, cx, cy));
+	Mat q2(matrix, cv::Rect(0, cy, cx, cy));
+	Mat q3(matrix, cv::Rect(cx, cy, cx, cy));
+
+	q0.copyTo(tmp);
+	q3.copyTo(q0);
+	tmp.copyTo(q3);
+
+	q1.copyTo(tmp);
+	q2.copyTo(q1);
+	tmp.copyTo(q2);
+	return 0;
+}
+
+int FormatConversion::fft2(Mat& Src, Mat& Dst)
+{
+	if (Src.rows < 1 ||
+		Src.cols < 1 ||
+		Src.channels() != 1 ||
+		Src.type() != CV_64F)
+	{
+		fprintf(stderr, "fft2(): input check failed!\n\n");
+		return -1;
+	}
+	Mat planes[] = { cv::Mat_<double>(Src), Mat::zeros(Src.size(), CV_64F) };
+	Mat complexImg;
+	merge(planes, 2, complexImg);
+	dft(complexImg, Dst);
+	return 0;
+}
+
 /*------------------------------------------------*/
 /*               哨兵一号数据读取工具             */
 /*------------------------------------------------*/
@@ -11271,6 +11480,7 @@ int Sentinel1BackGeocoding::computeBurstOffset()
 	}
 	int ret, numOfGeoLocationPoints;
 	Position earthPoint;
+	FormatConversion conversion;
 	double lon, lat, elevation;
 	numOfGeoLocationPoints = su[masterIndex - 1]->geolocationGridPoint.rows;
 	for (int i = 0; i < numOfGeoLocationPoints; i++)
@@ -11278,7 +11488,7 @@ int Sentinel1BackGeocoding::computeBurstOffset()
 		lon = su[masterIndex - 1]->geolocationGridPoint.at<double>(i, 0);
 		lat = su[masterIndex - 1]->geolocationGridPoint.at<double>(i, 1);
 		dem->getElevation(lon, lat, &elevation);
-		Utils::ell2xyz(lon, lat, elevation, earthPoint);
+		conversion.ell2xyz(lon, lat, elevation, earthPoint);
 		BurstIndices mBurstIndices, sBurstIndices;
 		ret = su[masterIndex - 1]->getBurstIndice(earthPoint, mBurstIndices);
 		if (ret < 0) continue;
@@ -11336,9 +11546,9 @@ int Sentinel1BackGeocoding::performDerampDemod(Mat& derampDemodPhase, ComplexMat
 		return -1;
 	}
 	ComplexMat tmp;
-	Utils util;
+	FormatConversion conversion;
 	if (derampDemodPhase.type() != CV_64F) derampDemodPhase.convertTo(derampDemodPhase, CV_64F);
-	util.phase2cos(derampDemodPhase, tmp.re, tmp.im);
+	conversion.phase2cos(derampDemodPhase, tmp.re, tmp.im);
 	if (slc.type() != CV_64F) slc.convertTo(slc, CV_64F);
 	slc.Mul(tmp, slc, false);
 
@@ -11358,6 +11568,7 @@ int Sentinel1BackGeocoding::computeSlavePosition(int slaveImagesIndex, int mBurs
 	}
 	int ret;
 	double lonMin, lonMax, latMin, latMax;
+	FormatConversion conversion;
 	if (!isMasterRgAzComputed)
 	{
 		masterAzimuth.create(dem->rows, dem->cols, CV_64F);
@@ -11376,7 +11587,7 @@ int Sentinel1BackGeocoding::computeSlavePosition(int slaveImagesIndex, int mBurs
 			lon = dem->lonUpperLeft + j * dem->lonSpacing;
 			lon = lon > 180.0 ? lon - 360.0 : lon;
 			elevation = dem->rawDEM.at<short>(i, j);
-			Utils::ell2xyz(lon, lat, elevation, earthPoint);
+			conversion.ell2xyz(lon, lat, elevation, earthPoint);
 			if (!isMasterRgAzComputed)
 			{
 				if (su[masterIndex - 1]->getRgAzPosition(mBurstIndex, earthPoint, &rangeIndex, &azimuthIndex) == 0)
@@ -11614,7 +11825,7 @@ int Sentinel1BackGeocoding::slaveBilinearInterpolation(
 	Mat slaveAzimuthOffset, slaveRangeOffset;
 	ret = computeSlaveOffset(slaveAzimuthOffset, slaveRangeOffset);
 	if (return_check(ret, "computeSlaveOffset()", error_head)) return -1;
-	Utils util;
+	FormatConversion conversion;
 	ret = fitSlaveOffset(slaveAzimuthOffset, &a0Az, &a1Az, &a2Az);
 	if (return_check(ret, "fitSlaveOffset()", error_head)) return -1;
 	ret = fitSlaveOffset(slaveRangeOffset, &a0Rg, &a1Rg, &a2Rg);
@@ -11627,7 +11838,7 @@ int Sentinel1BackGeocoding::slaveBilinearInterpolation(
 		a0Rg, a1Rg, a2Rg, a0Az, a1Az, a2Az);
 	if (return_check(ret, "performBilinearResampling()", error_head)) return -1;
 	tmp.re.copyTo(derampDemodPhase);
-	util.phase2cos(derampDemodPhase, tmp.re, tmp.im);
+	conversion.phase2cos(derampDemodPhase, tmp.re, tmp.im);
 	slave.Mul(tmp, slave, true);//reramp
 	slave.convertTo(slave, CV_32F);
 	return 0;
@@ -11679,7 +11890,6 @@ int Sentinel1BackGeocoding::backGeoCodingCoregistration()
 	if (!isdeBurstConfig) deBurstConfig();
 	FormatConversion conversion;
 	ComplexMat slaveSLC, tmp;
-	Utils util;
 	int linesPerBurst, ret;
 	int samplesPerBurst = su[masterIndex - 1]->samplesPerBurst;
 	int offset_row = 0, lines = 0;
@@ -11930,33 +12140,33 @@ int orbitStateVectors::getOrbitData(double time, OSV* osv)
 
 	}
 	Mat A, xPosCoeff, yPosCoeff, zPosCoeff, xVelCoeff, yVelCoeff, zVelCoeff;
-	Utils::createVandermondeMatrix(timeArray, A, polyDegree);
-	ret = Utils::ployFit(A, xPosArray, xPosCoeff);
+	FormatConversion::createVandermondeMatrix(timeArray, A, polyDegree);
+	ret = FormatConversion::ployFit(A, xPosArray, xPosCoeff);
 	if (ret < 0) return -1;
-	ret = Utils::ployFit(A, yPosArray, yPosCoeff); 
+	ret = FormatConversion::ployFit(A, yPosArray, yPosCoeff);
 	if (ret < 0) return -1;
-	ret = Utils::ployFit(A, zPosArray, zPosCoeff);
+	ret = FormatConversion::ployFit(A, zPosArray, zPosCoeff);
 	if (ret < 0) return -1;
-	ret = Utils::ployFit(A, xVelArray, xVelCoeff); 
+	ret = FormatConversion::ployFit(A, xVelArray, xVelCoeff);
 	if (ret < 0) return -1;
-	ret = Utils::ployFit(A, yVelArray, yVelCoeff);
+	ret = FormatConversion::ployFit(A, yVelArray, yVelCoeff);
 	if (ret < 0) return -1;
-	ret = Utils::ployFit(A, zVelArray, zVelCoeff);
+	ret = FormatConversion::ployFit(A, zVelArray, zVelCoeff);
 	if (ret < 0) return -1;
 	double normalizedTime = time - t0;
 
 	osv->time = time;
-	ret = Utils::polyVal(xPosCoeff, normalizedTime, &osv->x);
+	ret = FormatConversion::polyVal(xPosCoeff, normalizedTime, &osv->x);
 	if (ret < 0) return -1;
-	ret = Utils::polyVal(yPosCoeff, normalizedTime, &osv->y);
+	ret = FormatConversion::polyVal(yPosCoeff, normalizedTime, &osv->y);
 	if (ret < 0) return -1;
-	ret = Utils::polyVal(zPosCoeff, normalizedTime, &osv->z);
+	ret = FormatConversion::polyVal(zPosCoeff, normalizedTime, &osv->z);
 	if (ret < 0) return -1;
-	ret = Utils::polyVal(xVelCoeff, normalizedTime, &osv->vx);
+	ret = FormatConversion::polyVal(xVelCoeff, normalizedTime, &osv->vx);
 	if (ret < 0) return -1;
-	ret = Utils::polyVal(yVelCoeff, normalizedTime, &osv->vy);
+	ret = FormatConversion::polyVal(yVelCoeff, normalizedTime, &osv->vy);
 	if (ret < 0) return -1;
-	ret = Utils::polyVal(zVelCoeff, normalizedTime, &osv->vz);
+	ret = FormatConversion::polyVal(zVelCoeff, normalizedTime, &osv->vz);
 	if (ret < 0) return -1;
 	return 0;
 }

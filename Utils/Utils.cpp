@@ -1,9 +1,6 @@
 #include<complex.h>
 #include "stdafx.h"
 #include"..\include\Utils.h"
-#include"..\include\Registration.h"
-#include"..\include\Deflat.h"
-#include"..\include\Unwrap.h"
 #include<direct.h>
 #include<SensAPI.h>
 #include<urlmon.h>
@@ -19,16 +16,10 @@
 
 #ifdef _DEBUG
 #pragma comment(lib,"ComplexMat_d.lib")
-#pragma comment(lib, "Registration_d.lib")
 #pragma comment(lib, "FormatConversion_d.lib")
-#pragma comment(lib, "Deflat_d.lib")
-#pragma comment(lib, "Unwrap_d.lib")
 #else
 #pragma comment(lib,"ComplexMat.lib")
-#pragma comment(lib, "Registration.lib")
 #pragma comment(lib, "FormatConversion.lib")
-#pragma comment(lib, "Deflat.lib")
-#pragma comment(lib, "Unwrap.lib")
 #endif // _DEBUG
 
 using namespace cv;
@@ -4797,838 +4788,838 @@ int Utils::std(const Mat& input, double* std)
 	return 0;
 }
 
-int Utils::stack_coregistration(
-	vector<ComplexMat>& SAR_images,
-	Mat& offset,
-	int Master_index,
-	int coh_method,
-	int interp_times,
-	int blocksize
-)
-{
-	if (SAR_images.size() < 2||
-		Master_index < 1 ||
-		Master_index > SAR_images.size() ||
-		coh_method < 0 ||
-		coh_method > 1 ||
-		interp_times < 1||
-		blocksize < 4
-		)
-	{
-		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
-		return -1;
-	}
-	vector<ComplexMat> SAR_images_out;
-	SAR_images_out.resize(SAR_images.size());
-	Registration coregis;
-	int nr = SAR_images[Master_index - 1].GetRows();
-	int nc = SAR_images[Master_index - 1].GetCols();
-	int n_images = SAR_images.size();
-	Mat move_row = Mat::zeros(1, n_images, CV_32S);
-	Mat move_col = Mat::zeros(1, n_images, CV_32S);
-	Mat Slave_indx = Mat::zeros(1, n_images - 1, CV_32S);
-	Mat offset_topleft = Mat::zeros(n_images, 2, CV_32S);
-	int count = 0;
-	for (int i = 0; i < n_images; i++)
-	{
-		if (i != Master_index - 1)
-		{
-			Slave_indx.at<int>(0, count) = i;
-			count++;
-		}
-	}
-	////////////粗配准///////////////
-	ComplexMat master;
-	master = SAR_images[Master_index - 1];
-	volatile bool parallel_flag = true;
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < n_images - 1; i++)
-	{
-		if (!parallel_flag) continue;
-		ComplexMat slave;
-		int ret, move_r, move_c;
-		int slave_img = Slave_indx.at<int>(0, i);
-		slave = SAR_images[slave_img];
-		ret = coregis.real_coherent(master, slave, &move_r, &move_c);
-		if (ret < 0)
-		{
-			parallel_flag = false;
-			continue;
-		}
-		move_row.at<int>(0, slave_img) = move_r;
-		move_col.at<int>(0, slave_img) = move_c;
-	}
-	if (parallel_check(parallel_flag, "stack_coregistration()", parallel_error_head)) return -1;
-	////////////粗配准公共部分裁剪///////////////
-	int move_r_min, move_r_max, move_c_min, move_c_max;
-	move_r_min = 100000000;
-	move_r_max = -100000000;
-	move_c_min = 100000000;
-	move_c_max = -100000000;
-
-	int cut_rows;
-	for (int i = 0; i < n_images; i++)
-	{
-		move_r_min = move_r_min < move_row.at<int>(0, i) ? move_r_min : move_row.at<int>(0, i);
-		move_c_min = move_c_min < move_col.at<int>(0, i) ? move_c_min : move_col.at<int>(0, i);
-		move_r_max = move_r_max > move_row.at<int>(0, i) ? move_r_max : move_row.at<int>(0, i);
-		move_c_max = move_c_max > move_col.at<int>(0, i) ? move_c_max : move_col.at<int>(0, i);
-	}
-	if (abs(move_r_max) >= nr ||
-		abs(move_r_min) >= nr ||
-		abs(move_c_min) >= nc ||
-		abs(move_c_max) >= nc ||
-		abs(move_r_max - move_r_min) >= nr||
-		abs(move_c_max - move_c_min) >= nc
-		)
-	{
-		fprintf(stderr, "stack_coregistration(): SAR images have no common area!\n\n");
-		return -1;
-	}
-	if (move_r_min >= 0)
-	{
-		SAR_images_out[Master_index - 1] = SAR_images[Master_index - 1](Range(0, nr - move_r_max), Range(0, nc));
-		offset_topleft.at<int>(Master_index - 1, 0) = 0;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < n_images - 1; i++)
-		{
-			int slave_ix = Slave_indx.at<int>(0, i);
-			int row_start = move_row.at<int>(0, slave_ix);
-			int row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
-			int col_start = 0;
-			int col_end = SAR_images[slave_ix].GetCols();
-			SAR_images_out[slave_ix] = SAR_images[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix);
-		}
-	}
-	if (move_r_max <= 0 && move_r_min < 0)
-	{
-		SAR_images_out[Master_index - 1] = SAR_images[Master_index - 1](Range(-move_r_min, nr), Range(0, nc));
-		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < n_images - 1; i++)
-		{
-			int slave_ix = Slave_indx.at<int>(0, i);
-			int row_start = move_row.at<int>(0, slave_ix) - move_r_min;
-			int row_end = nr + move_row.at<int>(0, slave_ix);
-			int col_start = 0;
-			int col_end = SAR_images[slave_ix].GetCols();
-			SAR_images_out[slave_ix] = SAR_images[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
-		}
-	}
-	if (move_r_max > 0 && move_r_min < 0)
-	{
-		SAR_images_out[Master_index - 1] = SAR_images[Master_index - 1](Range(-move_r_min, nr - move_r_max), Range(0, nc));
-		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < n_images - 1; i++)
-		{
-			int slave_ix = Slave_indx.at<int>(0, i);
-			int row_start = move_row.at<int>(0, slave_ix) - move_r_min;
-			int row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
-			int col_start = 0;
-			int col_end = SAR_images[slave_ix].GetCols();
-			SAR_images_out[slave_ix] = SAR_images[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
-		}
-	}
-
-
-	if (move_c_min >= 0)
-	{
-		cut_rows = SAR_images_out[Master_index - 1].GetRows();
-		SAR_images_out[Master_index - 1] = SAR_images_out[Master_index - 1](Range(0, cut_rows), Range(0, nc - move_c_max));
-		offset_topleft.at<int>(Master_index - 1, 1) = 0;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < n_images - 1; i++)
-		{
-			int slave_ix = Slave_indx.at<int>(0, i);
-			int row_start = 0;
-			int row_end = SAR_images_out[slave_ix].GetRows();
-			int col_start = move_col.at<int>(0, slave_ix);
-			int col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
-			SAR_images_out[slave_ix] = SAR_images_out[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix);
-		}
-	}
-	if (move_c_max <= 0 && move_c_min < 0)
-	{
-		cut_rows = SAR_images_out[Master_index - 1].GetRows();
-		SAR_images_out[Master_index - 1] = SAR_images_out[Master_index - 1](Range(0, cut_rows), Range(-move_c_min, nc));
-		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < n_images - 1; i++)
-		{
-			int slave_ix = Slave_indx.at<int>(0, i);
-			int row_start = 0;
-			int row_end = SAR_images_out[slave_ix].GetRows();
-			int col_start = move_col.at<int>(0, slave_ix) - move_c_min;
-			int col_end = nc + move_col.at<int>(0, slave_ix);
-			SAR_images_out[slave_ix] = SAR_images_out[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
-		}
-	}
-	if (move_c_max > 0 && move_c_min < 0)
-	{
-		cut_rows = SAR_images_out[Master_index - 1].GetRows();
-		SAR_images_out[Master_index - 1] = SAR_images_out[Master_index - 1](Range(0, cut_rows), Range(-move_c_min, nc - move_c_max));
-		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < n_images - 1; i++)
-		{
-			int slave_ix = Slave_indx.at<int>(0, i);
-			int row_start = 0;
-			int row_end = SAR_images_out[slave_ix].GetRows();
-			int col_start = move_col.at<int>(0, slave_ix) - move_c_min;
-			int col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
-			SAR_images_out[slave_ix] = SAR_images_out[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
-		}
-	}
-	offset_topleft.copyTo(offset);
-
-	////////////////////////精配准////////////////////////////
-	SAR_images[Master_index - 1] = SAR_images_out[Master_index - 1];
-	master = SAR_images_out[Master_index - 1];
-	//这里并行加速，因为子函数已经进行了加速
+//int Utils::stack_coregistration(
+//	vector<ComplexMat>& SAR_images,
+//	Mat& offset,
+//	int Master_index,
+//	int coh_method,
+//	int interp_times,
+//	int blocksize
+//)
+//{
+//	if (SAR_images.size() < 2||
+//		Master_index < 1 ||
+//		Master_index > SAR_images.size() ||
+//		coh_method < 0 ||
+//		coh_method > 1 ||
+//		interp_times < 1||
+//		blocksize < 4
+//		)
+//	{
+//		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
+//		return -1;
+//	}
+//	vector<ComplexMat> SAR_images_out;
+//	SAR_images_out.resize(SAR_images.size());
+//	Registration coregis;
+//	int nr = SAR_images[Master_index - 1].GetRows();
+//	int nc = SAR_images[Master_index - 1].GetCols();
+//	int n_images = SAR_images.size();
+//	Mat move_row = Mat::zeros(1, n_images, CV_32S);
+//	Mat move_col = Mat::zeros(1, n_images, CV_32S);
+//	Mat Slave_indx = Mat::zeros(1, n_images - 1, CV_32S);
+//	Mat offset_topleft = Mat::zeros(n_images, 2, CV_32S);
+//	int count = 0;
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		if (i != Master_index - 1)
+//		{
+//			Slave_indx.at<int>(0, count) = i;
+//			count++;
+//		}
+//	}
+//	////////////粗配准///////////////
+//	ComplexMat master;
+//	master = SAR_images[Master_index - 1];
+//	volatile bool parallel_flag = true;
 //#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < n_images - 1; i++)
-	{
-		ComplexMat slave;
-		int slave_ix = Slave_indx.at<int>(0, i);
-		slave = SAR_images_out[slave_ix];
-		int ret;
-		ret = coregis.coregistration_subpixel(master, slave, blocksize, interp_times);
-		if (return_check(ret, "registration_subpixel(*, *, *, *)", error_head)) return -1;
-		SAR_images[slave_ix] = slave;
-		//cout << i + 1 << "/" << n_images - 1 << "\n";
-	}
-	return 0;
-}
-
-int Utils::stack_coregistration(
-	vector<string>& SAR_images,
-	vector<string>& SAR_images_out,
-	Mat& offset,
-	int Master_index,
-	int interp_times,
-	int blocksize
-)
-{
-	if (SAR_images.size() < 2 ||
-		Master_index < 1 ||
-		Master_index > SAR_images.size() ||
-		SAR_images_out.size() != SAR_images.size() ||
-		interp_times < 1 ||
-		blocksize < 16
-		)
-	{
-		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
-		return -1;
-	}
-
-	Registration coregis; FormatConversion conversion;
-	int n_images = SAR_images.size(), ret;
-	Mat move_row = Mat::zeros(1, n_images, CV_32S);
-	Mat move_col = Mat::zeros(1, n_images, CV_32S);
-	Mat Slave_indx = Mat::zeros(1, n_images - 1, CV_32S);
-	Mat offset_topleft = Mat::zeros(n_images, 2, CV_32S);
-	int count = 0;
-	//创建配准后输出的h5文件
-	for (int i = 0; i < n_images; i++)
-	{
-		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
-		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-	}
-	for (int i = 0; i < n_images; i++)
-	{
-		if (i != Master_index - 1)
-		{
-			Slave_indx.at<int>(0, count) = i;
-			count++;
-		}
-	}
-	//检查并确保SAR图像尺寸大小一致
-	int min_row = 10000000, min_col = 10000000;
-	Mat azimuth_len, range_len;
-	for (int i = 0; i < n_images; i++)
-	{
-		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", azimuth_len);
-		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", range_len);
-		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-		min_row = azimuth_len.at<int>(0, 0) > min_row ? min_row : azimuth_len.at<int>(0, 0);
-		min_col = range_len.at<int>(0, 0) > min_col ? min_col : range_len.at<int>(0, 0);
-	}
-	if (min_col < 1 || min_row < 1)
-	{
-		fprintf(stderr, "invalide SAR images size\n");
-		return -1;
-	}
-	
-	////////////粗配准///////////////
-	ComplexMat master, slave, master_out, slave_out;
-	ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master);
-	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-	master = master(cv::Range(0, min_row), cv::Range(0, min_col));
-	if (master.type() != CV_64F) master.convertTo(master, CV_64F);
-	int nr = master.GetRows();
-	int nc = master.GetCols();
-	for (int i = 0; i < n_images - 1; i++)
-	{
-		
-		int move_r, move_c;
-		int slave_img = Slave_indx.at<int>(0, i);
-		ret = conversion.read_slc_from_h5(SAR_images[slave_img].c_str(), slave);
-		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-		slave = slave(cv::Range(0, min_row), cv::Range(0, min_col));
-		if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
-		ret = coregis.real_coherent(master, slave, &move_r, &move_c);
-		if (return_check(ret, "real_coherent()", error_head)) return -1;
-		move_row.at<int>(0, slave_img) = move_r;
-		move_col.at<int>(0, slave_img) = move_c;
-	}
-	////////////粗配准公共部分裁剪///////////////
-	int move_r_min, move_r_max, move_c_min, move_c_max;
-	move_r_min = 100000000;
-	move_r_max = -100000000;
-	move_c_min = 100000000;
-	move_c_max = -100000000;
-
-	int cut_rows;
-	for (int i = 0; i < n_images; i++)
-	{
-		move_r_min = move_r_min < move_row.at<int>(0, i) ? move_r_min : move_row.at<int>(0, i);
-		move_c_min = move_c_min < move_col.at<int>(0, i) ? move_c_min : move_col.at<int>(0, i);
-		move_r_max = move_r_max > move_row.at<int>(0, i) ? move_r_max : move_row.at<int>(0, i);
-		move_c_max = move_c_max > move_col.at<int>(0, i) ? move_c_max : move_col.at<int>(0, i);
-	}
-	if (abs(move_r_max) >= nr ||
-		abs(move_r_min) >= nr ||
-		abs(move_c_min) >= nc ||
-		abs(move_c_max) >= nc ||
-		abs(move_r_max - move_r_min) >= nr ||
-		abs(move_c_max - move_c_min) >= nc
-		)
-	{
-		fprintf(stderr, "stack_coregistration(): SAR images have no common area!\n\n");
-		return -1;
-	}
-
-	//主图像裁剪
-	if (move_r_min >= 0)
-	{
-		master = master(Range(0, nr - move_r_max), Range(0, nc));
-		offset_topleft.at<int>(Master_index - 1, 0) = 0;
-	}
-	if (move_r_max <= 0 && move_r_min < 0)
-	{
-		master = master(Range(-move_r_min, nr), Range(0, nc));
-		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
-	}
-	if (move_r_max > 0 && move_r_min < 0)
-	{
-		master = master(Range(-move_r_min, nr - move_r_max), Range(0, nc));
-		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
-	}
-	if (move_c_min >= 0)
-	{
-		cut_rows = master.GetRows();
-		master = master(Range(0, cut_rows), Range(0, nc - move_c_max));
-		offset_topleft.at<int>(Master_index - 1, 1) = 0;
-	}
-	if (move_c_max <= 0 && move_c_min < 0)
-	{
-		cut_rows = master.GetRows();
-		master = master(Range(0, cut_rows), Range(-move_c_min, nc));
-		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
-	}
-	if (move_c_max > 0 && move_c_min < 0)
-	{
-		cut_rows = master.GetRows();
-		master = master(Range(0, cut_rows), Range(-move_c_min, nc - move_c_max));
-		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
-	}
-	ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master);
-	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-	azimuth_len.at<int>(0, 0) = master.GetRows();
-	range_len.at<int>(0, 0) = master.GetCols();
-	ret = conversion.write_array_to_h5(SAR_images_out[Master_index - 1].c_str(), "azimuth_len", azimuth_len);
-	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	ret = conversion.write_array_to_h5(SAR_images_out[Master_index - 1].c_str(), "range_len", range_len);
-	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	//辅图像裁剪
-	for (int i = 0; i < n_images - 1; i++)
-	{
-		int slave_ix, row_start, row_end, col_start, col_end;
-		slave_ix = Slave_indx.at<int>(0, i);
-		ret = conversion.read_slc_from_h5(SAR_images[slave_ix].c_str(), slave);
-		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-		if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
-		if (move_r_min >= 0)
-		{
-			
-			row_start = move_row.at<int>(0, slave_ix);
-			row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
-			col_start = 0;
-			col_end = slave.GetCols();
-			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix);
-		}
-		if (move_r_max <= 0 && move_r_min < 0)
-		{
-			row_start = move_row.at<int>(0, slave_ix) - move_r_min;
-			row_end = nr + move_row.at<int>(0, slave_ix);
-			col_start = 0;
-			col_end = slave.GetCols();
-			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
-		}
-		if (move_r_max > 0 && move_r_min < 0)
-		{
-			row_start = move_row.at<int>(0, slave_ix) - move_r_min;
-			row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
-			col_start = 0;
-			col_end = slave.GetCols();
-			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
-		}
-
-
-		if (move_c_min >= 0)
-		{
-			row_start = 0;
-			row_end = slave.GetRows();
-			col_start = move_col.at<int>(0, slave_ix);
-			col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
-			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix);
-		}
-		if (move_c_max <= 0 && move_c_min < 0)
-		{
-			row_start = 0;
-			row_end = slave.GetRows();
-			col_start = move_col.at<int>(0, slave_ix) - move_c_min;
-			col_end = nc + move_col.at<int>(0, slave_ix);
-			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
-		}
-		if (move_c_max > 0 && move_c_min < 0)
-		{
-			row_start = 0;
-			row_end = slave.GetRows();
-			col_start = move_col.at<int>(0, slave_ix) - move_c_min;
-			col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
-			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
-			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
-		}
-
-		//精配准
-		ret = coregis.coregistration_subpixel(master, slave, blocksize, interp_times);
-		if (return_check(ret, "coregistration_subpixel()", error_head)) return -1;
-		//写出
-		ret = conversion.write_slc_to_h5(SAR_images_out[slave_ix].c_str(), slave);
-		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
-		azimuth_len.at<int>(0, 0) = slave.GetRows();
-		range_len.at<int>(0, 0) = slave.GetCols();
-		ret = conversion.write_array_to_h5(SAR_images_out[slave_ix].c_str(), "azimuth_len", azimuth_len);
-		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-		ret = conversion.write_array_to_h5(SAR_images_out[slave_ix].c_str(), "range_len", range_len);
-		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-	}
-	offset_topleft.copyTo(offset);
-
-
-	return 0;
-}
-
-int Utils::stack_coregistration(
-	vector<string>& SAR_images, 
-	vector<string>& SAR_images_out,
-	int Master_index,
-	int interp_times,
-	int blocksize
-)
-{
-	if (SAR_images.size() < 2 ||
-		Master_index < 1 ||
-		Master_index > SAR_images.size() ||
-		SAR_images_out.size() != SAR_images.size() ||
-		interp_times < 1 ||
-		blocksize < 16
-		)
-	{
-		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
-		return -1;
-	}
-	//获取各图像的尺寸，并创建输出h5文件
-	FormatConversion conversion;
-	int ret, type;
-	int n_images = SAR_images.size();
-	Mat images_rows, images_cols, tmp;
-	images_rows = Mat::zeros(n_images, 1, CV_32S); images_cols = Mat::zeros(n_images, 1, CV_32S);
-	for (int i = 0; i < n_images; i++)
-	{
-		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
-		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-
-		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", tmp);
-		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-		images_cols.at<int>(i, 0) = tmp.at<int>(0, 0);
-
-		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", tmp);
-		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-		images_rows.at<int>(i, 0) = tmp.at<int>(0, 0);
-	}
-	//分块读取数据并求取偏移量
-	Utils util; Registration regis;
-	int rows = images_rows.at<int>(Master_index - 1, 0); int cols = images_cols.at<int>(Master_index - 1, 0);
-	int m = rows / blocksize;
-	int n = cols / blocksize;
-	if (m * n < 10)
-	{
-		fprintf(stderr, "stack_coregistration(): try smaller blocksize!\n");
-		return -1;
-	}
-	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
-	Mat offset_coord_row = Mat::zeros(m, n, CV_64F);
-	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
-	//子块中心坐标
-	for (int i = 0; i < m; i++)
-	{
-		for (int j = 0; j < n; j++)
-		{
-			offset_coord_row.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * i + 1);
-			offset_coord_col.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * j + 1);
-		}
-	}
-	//根据输入图像尺寸大小判断是否分块读取（超过20000×20000则分块读取，否则一次性读取）
-	ComplexMat master_w, slave_w;
-	bool b_block = true; bool master_read = false;
-	if (rows * cols < 20000 * 20000) b_block = false;
-	for (int ii = 0; ii < n_images; ii++)
-	{
-		if (ii == Master_index - 1) continue;
-		if (!b_block)//不分块读取
-		{
-			if (!master_read)
-			{
-				ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master_w);
-				if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-				master_read = true;
-				type = master_w.type();
-				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//写主图像
-			}
-			
-			ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave_w);
-			if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-			if (type != slave_w.type())
-			{
-				fprintf(stderr, "stack_coregistration(): images type mismatch!\n");
-				return -1;
-			}
-			if (type != CV_16S && type != CV_64F)
-			{
-				fprintf(stderr, "stack_coregistration(): data type not supported!\n");
-				return -1;
-			}
-		}
-		//分块读取并计算偏移量
-		int mm, nn;
-		mm = images_rows.at<int>(ii, 0) / blocksize;
-		nn = images_cols.at<int>(ii, 0) / blocksize;
-		if (!b_block)
-		{
-# pragma omp parallel for schedule(guided)
-			
-			for (int j = 0; j < m; j++)
-			{
-				int offset_row, offset_col, move_r, move_c;
-				ComplexMat master, slave, master_interp, slave_interp;
-				for (int k = 0; k < n; k++)
-				{
-					offset_row = j * blocksize; offset_col = k * blocksize;
-					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
-					{
-						master = master_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
-						slave = slave_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
-
-
-
-						//计算偏移量
-						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
-						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
-						move_r = 0; move_c = 0;
-						ret = regis.interp_paddingzero(master, master_interp, interp_times);
-						//if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
-						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
-						//if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
-						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
-						//if (return_check(ret, "real_coherent()", error_head)) return -1;
-						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
-						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
-					}
-
-				}
-			}
-			
-		}
-		else
-		{
-			int offset_row, offset_col, move_r, move_c;
-			ComplexMat master, slave, master_interp, slave_interp;
-			for (int j = 0; j < m; j++)
-			{
-				for (int k = 0; k < n; k++)
-				{
-					offset_row = j * blocksize; offset_col = k * blocksize;
-					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
-					{
-						//mm = j + 1; nn = k + 1;//记录实际的子块行列数
-						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, master.im);
-						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, master.re);
-						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, slave.im);
-						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, slave.re);
-						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-
-						//计算偏移量
-						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
-						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
-
-						ret = regis.interp_paddingzero(master, master_interp, interp_times);
-						if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
-						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
-						if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
-						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
-						if (return_check(ret, "real_coherent()", error_head)) return -1;
-						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
-						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
-					}
-
-				}
-			}
-		}
-		
-
-		//剔除outliers
-		m = mm; n = nn;//更新实际子块行列数
-		Mat sentinel = Mat::zeros(m, n, CV_64F);
-		int ix, iy, count = 0, c = 0; double delta, thresh = 2.0;
-		for (int i = 0; i < m; i++)
-		{
-			for (int j = 0; j < n; j++)
-			{
-				count = 0;
-				//上
-				ix = j;
-				iy = i - 1; iy = iy < 0 ? 0 : iy;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-				//下
-				ix = j;
-				iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-				//左
-				ix = j - 1; ix = ix < 0 ? 0 : ix;
-				iy = i;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-				//右
-				ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
-				iy = i;
-				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
-				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
-				if (fabs(delta) >= thresh) count++;
-
-				if (count > 2) { sentinel.at<double>(i, j) = 1.0; c++; }
-			}
-		}
-		Mat offset_c_0, offset_r_0, offset_coord_row_0, offset_coord_col_0;
-		offset_c_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		offset_r_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		offset_coord_row_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		offset_coord_col_0 = Mat::zeros(m * n - c, 1, CV_64F);
-		count = 0;
-		for (int i = 0; i < m; i++)
-		{
-			for (int j = 0; j < n; j++)
-			{
-				if (sentinel.at<double>(i, j) < 0.5)
-				{
-					offset_r_0.at<double>(count, 0) = offset_r.at<double>(i, j);
-					offset_c_0.at<double>(count, 0) = offset_c.at<double>(i, j);
-					offset_coord_row_0.at<double>(count, 0) = offset_coord_row.at<double>(i, j);
-					offset_coord_col_0.at<double>(count, 0) = offset_coord_col.at<double>(i, j);
-					count++;
-				}
-			}
-		}
-
-
-		m = 1; n = count;
-		if (count < 10)
-		{
-			fprintf(stderr, "stack_coregistration(): insufficient valide sub blocks!\n");
-			return -1;
-		}
-		//偏移量拟合（坐标做归一化处理）
-		//拟合公式为 offser_row / offser_col = a0 + a1 * x + a2 * y;
-		double offset_x = (double)cols / 2;
-		double offset_y = (double)rows / 2;
-		double scale_x = (double)cols;
-		double scale_y = (double)rows;
-		offset_coord_row_0 -= offset_y;
-		offset_coord_col_0 -= offset_x;
-		offset_coord_row_0 /= scale_y;
-		offset_coord_col_0 /= scale_x;
-		Mat A = Mat::ones(m * n, 3, CV_64F);
-		Mat temp, A_t;
-		offset_coord_col_0.copyTo(A(Range(0, m * n), Range(1, 2)));
-
-		offset_coord_row_0.copyTo(A(Range(0, m * n), Range(2, 3)));
-
-	
-		cv::transpose(A, A_t);
-
-		Mat b_r, b_c, coef_r, coef_c, error_r, error_c, b_t, a, a_t;
-
-		A.copyTo(a);
-		cv::transpose(a, a_t);
-		offset_r_0.copyTo(b_r);
-		b_r = A_t * b_r;
-
-		offset_c_0.copyTo(b_c);
-		b_c = A_t * b_c;
-
-		A = A_t * A;
-
-		double rms1 = -1.0; double rms2 = -1.0;
-		Mat eye = Mat::zeros(m * n, m * n, CV_64F);
-		for (int i = 0; i < m * n; i++)
-		{
-			eye.at<double>(i, i) = 1.0;
-		}
-		if (cv::invert(A, error_r, cv::DECOMP_LU) > 0)
-		{
-			cv::transpose(offset_r_0, b_t);
-			error_r = b_t * (eye - a * error_r * a_t) * offset_r_0;
-			rms1 = sqrt(error_r.at<double>(0, 0) / double(m * n));
-		}
-		if (cv::invert(A, error_c, cv::DECOMP_LU) > 0)
-		{
-			cv::transpose(offset_c_0, b_t);
-			error_c = b_t * (eye - a * error_c * a_t) * offset_c_0;
-			rms2 = sqrt(error_c.at<double>(0, 0) / double(m * n));
-		}
-		if (!cv::solve(A, b_r, coef_r, cv::DECOMP_NORMAL))
-		{
-			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
-			return -1;
-		}
-		if (!cv::solve(A, b_c, coef_c, cv::DECOMP_NORMAL))
-		{
-			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
-			return -1;
-		}
-
-		/*---------------------------------------*/
-	    /*    双线性插值获取重采样后的辅图像     */
-	    /*---------------------------------------*/
-		ComplexMat slave1;
-		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
-		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
-		//if (slave1.type() != CV_16S) slave1.convertTo(slave1, CV_16S);
-		int rows_slave, cols_slave;
-		rows_slave = slave1.GetRows(); cols_slave = slave1.GetCols();
-		type = slave1.type();
-		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
-#pragma omp parallel for schedule(guided)
-		for (int i = 0; i < rows; i++)
-		{
-			double x, y, iiii, jjjj; Mat tmp(1, 3, CV_64F); Mat result;
-			int mm0, nn0, mm1, nn1;
-			double offset_rows, offset_cols, upper, lower;
-			for (int j = 0; j < cols; j++)
-			{
-				jjjj = (double)j;
-				iiii = (double)i;
-				x = (jjjj - offset_x) / scale_x;
-				y = (iiii - offset_y) / scale_y;
-				tmp.at<double>(0, 0) = 1.0;
-				tmp.at<double>(0, 1) = x;
-				tmp.at<double>(0, 2) = y;
-				//tmp.at<double>(0, 3) = x * y;
-				//tmp.at<double>(0, 4) = x * x;
-				//tmp.at<double>(0, 5) = y * y;
-				result = tmp * coef_r;
-				offset_rows = result.at<double>(0, 0);
-				result = tmp * coef_c;
-				offset_cols = result.at<double>(0, 0);
-
-				iiii += offset_rows;
-				jjjj += offset_cols;
-
-				mm0 = (int)floor(iiii); nn0 = (int)floor(jjjj);
-				if (mm0 < 0 || nn0 < 0 || mm0 > rows_slave - 1 || nn0 > cols_slave - 1)
-				{
-					if (type == CV_64F)
-					{
-						slave_tmp.re.at<double>(i, j) = 0;
-						slave_tmp.im.at<double>(i, j) = 0;
-					}
-					else
-					{
-						slave_tmp.re.at<short>(i, j) = 0;
-						slave_tmp.im.at<short>(i, j) = 0;
-					}
-				}
-				else
-				{
-					mm1 = mm0 + 1; nn1 = nn0 + 1;
-					mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
-					nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
-					if (type == CV_16S)
-					{
-						//实部插值
-						upper = (double)slave1.re.at<short>(mm0, nn0) + double(slave1.re.at<short>(mm0, nn1) - slave1.re.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = (double)slave1.re.at<short>(mm1, nn0) + double(slave1.re.at<short>(mm1, nn1) - slave1.re.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.re.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
-						//虚部插值
-						upper = (double)slave1.im.at<short>(mm0, nn0) + double(slave1.im.at<short>(mm0, nn1) - slave1.im.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = (double)slave1.im.at<short>(mm1, nn0) + double(slave1.im.at<short>(mm1, nn1) - slave1.im.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.im.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
-					}
-					else
-					{
-						//实部插值
-						upper = slave1.re.at<double>(mm0, nn0) + (slave1.re.at<double>(mm0, nn1) - slave1.re.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = slave1.re.at<double>(mm1, nn0) + (slave1.re.at<double>(mm1, nn1) - slave1.re.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-						//虚部插值
-						upper = slave1.im.at<double>(mm0, nn0) + (slave1.im.at<double>(mm0, nn1) - slave1.im.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
-						lower = slave1.im.at<double>(mm1, nn0) + (slave1.im.at<double>(mm1, nn1) - slave1.im.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
-						slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
-					}
-					
-				}
-
-			}
-		}
-
-		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
-
-
-	}
-	return 0;
-}
+//	for (int i = 0; i < n_images - 1; i++)
+//	{
+//		if (!parallel_flag) continue;
+//		ComplexMat slave;
+//		int ret, move_r, move_c;
+//		int slave_img = Slave_indx.at<int>(0, i);
+//		slave = SAR_images[slave_img];
+//		ret = coregis.real_coherent(master, slave, &move_r, &move_c);
+//		if (ret < 0)
+//		{
+//			parallel_flag = false;
+//			continue;
+//		}
+//		move_row.at<int>(0, slave_img) = move_r;
+//		move_col.at<int>(0, slave_img) = move_c;
+//	}
+//	if (parallel_check(parallel_flag, "stack_coregistration()", parallel_error_head)) return -1;
+//	////////////粗配准公共部分裁剪///////////////
+//	int move_r_min, move_r_max, move_c_min, move_c_max;
+//	move_r_min = 100000000;
+//	move_r_max = -100000000;
+//	move_c_min = 100000000;
+//	move_c_max = -100000000;
+//
+//	int cut_rows;
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		move_r_min = move_r_min < move_row.at<int>(0, i) ? move_r_min : move_row.at<int>(0, i);
+//		move_c_min = move_c_min < move_col.at<int>(0, i) ? move_c_min : move_col.at<int>(0, i);
+//		move_r_max = move_r_max > move_row.at<int>(0, i) ? move_r_max : move_row.at<int>(0, i);
+//		move_c_max = move_c_max > move_col.at<int>(0, i) ? move_c_max : move_col.at<int>(0, i);
+//	}
+//	if (abs(move_r_max) >= nr ||
+//		abs(move_r_min) >= nr ||
+//		abs(move_c_min) >= nc ||
+//		abs(move_c_max) >= nc ||
+//		abs(move_r_max - move_r_min) >= nr||
+//		abs(move_c_max - move_c_min) >= nc
+//		)
+//	{
+//		fprintf(stderr, "stack_coregistration(): SAR images have no common area!\n\n");
+//		return -1;
+//	}
+//	if (move_r_min >= 0)
+//	{
+//		SAR_images_out[Master_index - 1] = SAR_images[Master_index - 1](Range(0, nr - move_r_max), Range(0, nc));
+//		offset_topleft.at<int>(Master_index - 1, 0) = 0;
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < n_images - 1; i++)
+//		{
+//			int slave_ix = Slave_indx.at<int>(0, i);
+//			int row_start = move_row.at<int>(0, slave_ix);
+//			int row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
+//			int col_start = 0;
+//			int col_end = SAR_images[slave_ix].GetCols();
+//			SAR_images_out[slave_ix] = SAR_images[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix);
+//		}
+//	}
+//	if (move_r_max <= 0 && move_r_min < 0)
+//	{
+//		SAR_images_out[Master_index - 1] = SAR_images[Master_index - 1](Range(-move_r_min, nr), Range(0, nc));
+//		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < n_images - 1; i++)
+//		{
+//			int slave_ix = Slave_indx.at<int>(0, i);
+//			int row_start = move_row.at<int>(0, slave_ix) - move_r_min;
+//			int row_end = nr + move_row.at<int>(0, slave_ix);
+//			int col_start = 0;
+//			int col_end = SAR_images[slave_ix].GetCols();
+//			SAR_images_out[slave_ix] = SAR_images[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
+//		}
+//	}
+//	if (move_r_max > 0 && move_r_min < 0)
+//	{
+//		SAR_images_out[Master_index - 1] = SAR_images[Master_index - 1](Range(-move_r_min, nr - move_r_max), Range(0, nc));
+//		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < n_images - 1; i++)
+//		{
+//			int slave_ix = Slave_indx.at<int>(0, i);
+//			int row_start = move_row.at<int>(0, slave_ix) - move_r_min;
+//			int row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
+//			int col_start = 0;
+//			int col_end = SAR_images[slave_ix].GetCols();
+//			SAR_images_out[slave_ix] = SAR_images[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
+//		}
+//	}
+//
+//
+//	if (move_c_min >= 0)
+//	{
+//		cut_rows = SAR_images_out[Master_index - 1].GetRows();
+//		SAR_images_out[Master_index - 1] = SAR_images_out[Master_index - 1](Range(0, cut_rows), Range(0, nc - move_c_max));
+//		offset_topleft.at<int>(Master_index - 1, 1) = 0;
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < n_images - 1; i++)
+//		{
+//			int slave_ix = Slave_indx.at<int>(0, i);
+//			int row_start = 0;
+//			int row_end = SAR_images_out[slave_ix].GetRows();
+//			int col_start = move_col.at<int>(0, slave_ix);
+//			int col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
+//			SAR_images_out[slave_ix] = SAR_images_out[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix);
+//		}
+//	}
+//	if (move_c_max <= 0 && move_c_min < 0)
+//	{
+//		cut_rows = SAR_images_out[Master_index - 1].GetRows();
+//		SAR_images_out[Master_index - 1] = SAR_images_out[Master_index - 1](Range(0, cut_rows), Range(-move_c_min, nc));
+//		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < n_images - 1; i++)
+//		{
+//			int slave_ix = Slave_indx.at<int>(0, i);
+//			int row_start = 0;
+//			int row_end = SAR_images_out[slave_ix].GetRows();
+//			int col_start = move_col.at<int>(0, slave_ix) - move_c_min;
+//			int col_end = nc + move_col.at<int>(0, slave_ix);
+//			SAR_images_out[slave_ix] = SAR_images_out[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
+//		}
+//	}
+//	if (move_c_max > 0 && move_c_min < 0)
+//	{
+//		cut_rows = SAR_images_out[Master_index - 1].GetRows();
+//		SAR_images_out[Master_index - 1] = SAR_images_out[Master_index - 1](Range(0, cut_rows), Range(-move_c_min, nc - move_c_max));
+//		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < n_images - 1; i++)
+//		{
+//			int slave_ix = Slave_indx.at<int>(0, i);
+//			int row_start = 0;
+//			int row_end = SAR_images_out[slave_ix].GetRows();
+//			int col_start = move_col.at<int>(0, slave_ix) - move_c_min;
+//			int col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
+//			SAR_images_out[slave_ix] = SAR_images_out[slave_ix](Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
+//		}
+//	}
+//	offset_topleft.copyTo(offset);
+//
+//	////////////////////////精配准////////////////////////////
+//	SAR_images[Master_index - 1] = SAR_images_out[Master_index - 1];
+//	master = SAR_images_out[Master_index - 1];
+//	//这里并行加速，因为子函数已经进行了加速
+////#pragma omp parallel for schedule(guided)
+//	for (int i = 0; i < n_images - 1; i++)
+//	{
+//		ComplexMat slave;
+//		int slave_ix = Slave_indx.at<int>(0, i);
+//		slave = SAR_images_out[slave_ix];
+//		int ret;
+//		ret = coregis.coregistration_subpixel(master, slave, blocksize, interp_times);
+//		if (return_check(ret, "registration_subpixel(*, *, *, *)", error_head)) return -1;
+//		SAR_images[slave_ix] = slave;
+//		//cout << i + 1 << "/" << n_images - 1 << "\n";
+//	}
+//	return 0;
+//}
+//
+//int Utils::stack_coregistration(
+//	vector<string>& SAR_images,
+//	vector<string>& SAR_images_out,
+//	Mat& offset,
+//	int Master_index,
+//	int interp_times,
+//	int blocksize
+//)
+//{
+//	if (SAR_images.size() < 2 ||
+//		Master_index < 1 ||
+//		Master_index > SAR_images.size() ||
+//		SAR_images_out.size() != SAR_images.size() ||
+//		interp_times < 1 ||
+//		blocksize < 16
+//		)
+//	{
+//		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
+//		return -1;
+//	}
+//
+//	Registration coregis; FormatConversion conversion;
+//	int n_images = SAR_images.size(), ret;
+//	Mat move_row = Mat::zeros(1, n_images, CV_32S);
+//	Mat move_col = Mat::zeros(1, n_images, CV_32S);
+//	Mat Slave_indx = Mat::zeros(1, n_images - 1, CV_32S);
+//	Mat offset_topleft = Mat::zeros(n_images, 2, CV_32S);
+//	int count = 0;
+//	//创建配准后输出的h5文件
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
+//		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+//	}
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		if (i != Master_index - 1)
+//		{
+//			Slave_indx.at<int>(0, count) = i;
+//			count++;
+//		}
+//	}
+//	//检查并确保SAR图像尺寸大小一致
+//	int min_row = 10000000, min_col = 10000000;
+//	Mat azimuth_len, range_len;
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", azimuth_len);
+//		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", range_len);
+//		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//		min_row = azimuth_len.at<int>(0, 0) > min_row ? min_row : azimuth_len.at<int>(0, 0);
+//		min_col = range_len.at<int>(0, 0) > min_col ? min_col : range_len.at<int>(0, 0);
+//	}
+//	if (min_col < 1 || min_row < 1)
+//	{
+//		fprintf(stderr, "invalide SAR images size\n");
+//		return -1;
+//	}
+//	
+//	////////////粗配准///////////////
+//	ComplexMat master, slave, master_out, slave_out;
+//	ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master);
+//	if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+//	master = master(cv::Range(0, min_row), cv::Range(0, min_col));
+//	if (master.type() != CV_64F) master.convertTo(master, CV_64F);
+//	int nr = master.GetRows();
+//	int nc = master.GetCols();
+//	for (int i = 0; i < n_images - 1; i++)
+//	{
+//		
+//		int move_r, move_c;
+//		int slave_img = Slave_indx.at<int>(0, i);
+//		ret = conversion.read_slc_from_h5(SAR_images[slave_img].c_str(), slave);
+//		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+//		slave = slave(cv::Range(0, min_row), cv::Range(0, min_col));
+//		if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+//		ret = coregis.real_coherent(master, slave, &move_r, &move_c);
+//		if (return_check(ret, "real_coherent()", error_head)) return -1;
+//		move_row.at<int>(0, slave_img) = move_r;
+//		move_col.at<int>(0, slave_img) = move_c;
+//	}
+//	////////////粗配准公共部分裁剪///////////////
+//	int move_r_min, move_r_max, move_c_min, move_c_max;
+//	move_r_min = 100000000;
+//	move_r_max = -100000000;
+//	move_c_min = 100000000;
+//	move_c_max = -100000000;
+//
+//	int cut_rows;
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		move_r_min = move_r_min < move_row.at<int>(0, i) ? move_r_min : move_row.at<int>(0, i);
+//		move_c_min = move_c_min < move_col.at<int>(0, i) ? move_c_min : move_col.at<int>(0, i);
+//		move_r_max = move_r_max > move_row.at<int>(0, i) ? move_r_max : move_row.at<int>(0, i);
+//		move_c_max = move_c_max > move_col.at<int>(0, i) ? move_c_max : move_col.at<int>(0, i);
+//	}
+//	if (abs(move_r_max) >= nr ||
+//		abs(move_r_min) >= nr ||
+//		abs(move_c_min) >= nc ||
+//		abs(move_c_max) >= nc ||
+//		abs(move_r_max - move_r_min) >= nr ||
+//		abs(move_c_max - move_c_min) >= nc
+//		)
+//	{
+//		fprintf(stderr, "stack_coregistration(): SAR images have no common area!\n\n");
+//		return -1;
+//	}
+//
+//	//主图像裁剪
+//	if (move_r_min >= 0)
+//	{
+//		master = master(Range(0, nr - move_r_max), Range(0, nc));
+//		offset_topleft.at<int>(Master_index - 1, 0) = 0;
+//	}
+//	if (move_r_max <= 0 && move_r_min < 0)
+//	{
+//		master = master(Range(-move_r_min, nr), Range(0, nc));
+//		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
+//	}
+//	if (move_r_max > 0 && move_r_min < 0)
+//	{
+//		master = master(Range(-move_r_min, nr - move_r_max), Range(0, nc));
+//		offset_topleft.at<int>(Master_index - 1, 0) = -move_r_min;
+//	}
+//	if (move_c_min >= 0)
+//	{
+//		cut_rows = master.GetRows();
+//		master = master(Range(0, cut_rows), Range(0, nc - move_c_max));
+//		offset_topleft.at<int>(Master_index - 1, 1) = 0;
+//	}
+//	if (move_c_max <= 0 && move_c_min < 0)
+//	{
+//		cut_rows = master.GetRows();
+//		master = master(Range(0, cut_rows), Range(-move_c_min, nc));
+//		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
+//	}
+//	if (move_c_max > 0 && move_c_min < 0)
+//	{
+//		cut_rows = master.GetRows();
+//		master = master(Range(0, cut_rows), Range(-move_c_min, nc - move_c_max));
+//		offset_topleft.at<int>(Master_index - 1, 1) = -move_c_min;
+//	}
+//	ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master);
+//	if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+//	azimuth_len.at<int>(0, 0) = master.GetRows();
+//	range_len.at<int>(0, 0) = master.GetCols();
+//	ret = conversion.write_array_to_h5(SAR_images_out[Master_index - 1].c_str(), "azimuth_len", azimuth_len);
+//	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//	ret = conversion.write_array_to_h5(SAR_images_out[Master_index - 1].c_str(), "range_len", range_len);
+//	if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//	//辅图像裁剪
+//	for (int i = 0; i < n_images - 1; i++)
+//	{
+//		int slave_ix, row_start, row_end, col_start, col_end;
+//		slave_ix = Slave_indx.at<int>(0, i);
+//		ret = conversion.read_slc_from_h5(SAR_images[slave_ix].c_str(), slave);
+//		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+//		if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+//		if (move_r_min >= 0)
+//		{
+//			
+//			row_start = move_row.at<int>(0, slave_ix);
+//			row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
+//			col_start = 0;
+//			col_end = slave.GetCols();
+//			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix);
+//		}
+//		if (move_r_max <= 0 && move_r_min < 0)
+//		{
+//			row_start = move_row.at<int>(0, slave_ix) - move_r_min;
+//			row_end = nr + move_row.at<int>(0, slave_ix);
+//			col_start = 0;
+//			col_end = slave.GetCols();
+//			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
+//		}
+//		if (move_r_max > 0 && move_r_min < 0)
+//		{
+//			row_start = move_row.at<int>(0, slave_ix) - move_r_min;
+//			row_end = nr + move_row.at<int>(0, slave_ix) - move_r_max;
+//			col_start = 0;
+//			col_end = slave.GetCols();
+//			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 0) = move_row.at<int>(0, slave_ix) - move_r_min;
+//		}
+//
+//
+//		if (move_c_min >= 0)
+//		{
+//			row_start = 0;
+//			row_end = slave.GetRows();
+//			col_start = move_col.at<int>(0, slave_ix);
+//			col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
+//			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix);
+//		}
+//		if (move_c_max <= 0 && move_c_min < 0)
+//		{
+//			row_start = 0;
+//			row_end = slave.GetRows();
+//			col_start = move_col.at<int>(0, slave_ix) - move_c_min;
+//			col_end = nc + move_col.at<int>(0, slave_ix);
+//			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
+//		}
+//		if (move_c_max > 0 && move_c_min < 0)
+//		{
+//			row_start = 0;
+//			row_end = slave.GetRows();
+//			col_start = move_col.at<int>(0, slave_ix) - move_c_min;
+//			col_end = nc + move_col.at<int>(0, slave_ix) - move_c_max;
+//			slave = slave(Range(row_start, row_end), Range(col_start, col_end));
+//			offset_topleft.at<int>(slave_ix, 1) = move_col.at<int>(0, slave_ix) - move_c_min;
+//		}
+//
+//		//精配准
+//		ret = coregis.coregistration_subpixel(master, slave, blocksize, interp_times);
+//		if (return_check(ret, "coregistration_subpixel()", error_head)) return -1;
+//		//写出
+//		ret = conversion.write_slc_to_h5(SAR_images_out[slave_ix].c_str(), slave);
+//		if (return_check(ret, "write_slc_to_h5()", error_head)) return -1;
+//		azimuth_len.at<int>(0, 0) = slave.GetRows();
+//		range_len.at<int>(0, 0) = slave.GetCols();
+//		ret = conversion.write_array_to_h5(SAR_images_out[slave_ix].c_str(), "azimuth_len", azimuth_len);
+//		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//		ret = conversion.write_array_to_h5(SAR_images_out[slave_ix].c_str(), "range_len", range_len);
+//		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//	}
+//	offset_topleft.copyTo(offset);
+//
+//
+//	return 0;
+//}
+//
+//int Utils::stack_coregistration(
+//	vector<string>& SAR_images, 
+//	vector<string>& SAR_images_out,
+//	int Master_index,
+//	int interp_times,
+//	int blocksize
+//)
+//{
+//	if (SAR_images.size() < 2 ||
+//		Master_index < 1 ||
+//		Master_index > SAR_images.size() ||
+//		SAR_images_out.size() != SAR_images.size() ||
+//		interp_times < 1 ||
+//		blocksize < 16
+//		)
+//	{
+//		fprintf(stderr, "stack_coregistration(): input check failed!\n\n");
+//		return -1;
+//	}
+//	//获取各图像的尺寸，并创建输出h5文件
+//	FormatConversion conversion;
+//	int ret, type;
+//	int n_images = SAR_images.size();
+//	Mat images_rows, images_cols, tmp;
+//	images_rows = Mat::zeros(n_images, 1, CV_32S); images_cols = Mat::zeros(n_images, 1, CV_32S);
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		ret = conversion.creat_new_h5(SAR_images_out[i].c_str());
+//		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+//
+//		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "range_len", tmp);
+//		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//		images_cols.at<int>(i, 0) = tmp.at<int>(0, 0);
+//
+//		ret = conversion.read_array_from_h5(SAR_images[i].c_str(), "azimuth_len", tmp);
+//		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//		images_rows.at<int>(i, 0) = tmp.at<int>(0, 0);
+//	}
+//	//分块读取数据并求取偏移量
+//	Utils util; Registration regis;
+//	int rows = images_rows.at<int>(Master_index - 1, 0); int cols = images_cols.at<int>(Master_index - 1, 0);
+//	int m = rows / blocksize;
+//	int n = cols / blocksize;
+//	if (m * n < 10)
+//	{
+//		fprintf(stderr, "stack_coregistration(): try smaller blocksize!\n");
+//		return -1;
+//	}
+//	Mat offset_r = Mat::zeros(m, n, CV_64F); Mat offset_c = Mat::zeros(m, n, CV_64F);
+//	Mat offset_coord_row = Mat::zeros(m, n, CV_64F);
+//	Mat offset_coord_col = Mat::zeros(m, n, CV_64F);
+//	//子块中心坐标
+//	for (int i = 0; i < m; i++)
+//	{
+//		for (int j = 0; j < n; j++)
+//		{
+//			offset_coord_row.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * i + 1);
+//			offset_coord_col.at<double>(i, j) = ((double)blocksize) / 2 * (double)(2 * j + 1);
+//		}
+//	}
+//	//根据输入图像尺寸大小判断是否分块读取（超过20000×20000则分块读取，否则一次性读取）
+//	ComplexMat master_w, slave_w;
+//	bool b_block = true; bool master_read = false;
+//	if (rows * cols < 20000 * 20000) b_block = false;
+//	for (int ii = 0; ii < n_images; ii++)
+//	{
+//		if (ii == Master_index - 1) continue;
+//		if (!b_block)//不分块读取
+//		{
+//			if (!master_read)
+//			{
+//				ret = conversion.read_slc_from_h5(SAR_images[Master_index - 1].c_str(), master_w);
+//				if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+//				master_read = true;
+//				type = master_w.type();
+//				ret = conversion.write_slc_to_h5(SAR_images_out[Master_index - 1].c_str(), master_w);//写主图像
+//			}
+//			
+//			ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave_w);
+//			if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+//			if (type != slave_w.type())
+//			{
+//				fprintf(stderr, "stack_coregistration(): images type mismatch!\n");
+//				return -1;
+//			}
+//			if (type != CV_16S && type != CV_64F)
+//			{
+//				fprintf(stderr, "stack_coregistration(): data type not supported!\n");
+//				return -1;
+//			}
+//		}
+//		//分块读取并计算偏移量
+//		int mm, nn;
+//		mm = images_rows.at<int>(ii, 0) / blocksize;
+//		nn = images_cols.at<int>(ii, 0) / blocksize;
+//		if (!b_block)
+//		{
+//# pragma omp parallel for schedule(guided)
+//			
+//			for (int j = 0; j < m; j++)
+//			{
+//				int offset_row, offset_col, move_r, move_c;
+//				ComplexMat master, slave, master_interp, slave_interp;
+//				for (int k = 0; k < n; k++)
+//				{
+//					offset_row = j * blocksize; offset_col = k * blocksize;
+//					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
+//					{
+//						master = master_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
+//						slave = slave_w(cv::Range(offset_row, offset_row + blocksize), cv::Range(offset_col, offset_col + blocksize));
+//
+//
+//
+//						//计算偏移量
+//						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
+//						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+//						move_r = 0; move_c = 0;
+//						ret = regis.interp_paddingzero(master, master_interp, interp_times);
+//						//if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+//						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
+//						//if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+//						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
+//						//if (return_check(ret, "real_coherent()", error_head)) return -1;
+//						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
+//						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
+//					}
+//
+//				}
+//			}
+//			
+//		}
+//		else
+//		{
+//			int offset_row, offset_col, move_r, move_c;
+//			ComplexMat master, slave, master_interp, slave_interp;
+//			for (int j = 0; j < m; j++)
+//			{
+//				for (int k = 0; k < n; k++)
+//				{
+//					offset_row = j * blocksize; offset_col = k * blocksize;
+//					if ((j + 1) * blocksize < images_rows.at<int>(ii, 0) && (k + 1) * blocksize < images_cols.at<int>(ii, 0))
+//					{
+//						//mm = j + 1; nn = k + 1;//记录实际的子块行列数
+//						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, master.im);
+//						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+//						ret = conversion.read_subarray_from_h5(SAR_images[Master_index - 1].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, master.re);
+//						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+//						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_im", offset_row, offset_col, blocksize, blocksize, slave.im);
+//						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+//						ret = conversion.read_subarray_from_h5(SAR_images[ii].c_str(), "s_re", offset_row, offset_col, blocksize, blocksize, slave.re);
+//						if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+//
+//						//计算偏移量
+//						if (master.type() != CV_64F) master.convertTo(master, CV_64F);
+//						if (slave.type() != CV_64F) slave.convertTo(slave, CV_64F);
+//
+//						ret = regis.interp_paddingzero(master, master_interp, interp_times);
+//						if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+//						ret = regis.interp_paddingzero(slave, slave_interp, interp_times);
+//						if (return_check(ret, "interp_paddingzero()", error_head)) return -1;
+//						ret = regis.real_coherent(master_interp, slave_interp, &move_r, &move_c);
+//						if (return_check(ret, "real_coherent()", error_head)) return -1;
+//						offset_r.at<double>(j, k) = double(move_r) / double(interp_times);
+//						offset_c.at<double>(j, k) = double(move_c) / double(interp_times);
+//					}
+//
+//				}
+//			}
+//		}
+//		
+//
+//		//剔除outliers
+//		m = mm; n = nn;//更新实际子块行列数
+//		Mat sentinel = Mat::zeros(m, n, CV_64F);
+//		int ix, iy, count = 0, c = 0; double delta, thresh = 2.0;
+//		for (int i = 0; i < m; i++)
+//		{
+//			for (int j = 0; j < n; j++)
+//			{
+//				count = 0;
+//				//上
+//				ix = j;
+//				iy = i - 1; iy = iy < 0 ? 0 : iy;
+//				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+//				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+//				if (fabs(delta) >= thresh) count++;
+//				//下
+//				ix = j;
+//				iy = i + 1; iy = iy > m - 1 ? m - 1 : iy;
+//				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+//				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+//				if (fabs(delta) >= thresh) count++;
+//				//左
+//				ix = j - 1; ix = ix < 0 ? 0 : ix;
+//				iy = i;
+//				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+//				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+//				if (fabs(delta) >= thresh) count++;
+//				//右
+//				ix = j + 1; ix = ix > n - 1 ? n - 1 : ix;
+//				iy = i;
+//				delta = fabs(offset_c.at<double>(i, j) - offset_c.at<double>(iy, ix));
+//				delta += fabs(offset_r.at<double>(i, j) - offset_r.at<double>(iy, ix));
+//				if (fabs(delta) >= thresh) count++;
+//
+//				if (count > 2) { sentinel.at<double>(i, j) = 1.0; c++; }
+//			}
+//		}
+//		Mat offset_c_0, offset_r_0, offset_coord_row_0, offset_coord_col_0;
+//		offset_c_0 = Mat::zeros(m * n - c, 1, CV_64F);
+//		offset_r_0 = Mat::zeros(m * n - c, 1, CV_64F);
+//		offset_coord_row_0 = Mat::zeros(m * n - c, 1, CV_64F);
+//		offset_coord_col_0 = Mat::zeros(m * n - c, 1, CV_64F);
+//		count = 0;
+//		for (int i = 0; i < m; i++)
+//		{
+//			for (int j = 0; j < n; j++)
+//			{
+//				if (sentinel.at<double>(i, j) < 0.5)
+//				{
+//					offset_r_0.at<double>(count, 0) = offset_r.at<double>(i, j);
+//					offset_c_0.at<double>(count, 0) = offset_c.at<double>(i, j);
+//					offset_coord_row_0.at<double>(count, 0) = offset_coord_row.at<double>(i, j);
+//					offset_coord_col_0.at<double>(count, 0) = offset_coord_col.at<double>(i, j);
+//					count++;
+//				}
+//			}
+//		}
+//
+//
+//		m = 1; n = count;
+//		if (count < 10)
+//		{
+//			fprintf(stderr, "stack_coregistration(): insufficient valide sub blocks!\n");
+//			return -1;
+//		}
+//		//偏移量拟合（坐标做归一化处理）
+//		//拟合公式为 offser_row / offser_col = a0 + a1 * x + a2 * y;
+//		double offset_x = (double)cols / 2;
+//		double offset_y = (double)rows / 2;
+//		double scale_x = (double)cols;
+//		double scale_y = (double)rows;
+//		offset_coord_row_0 -= offset_y;
+//		offset_coord_col_0 -= offset_x;
+//		offset_coord_row_0 /= scale_y;
+//		offset_coord_col_0 /= scale_x;
+//		Mat A = Mat::ones(m * n, 3, CV_64F);
+//		Mat temp, A_t;
+//		offset_coord_col_0.copyTo(A(Range(0, m * n), Range(1, 2)));
+//
+//		offset_coord_row_0.copyTo(A(Range(0, m * n), Range(2, 3)));
+//
+//	
+//		cv::transpose(A, A_t);
+//
+//		Mat b_r, b_c, coef_r, coef_c, error_r, error_c, b_t, a, a_t;
+//
+//		A.copyTo(a);
+//		cv::transpose(a, a_t);
+//		offset_r_0.copyTo(b_r);
+//		b_r = A_t * b_r;
+//
+//		offset_c_0.copyTo(b_c);
+//		b_c = A_t * b_c;
+//
+//		A = A_t * A;
+//
+//		double rms1 = -1.0; double rms2 = -1.0;
+//		Mat eye = Mat::zeros(m * n, m * n, CV_64F);
+//		for (int i = 0; i < m * n; i++)
+//		{
+//			eye.at<double>(i, i) = 1.0;
+//		}
+//		if (cv::invert(A, error_r, cv::DECOMP_LU) > 0)
+//		{
+//			cv::transpose(offset_r_0, b_t);
+//			error_r = b_t * (eye - a * error_r * a_t) * offset_r_0;
+//			rms1 = sqrt(error_r.at<double>(0, 0) / double(m * n));
+//		}
+//		if (cv::invert(A, error_c, cv::DECOMP_LU) > 0)
+//		{
+//			cv::transpose(offset_c_0, b_t);
+//			error_c = b_t * (eye - a * error_c * a_t) * offset_c_0;
+//			rms2 = sqrt(error_c.at<double>(0, 0) / double(m * n));
+//		}
+//		if (!cv::solve(A, b_r, coef_r, cv::DECOMP_NORMAL))
+//		{
+//			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
+//			return -1;
+//		}
+//		if (!cv::solve(A, b_c, coef_c, cv::DECOMP_NORMAL))
+//		{
+//			fprintf(stderr, "stack_coregistration(): matrix defficiency!\n");
+//			return -1;
+//		}
+//
+//		/*---------------------------------------*/
+//	    /*    双线性插值获取重采样后的辅图像     */
+//	    /*---------------------------------------*/
+//		ComplexMat slave1;
+//		ret = conversion.read_slc_from_h5(SAR_images[ii].c_str(), slave1);
+//		if (return_check(ret, "read_slc_from_h5()", error_head)) return -1;
+//		//if (slave1.type() != CV_16S) slave1.convertTo(slave1, CV_16S);
+//		int rows_slave, cols_slave;
+//		rows_slave = slave1.GetRows(); cols_slave = slave1.GetCols();
+//		type = slave1.type();
+//		ComplexMat slave_tmp; slave_tmp.re = Mat::zeros(rows, cols, type); slave_tmp.im = Mat::zeros(rows, cols, type);
+//#pragma omp parallel for schedule(guided)
+//		for (int i = 0; i < rows; i++)
+//		{
+//			double x, y, iiii, jjjj; Mat tmp(1, 3, CV_64F); Mat result;
+//			int mm0, nn0, mm1, nn1;
+//			double offset_rows, offset_cols, upper, lower;
+//			for (int j = 0; j < cols; j++)
+//			{
+//				jjjj = (double)j;
+//				iiii = (double)i;
+//				x = (jjjj - offset_x) / scale_x;
+//				y = (iiii - offset_y) / scale_y;
+//				tmp.at<double>(0, 0) = 1.0;
+//				tmp.at<double>(0, 1) = x;
+//				tmp.at<double>(0, 2) = y;
+//				//tmp.at<double>(0, 3) = x * y;
+//				//tmp.at<double>(0, 4) = x * x;
+//				//tmp.at<double>(0, 5) = y * y;
+//				result = tmp * coef_r;
+//				offset_rows = result.at<double>(0, 0);
+//				result = tmp * coef_c;
+//				offset_cols = result.at<double>(0, 0);
+//
+//				iiii += offset_rows;
+//				jjjj += offset_cols;
+//
+//				mm0 = (int)floor(iiii); nn0 = (int)floor(jjjj);
+//				if (mm0 < 0 || nn0 < 0 || mm0 > rows_slave - 1 || nn0 > cols_slave - 1)
+//				{
+//					if (type == CV_64F)
+//					{
+//						slave_tmp.re.at<double>(i, j) = 0;
+//						slave_tmp.im.at<double>(i, j) = 0;
+//					}
+//					else
+//					{
+//						slave_tmp.re.at<short>(i, j) = 0;
+//						slave_tmp.im.at<short>(i, j) = 0;
+//					}
+//				}
+//				else
+//				{
+//					mm1 = mm0 + 1; nn1 = nn0 + 1;
+//					mm1 = mm1 >= rows_slave - 1 ? rows_slave - 1 : mm1;
+//					nn1 = nn1 >= cols_slave - 1 ? cols_slave - 1 : nn1;
+//					if (type == CV_16S)
+//					{
+//						//实部插值
+//						upper = (double)slave1.re.at<short>(mm0, nn0) + double(slave1.re.at<short>(mm0, nn1) - slave1.re.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
+//						lower = (double)slave1.re.at<short>(mm1, nn0) + double(slave1.re.at<short>(mm1, nn1) - slave1.re.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
+//						slave_tmp.re.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
+//						//虚部插值
+//						upper = (double)slave1.im.at<short>(mm0, nn0) + double(slave1.im.at<short>(mm0, nn1) - slave1.im.at<short>(mm0, nn0)) * (jjjj - (double)nn0);
+//						lower = (double)slave1.im.at<short>(mm1, nn0) + double(slave1.im.at<short>(mm1, nn1) - slave1.im.at<short>(mm1, nn0)) * (jjjj - (double)nn0);
+//						slave_tmp.im.at<short>(i, j) = upper + double(lower - upper) * (iiii - (double)mm0);
+//					}
+//					else
+//					{
+//						//实部插值
+//						upper = slave1.re.at<double>(mm0, nn0) + (slave1.re.at<double>(mm0, nn1) - slave1.re.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
+//						lower = slave1.re.at<double>(mm1, nn0) + (slave1.re.at<double>(mm1, nn1) - slave1.re.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
+//						slave_tmp.re.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
+//						//虚部插值
+//						upper = slave1.im.at<double>(mm0, nn0) + (slave1.im.at<double>(mm0, nn1) - slave1.im.at<double>(mm0, nn0)) * (jjjj - (double)nn0);
+//						lower = slave1.im.at<double>(mm1, nn0) + (slave1.im.at<double>(mm1, nn1) - slave1.im.at<double>(mm1, nn0)) * (jjjj - (double)nn0);
+//						slave_tmp.im.at<double>(i, j) = upper + (lower - upper) * (iiii - (double)mm0);
+//					}
+//					
+//				}
+//
+//			}
+//		}
+//
+//		ret = conversion.write_slc_to_h5(SAR_images_out[ii].c_str(), slave_tmp);
+//
+//
+//	}
+//	return 0;
+//}
 
 int Utils::hist(Mat& input, double lowercenter, double uppercenter, double interval, Mat& out)
 {
@@ -7872,266 +7863,266 @@ int Utils::coherence_matrix_estimation(const vector<ComplexMat>& slc_series, Com
 	return 0;
 }
 
-int Utils::MB_phase_estimation(
-	vector<string> coregis_slc_files,
-	vector<string> phase_files, 
-	vector<string> coherence_files,
-	int master_indx, 
-	int blocksize_row, 
-	int blocksize_col, 
-	Mat& out_mask,
-	bool b_coh_est,
-	int homogeneous_test_wnd,
-	double thresh_c1_to_c2,
-	bool b_flat,
-	bool b_normalize
-)
-{
-	if (coregis_slc_files.size() < 2 ||
-		phase_files.size() != coregis_slc_files.size() ||
-		coherence_files.size() != phase_files.size() ||
-		master_indx < 1 ||
-		master_indx > phase_files.size() ||
-		blocksize_row < 100 ||
-		blocksize_col < 100 ||
-		thresh_c1_to_c2 < 0.0 ||
-		thresh_c1_to_c2 > 1.0 ||
-		homogeneous_test_wnd % 2 == 0
-		)
-	{
-		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
-		return -1;
-	}
-	int homotest_radius = (homogeneous_test_wnd - 1) / 2;
-	if (blocksize_row <= homotest_radius || blocksize_col <= homotest_radius)
-	{
-		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
-		return -1;
-	}
-	int nr, nc, ret, n_images; Mat tmp;
-	n_images = coregis_slc_files.size();
-	FormatConversion conversion; Deflat flat;
-	ret = conversion.read_array_from_h5(coregis_slc_files[0].c_str(), "azimuth_len", tmp);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	nr = tmp.at<int>(0, 0);
-	ret = conversion.read_array_from_h5(coregis_slc_files[0].c_str(), "range_len", tmp);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	nc = tmp.at<int>(0, 0);
-	Mat mask = Mat::zeros(nr, nc, CV_32S); mask.copyTo(out_mask); mask.release();
-	//检查输入SAR图像尺寸是否相同
-	for (int i = 1; i < n_images; i++)
-	{
-		ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "azimuth_len", tmp);
-		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-		if (tmp.at<int>(0, 0) != nr)
-		{
-			fprintf(stderr, "%s images size mismatch!\n", coregis_slc_files[i].c_str());
-			return -1;
-		}
-		ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "range_len", tmp);
-		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-		if (tmp.at<int>(0, 0) != nc)
-		{
-			fprintf(stderr, "%s images size mismatch!\n", coregis_slc_files[i].c_str());
-			return -1;
-		}
-	}
-
-	//去平地相位
-	Mat stateVec1, prf, lon_coef, lat_coef, 
-		carrier_frequency, stateVec2, prf2, phase,
-		phase_deflat, flat_phase_coef, azimuth_len, range_len;
-	phase = Mat::zeros(nr, nc, CV_64F);
-	azimuth_len = Mat::zeros(1, 1, CV_32S); range_len = Mat::zeros(1, 1, CV_32S);
-	int offset_row, offset_col;
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "offset_row", tmp);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	offset_row = tmp.at<int>(0, 0);
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "offset_col", tmp);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	offset_col = tmp.at<int>(0, 0);
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "state_vec", stateVec1);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "prf", prf);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "lon_coefficient", lon_coef);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "lat_coefficient", lat_coef);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "carrier_frequency", carrier_frequency);
-	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-	for (int i = 0; i < n_images; i++)
-	{
-		//预先填充相关系数
-		if (b_coh_est)
-		{
-			ret = conversion.creat_new_h5(coherence_files[i].c_str());
-			if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "coherence", phase);
-			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-			azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
-			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "azimuth_len", azimuth_len);
-			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "range_len", range_len);
-			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-		}
-		//预先填充干涉相位
-		ret = conversion.creat_new_h5(phase_files[i].c_str());
-		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
-		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "phase", phase);
-		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-		azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
-		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "azimuth_len", azimuth_len);
-		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "range_len", range_len);
-		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-		if (b_flat)
-		{
-			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "state_vec", stateVec2);
-			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "prf", prf2);
-			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-			ret = flat.deflat(stateVec1, stateVec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0, 1 / prf.at<double>(0, 0),
-				1 / prf2.at<double>(0, 0), 1, 3e8 / carrier_frequency.at<double>(0, 0), phase, flat_phase_coef);
-			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "flat_phase_coefficient", flat_phase_coef);
-			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
-		}
-		fprintf(stdout, "去平地进度：%d/%d\n", i, n_images - 1);
-	}
-
-	//分块读取、计算和储存
-
-	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad;
-	vector<ComplexMat> slc_series, slc_series_filter;
-	vector<Mat> coherence_series; coherence_series.resize(n_images);
-	ComplexMat slc, slc2, temp;
-	Mat flat_phase, ph, zeromat;
-	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
-	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
-	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
-	else block_num_col = int(floor((double)nc / (double)blocksize_col)) + 1;
-	for (int i = 0; i < block_num_row; i++)
-	{
-		for (int j = 0; j < block_num_col; j++)
-		{
-			top = i * blocksize_row;
-			top_pad = top - homotest_radius; top_pad = top_pad < 0 ? 0 : top_pad;
-			bottom = top + blocksize_row; bottom = bottom > nr ? nr : bottom;
-			bottom_pad = bottom + homotest_radius; bottom_pad = bottom_pad > nr ? nr : bottom_pad;
-			left = j * blocksize_col;
-			left_pad = left - homotest_radius; left_pad = left_pad < 0 ? 0 : left_pad;
-			right = left + blocksize_col; right = right > nc ? nc : right;
-			right_pad = right + homotest_radius; right_pad = right_pad > nc ? nc : right_pad;
-
-			//读取数据
-			for (int k = 0; k < n_images; k++)
-			{
-				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_re",
-					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.re);
-				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_im",
-					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.im);
-				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
-				if (b_flat)
-				{
-					if (k != master_indx - 1)
-					{
-						flat_phase.create(bottom_pad - top_pad, right_pad - left_pad, CV_64F);
-						ret = conversion.read_array_from_h5(phase_files[k].c_str(), "flat_phase_coefficient", flat_phase_coef);
-						if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
-#pragma omp parallel for schedule(guided)
-						for (int ii = top_pad; ii < bottom_pad; ii++)
-						{
-							Mat tempp(1, 6, CV_64F);
-							for (int jj = left_pad; jj < right_pad; jj++)
-							{
-								tempp.at<double>(0, 0) = 1.0;
-								tempp.at<double>(0, 1) = ii;
-								tempp.at<double>(0, 2) = jj;
-								tempp.at<double>(0, 3) = ii * jj;
-								tempp.at<double>(0, 4) = ii * ii;
-								tempp.at<double>(0, 5) = jj * jj;
-								flat_phase.at<double>(ii - top_pad, jj - left_pad) = sum(tempp.mul(flat_phase_coef))[0];
-							}
-						}
-						ret = phase2cos(flat_phase, temp.re, temp.im);
-						if (return_check(ret, "phase2cos()", error_head)) return -1;
-						slc = slc * temp;
-					}
-					
-				}
-				slc_series.push_back(slc);
-				slc_series_filter.push_back(slc);
-			}
-
-			//填充相关系数
-			if (b_coh_est)
-			{
-				zeromat = Mat::zeros(flat_phase.rows, flat_phase.cols, CV_64F);
-				for (int mm = 0; mm < n_images; mm++)
-				{
-					zeromat.copyTo(coherence_series[mm]);
-				}
-			}
-			//计算
-#pragma omp parallel for schedule(guided)
-			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
-			{
-				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue; int ret;
-				for (int jj = (left - left_pad); jj < (right - left_pad); jj++)
-				{
-					ret = coherence_matrix_estimation(slc_series, coherence_matrix, homogeneous_test_wnd, homogeneous_test_wnd, ii, jj);
-					if (ret == 0)
-					{
-						ret = HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
-						if (!eigenvalue.empty() && ret == 0)
-						{
-							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
-							{
-								out_mask.at<int>(ii + top_pad, jj + left_pad) = 1;
-								for (int kk = 0; kk < n_images; kk++)
-								{
-									slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
-									slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
-									if (b_coh_est)
-									{
-										coherence_series[kk].at<double>(ii, jj) = coherence_matrix(cv::Range(master_indx - 1, master_indx),
-											cv::Range(kk, kk + 1)).GetMod().at<double>(0, 0);
-									}
-									
-								}
-							}
-						}
-					}
-
-
-				}
-			}
-
-			//储存
-			slc = slc_series_filter[master_indx - 1];
-			for (int kk = 0; kk < n_images; kk++)
-			{
-				coherence_series[kk](cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
-				ret = conversion.write_subarray_to_h5(coherence_files[kk].c_str(), "coherence", ph, top, left, bottom - top, right - left);
-				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
-				//if (kk == master_indx - 1) continue;
-				ret = multilook(slc, slc_series_filter[kk], 1, 1, phase);
-				if (return_check(ret, "multilook()", error_head)) return -1;
-				phase(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
-				ret = conversion.write_subarray_to_h5(phase_files[kk].c_str(), "phase", ph, top, left, bottom - top, right - left);
-				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
-				
-			}
-			slc_series.clear();
-			slc_series_filter.clear();
-			
-			fprintf(stdout, "估计相位进度：%lf\n", double((i + 1) * block_num_col + j + 1) / double((block_num_col) * (block_num_row)));
-		}
-	}
-
-	return 0;
-}
+//int Utils::MB_phase_estimation(
+//	vector<string> coregis_slc_files,
+//	vector<string> phase_files, 
+//	vector<string> coherence_files,
+//	int master_indx, 
+//	int blocksize_row, 
+//	int blocksize_col, 
+//	Mat& out_mask,
+//	bool b_coh_est,
+//	int homogeneous_test_wnd,
+//	double thresh_c1_to_c2,
+//	bool b_flat,
+//	bool b_normalize
+//)
+//{
+//	if (coregis_slc_files.size() < 2 ||
+//		phase_files.size() != coregis_slc_files.size() ||
+//		coherence_files.size() != phase_files.size() ||
+//		master_indx < 1 ||
+//		master_indx > phase_files.size() ||
+//		blocksize_row < 100 ||
+//		blocksize_col < 100 ||
+//		thresh_c1_to_c2 < 0.0 ||
+//		thresh_c1_to_c2 > 1.0 ||
+//		homogeneous_test_wnd % 2 == 0
+//		)
+//	{
+//		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
+//		return -1;
+//	}
+//	int homotest_radius = (homogeneous_test_wnd - 1) / 2;
+//	if (blocksize_row <= homotest_radius || blocksize_col <= homotest_radius)
+//	{
+//		fprintf(stderr, "MB_phase_estimation(): input check failed!\n");
+//		return -1;
+//	}
+//	int nr, nc, ret, n_images; Mat tmp;
+//	n_images = coregis_slc_files.size();
+//	FormatConversion conversion; Deflat flat;
+//	ret = conversion.read_array_from_h5(coregis_slc_files[0].c_str(), "azimuth_len", tmp);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	nr = tmp.at<int>(0, 0);
+//	ret = conversion.read_array_from_h5(coregis_slc_files[0].c_str(), "range_len", tmp);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	nc = tmp.at<int>(0, 0);
+//	Mat mask = Mat::zeros(nr, nc, CV_32S); mask.copyTo(out_mask); mask.release();
+//	//检查输入SAR图像尺寸是否相同
+//	for (int i = 1; i < n_images; i++)
+//	{
+//		ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "azimuth_len", tmp);
+//		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//		if (tmp.at<int>(0, 0) != nr)
+//		{
+//			fprintf(stderr, "%s images size mismatch!\n", coregis_slc_files[i].c_str());
+//			return -1;
+//		}
+//		ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "range_len", tmp);
+//		if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//		if (tmp.at<int>(0, 0) != nc)
+//		{
+//			fprintf(stderr, "%s images size mismatch!\n", coregis_slc_files[i].c_str());
+//			return -1;
+//		}
+//	}
+//
+//	//去平地相位
+//	Mat stateVec1, prf, lon_coef, lat_coef, 
+//		carrier_frequency, stateVec2, prf2, phase,
+//		phase_deflat, flat_phase_coef, azimuth_len, range_len;
+//	phase = Mat::zeros(nr, nc, CV_64F);
+//	azimuth_len = Mat::zeros(1, 1, CV_32S); range_len = Mat::zeros(1, 1, CV_32S);
+//	int offset_row, offset_col;
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "offset_row", tmp);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	offset_row = tmp.at<int>(0, 0);
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "offset_col", tmp);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	offset_col = tmp.at<int>(0, 0);
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "state_vec", stateVec1);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "prf", prf);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "lon_coefficient", lon_coef);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "lat_coefficient", lat_coef);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	ret = conversion.read_array_from_h5(coregis_slc_files[master_indx - 1].c_str(), "carrier_frequency", carrier_frequency);
+//	if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//	for (int i = 0; i < n_images; i++)
+//	{
+//		//预先填充相关系数
+//		if (b_coh_est)
+//		{
+//			ret = conversion.creat_new_h5(coherence_files[i].c_str());
+//			if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+//			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "coherence", phase);
+//			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//			azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
+//			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "azimuth_len", azimuth_len);
+//			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//			ret = conversion.write_array_to_h5(coherence_files[i].c_str(), "range_len", range_len);
+//			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//		}
+//		//预先填充干涉相位
+//		ret = conversion.creat_new_h5(phase_files[i].c_str());
+//		if (return_check(ret, "creat_new_h5()", error_head)) return -1;
+//		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "phase", phase);
+//		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//		azimuth_len.at<int>(0, 0) = phase.rows; range_len.at<int>(0, 0) = phase.cols;
+//		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "azimuth_len", azimuth_len);
+//		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//		ret = conversion.write_array_to_h5(phase_files[i].c_str(), "range_len", range_len);
+//		if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//		if (b_flat)
+//		{
+//			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "state_vec", stateVec2);
+//			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//			ret = conversion.read_array_from_h5(coregis_slc_files[i].c_str(), "prf", prf2);
+//			if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//			ret = flat.deflat(stateVec1, stateVec2, lon_coef, lat_coef, phase, offset_row, offset_col, 0, 1 / prf.at<double>(0, 0),
+//				1 / prf2.at<double>(0, 0), 1, 3e8 / carrier_frequency.at<double>(0, 0), phase, flat_phase_coef);
+//			ret = conversion.write_array_to_h5(phase_files[i].c_str(), "flat_phase_coefficient", flat_phase_coef);
+//			if (return_check(ret, "write_array_to_h5()", error_head)) return -1;
+//		}
+//		fprintf(stdout, "去平地进度：%d/%d\n", i, n_images - 1);
+//	}
+//
+//	//分块读取、计算和储存
+//
+//	int left, right, top, bottom, block_num_row, block_num_col, left_pad, right_pad, top_pad, bottom_pad;
+//	vector<ComplexMat> slc_series, slc_series_filter;
+//	vector<Mat> coherence_series; coherence_series.resize(n_images);
+//	ComplexMat slc, slc2, temp;
+//	Mat flat_phase, ph, zeromat;
+//	if (nr % blocksize_row == 0) block_num_row = nr / blocksize_row;
+//	else block_num_row = int(floor((double)nr / (double)blocksize_row)) + 1;
+//	if (nc % blocksize_col == 0) block_num_col = nc / blocksize_col;
+//	else block_num_col = int(floor((double)nc / (double)blocksize_col)) + 1;
+//	for (int i = 0; i < block_num_row; i++)
+//	{
+//		for (int j = 0; j < block_num_col; j++)
+//		{
+//			top = i * blocksize_row;
+//			top_pad = top - homotest_radius; top_pad = top_pad < 0 ? 0 : top_pad;
+//			bottom = top + blocksize_row; bottom = bottom > nr ? nr : bottom;
+//			bottom_pad = bottom + homotest_radius; bottom_pad = bottom_pad > nr ? nr : bottom_pad;
+//			left = j * blocksize_col;
+//			left_pad = left - homotest_radius; left_pad = left_pad < 0 ? 0 : left_pad;
+//			right = left + blocksize_col; right = right > nc ? nc : right;
+//			right_pad = right + homotest_radius; right_pad = right_pad > nc ? nc : right_pad;
+//
+//			//读取数据
+//			for (int k = 0; k < n_images; k++)
+//			{
+//				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_re",
+//					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.re);
+//				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+//				ret = conversion.read_subarray_from_h5(coregis_slc_files[k].c_str(), "s_im",
+//					top_pad, left_pad, bottom_pad - top_pad, right_pad - left_pad, slc.im);
+//				if (return_check(ret, "read_subarray_from_h5()", error_head)) return -1;
+//				if (b_flat)
+//				{
+//					if (k != master_indx - 1)
+//					{
+//						flat_phase.create(bottom_pad - top_pad, right_pad - left_pad, CV_64F);
+//						ret = conversion.read_array_from_h5(phase_files[k].c_str(), "flat_phase_coefficient", flat_phase_coef);
+//						if (return_check(ret, "read_array_from_h5()", error_head)) return -1;
+//#pragma omp parallel for schedule(guided)
+//						for (int ii = top_pad; ii < bottom_pad; ii++)
+//						{
+//							Mat tempp(1, 6, CV_64F);
+//							for (int jj = left_pad; jj < right_pad; jj++)
+//							{
+//								tempp.at<double>(0, 0) = 1.0;
+//								tempp.at<double>(0, 1) = ii;
+//								tempp.at<double>(0, 2) = jj;
+//								tempp.at<double>(0, 3) = ii * jj;
+//								tempp.at<double>(0, 4) = ii * ii;
+//								tempp.at<double>(0, 5) = jj * jj;
+//								flat_phase.at<double>(ii - top_pad, jj - left_pad) = sum(tempp.mul(flat_phase_coef))[0];
+//							}
+//						}
+//						ret = phase2cos(flat_phase, temp.re, temp.im);
+//						if (return_check(ret, "phase2cos()", error_head)) return -1;
+//						slc = slc * temp;
+//					}
+//					
+//				}
+//				slc_series.push_back(slc);
+//				slc_series_filter.push_back(slc);
+//			}
+//
+//			//填充相关系数
+//			if (b_coh_est)
+//			{
+//				zeromat = Mat::zeros(flat_phase.rows, flat_phase.cols, CV_64F);
+//				for (int mm = 0; mm < n_images; mm++)
+//				{
+//					zeromat.copyTo(coherence_series[mm]);
+//				}
+//			}
+//			//计算
+//#pragma omp parallel for schedule(guided)
+//			for (int ii = (top - top_pad); ii < (bottom - top_pad); ii++)
+//			{
+//				ComplexMat coherence_matrix, eigenvector; Mat eigenvalue; int ret;
+//				for (int jj = (left - left_pad); jj < (right - left_pad); jj++)
+//				{
+//					ret = coherence_matrix_estimation(slc_series, coherence_matrix, homogeneous_test_wnd, homogeneous_test_wnd, ii, jj);
+//					if (ret == 0)
+//					{
+//						ret = HermitianEVD(coherence_matrix, eigenvalue, eigenvector);
+//						if (!eigenvalue.empty() && ret == 0)
+//						{
+//							if (eigenvalue.at<double>(1, 0) / (eigenvalue.at<double>(0, 0) + 1e-10) < thresh_c1_to_c2)
+//							{
+//								out_mask.at<int>(ii + top_pad, jj + left_pad) = 1;
+//								for (int kk = 0; kk < n_images; kk++)
+//								{
+//									slc_series_filter[kk].re.at<double>(ii, jj) = eigenvector.re.at<double>(kk, 0);
+//									slc_series_filter[kk].im.at<double>(ii, jj) = eigenvector.im.at<double>(kk, 0);
+//									if (b_coh_est)
+//									{
+//										coherence_series[kk].at<double>(ii, jj) = coherence_matrix(cv::Range(master_indx - 1, master_indx),
+//											cv::Range(kk, kk + 1)).GetMod().at<double>(0, 0);
+//									}
+//									
+//								}
+//							}
+//						}
+//					}
+//
+//
+//				}
+//			}
+//
+//			//储存
+//			slc = slc_series_filter[master_indx - 1];
+//			for (int kk = 0; kk < n_images; kk++)
+//			{
+//				coherence_series[kk](cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
+//				ret = conversion.write_subarray_to_h5(coherence_files[kk].c_str(), "coherence", ph, top, left, bottom - top, right - left);
+//				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
+//				//if (kk == master_indx - 1) continue;
+//				ret = multilook(slc, slc_series_filter[kk], 1, 1, phase);
+//				if (return_check(ret, "multilook()", error_head)) return -1;
+//				phase(cv::Range(top - top_pad, bottom - top_pad), cv::Range(left - left_pad, right - left_pad)).copyTo(ph);
+//				ret = conversion.write_subarray_to_h5(phase_files[kk].c_str(), "phase", ph, top, left, bottom - top, right - left);
+//				if (return_check(ret, "write_subarray_to_h5()", error_head)) return -1;
+//				
+//			}
+//			slc_series.clear();
+//			slc_series_filter.clear();
+//			
+//			fprintf(stdout, "估计相位进度：%lf\n", double((i + 1) * block_num_col + j + 1) / double((block_num_col) * (block_num_row)));
+//		}
+//	}
+//
+//	return 0;
+//}
 
 int Utils::spatialTemporalBaselineEstimation(
 	vector<string>& SLCH5Files,

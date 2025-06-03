@@ -4,12 +4,13 @@
 #include<string>
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
-#include"Utils.h"
 #include"hdf5.h"
 #include"..\include\tinyxml.h"
 #define Big2Little64(A) ((uint64_t)(A&0xff00000000000000)>>56|(A&0x00ff000000000000)>>40|(A&0x0000ff0000000000)>>24|(A&0x000000ff00000000)>>8|(A&0x00000000ff000000)<<8|(A&0x0000000000ff0000)<<24|(A&0x000000000000ff00)<<40|(A&0x00000000000000ff)<<56)
 #define Big2Little32(A) ((uint32_t)(A&0xff000000)>>24|(uint32_t)(A&0x00ff0000)>>8 | (uint32_t)(A&0x0000ff00)<<8|(uint32_t)(A&0x000000ff)<<24)
 #define Big2Little16(A) ((uint16_t)(A&0xff00)>>8 | (uint16_t)(A&0x00ff)<<8)
+
+
 /*********************************************************/
 /***************   XML文件参数读写类库    ****************/
 /*********************************************************/
@@ -991,6 +992,66 @@ public:
 	*/
 	int read_height_metric_from_GEDI_L2B(const char* gedi_h5_file, Mat& rh100, Mat& elev_lowestmode, Mat& elev_highestreturn, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index);
 
+
+
+
+	/*@brief 经/纬/高 ---> x/y/z
+	* @param lon                 经度
+	* @param lat                 纬度
+	* @param elevation           高度
+	* @param xyz                 x/y/z
+	* @return 成功返回0，否则返回-1
+	*/
+	static int ell2xyz(double lon, double lat, double elevation, Position& xyz);
+	/** @brief 将相位转换成cos和sin（实部和虚部，支持double和float）
+
+	@param phase                     输入相位
+	@param cos                       实部
+	@param sin                       虚部
+	@return 成功返回0，否则返回-1
+	*/
+	int phase2cos(const Mat& phase, Mat& cos, Mat& sin);
+	/*@brief 生成范德蒙矩阵
+	* @param inArray                           自变量序列
+	* @param vandermondeMatrix                 范德蒙矩阵
+	* @param degree                            阶数
+	* @return 成功返回-1，否则返回0
+	*/
+	static int createVandermondeMatrix(
+		Mat& inArray,
+		Mat& vandermondeMatrix,
+		int degree
+	);
+	/*@brief 多项式拟合（Ax=b）
+	* @param A
+	* @param b
+	* @param x
+	*/
+	static int ployFit(
+		Mat& A,
+		Mat& b,
+		Mat& x
+	);
+	/*@brief polyVal
+	* @param coefficient
+	* @param x
+	* @param val
+	*/
+	static int polyVal(Mat& coefficient, double x, double* val);
+	/*求取两幅辅图像的实相关函数
+	 参数1 主图像（复）
+	 参数2 辅图像（复）
+	 参数3 行偏移量（返回值）
+	 参数4 列偏移量（返回值）
+	*/
+	int real_coherent(ComplexMat& Master, ComplexMat& Slave, int* offset_row, int* offset_col);
+	/*2D FFTSHIFT(原地操作)*/
+	int fftshift2(Mat& matrix);
+	/*2D FFT
+	 参数1 输入矩阵
+	 参数2 输出矩阵
+	*/
+	int fft2(Mat& Src, Mat& Dst);
 
 private:
 	char error_head[256];
