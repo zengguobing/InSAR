@@ -7965,10 +7965,10 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 		return -1;
 	}
 	vector<string> beam_name_list;
-	//beam_name_list.push_back("/BEAM0000/");
-	//beam_name_list.push_back("/BEAM0001/");
-	//beam_name_list.push_back("/BEAM0010/");
-	//beam_name_list.push_back("/BEAM0011/");
+	beam_name_list.push_back("/BEAM0000/");
+	beam_name_list.push_back("/BEAM0001/");
+	beam_name_list.push_back("/BEAM0010/");
+	beam_name_list.push_back("/BEAM0011/");
 	beam_name_list.push_back("/BEAM0101/");
 	beam_name_list.push_back("/BEAM0110/");
 	beam_name_list.push_back("/BEAM1000/");
@@ -7980,6 +7980,7 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 		return -1;
 	}
 	Mat rh100_tmp, zg_tmp, zt_tmp, lon_tmp, lat_tmp, dem_tmp, quality_index_tmp;
+	int count = 0;
 	for (int i = 0; i < beam_name_list.size(); i++)
 	{
 		//¶ÁÈ¡RH100²ÎÊý
@@ -7988,9 +7989,9 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 		if (dataset_id < 0)
 		{
 			fprintf(stderr, "read_height_metric_from_GEDI_L2B(): failed to open dataset %s!\n", str.c_str());
-			H5Fclose(file_id);
-			return -1;
+			continue;
 		}
+		count++;
 		hid_t space_id = H5Dget_space(dataset_id);
 		if (space_id < 0)
 		{
@@ -8207,7 +8208,7 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 			return -1;
 		}
 
-		if (i == 0)
+		if (count == 1)
 		{
 			rh100_tmp.copyTo(rh100);
 			zg_tmp.copyTo(elev_lowestmode);
