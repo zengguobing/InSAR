@@ -8240,6 +8240,220 @@ int FormatConversion::read_height_metric_from_GEDI_L2B(
 	return 0;
 }
 
+int FormatConversion::read_height_metric_from_GEDI_L2A(const char* gedi_h5_file, Mat& rh, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index, int rh_percentile)
+{
+	if (!gedi_h5_file || rh_percentile < 1 || rh_percentile > 100)
+	{
+		fprintf(stderr, "read_height_metric_from_GEDI_L2A(): input check failed!\n");
+		return -1;
+	}
+	vector<string> beam_name_list;
+	beam_name_list.push_back("/BEAM0000/");
+	beam_name_list.push_back("/BEAM0001/");
+	beam_name_list.push_back("/BEAM0010/");
+	beam_name_list.push_back("/BEAM0011/");
+	beam_name_list.push_back("/BEAM0101/");
+	beam_name_list.push_back("/BEAM0110/");
+	beam_name_list.push_back("/BEAM1000/");
+	beam_name_list.push_back("/BEAM1011/");
+	hid_t file_id = H5Fopen(gedi_h5_file, H5F_ACC_RDWR, H5P_DEFAULT);
+	if (file_id < 0)
+	{
+		fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open %s!\n", gedi_h5_file);
+		return -1;
+	}
+	Mat rh_tmp, zg_tmp, zt_tmp, lon_tmp, lat_tmp, dem_tmp, quality_index_tmp;
+	int count = 0;
+	for (int i = 0; i < beam_name_list.size(); i++)
+	{
+		//读取RH参数
+		string str = beam_name_list[i] + "rh";
+		hid_t dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataset %s!\n", str.c_str());
+			continue;
+		}
+		count++;
+		hid_t space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		hsize_t dims[3];
+		int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		hid_t type = H5Dget_type(dataset_id);
+		herr_t status;
+		rh_tmp.create(dims[0], dims[1], CV_32F); rh_tmp = 0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)rh_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+		rh_tmp(cv::Range(0, dims[0]), cv::Range(rh_percentile, rh_percentile + 1)).copyTo(rh_tmp);
+		//读取lat参数
+		str = beam_name_list[i] + "lat_highestreturn";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		lat_tmp.create(dims[0], 1, CV_64F); lat_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)lat_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取lon参数
+		str = beam_name_list[i] + "lon_highestreturn";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		lon_tmp.create(dims[0], 1, CV_64F); lon_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)lon_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取dem参数
+		str = beam_name_list[i] + "digital_elevation_model";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		dem_tmp.create(dims[0], 1, CV_32F); dem_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)dem_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取quality_index参数
+		str = beam_name_list[i] + "quality_flag";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		quality_index_tmp.create(dims[0], 1, CV_8U); quality_index_tmp = 0;
+		status = H5Dread(dataset_id, H5T_NATIVE_INT8, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)quality_index_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_GEDI_L2A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		if (count == 1)
+		{
+			rh_tmp.copyTo(rh);
+			lon_tmp.copyTo(lon);
+			lat_tmp.copyTo(lat);
+			dem_tmp.copyTo(dem);
+			quality_index_tmp.copyTo(quality_index);
+		}
+		else
+		{
+			cv::vconcat(rh, rh_tmp, rh);
+			cv::vconcat(lon, lon_tmp, lon);
+			cv::vconcat(lat, lat_tmp, lat);
+			cv::vconcat(dem, dem_tmp, dem);
+			cv::vconcat(quality_index, quality_index_tmp, quality_index);
+		}
+
+
+		H5Dclose(dataset_id);
+		H5Sclose(space_id);
+		H5Tclose(type);
+	}
+	quality_index.convertTo(quality_index, CV_16S);
+	H5Fclose(file_id);
+	return 0;
+}
+
 int FormatConversion::ell2xyz(double lon, double lat, double elevation, Position& xyz)
 {
 	if (fabs(lon) > 180.0 || fabs(lat) > 90.0)

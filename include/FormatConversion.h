@@ -992,6 +992,17 @@ public:
 	*/
 	int read_height_metric_from_GEDI_L2B(const char* gedi_h5_file, Mat& rh100, Mat& elev_lowestmode, Mat& elev_highestreturn, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index);
 
+	/** @brief 从GEDI L2A级产品中读取树高及地理坐标等信息
+	* @param gedi_h5_file                        GEDI L2A级产品文件（HDF5格式）
+	* @param rh                                  rh参数
+	* @param lon                                 经度信息
+	* @param lat                                 纬度信息
+	* @param dem                                 TanDEM-X 90m 高程信息
+	* @param quality_index                       质量信息
+	* @param rh_percentile                       树高提取参数（rh_percentile = 1~100，默认为100）
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_height_metric_from_GEDI_L2A(const char* gedi_h5_file, Mat& rh, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index, int rh_percentile = 100);
 
 
 
