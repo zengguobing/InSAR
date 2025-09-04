@@ -260,6 +260,47 @@ public:
 		double lon_spacing = 5.0 / 6000.0,
 		double lat_spacing = 5.0 / 6000.0
 	);
+	/*@brief 将WGS84坐标DEM投影到相应的SAR坐标系中
+	* @param DEM84                        84坐标系DEM（float型矩阵）
+	* @param mappedDEM                    投影DEM（返回值,float型矩阵）
+	* @param lon_upperleft                84坐标系DEM左上角经度
+	* @param lat_upperleft                84坐标系DEM左上角纬度
+	* @param offset_row                   SAR图像在原场景中的行偏移量
+	* @param offset_col                   SAR图像在原场景中的列偏移量
+	* @param sceneHeight                  SAR图像场景高度
+	* @param sceneWidth                   SAR图像场景宽度
+	* @param prf                          SAR卫星雷达脉冲重复频率
+	* @param rangeSpacing                 距离向采样间隔（m）
+	* @param wavelength                   波长
+	* @param nearRangeTime                最近斜距时间
+	* @param acquisitionStartTime         方位向采样开始时间
+	* @param acquisitionStopTime          方位向采样结束时间
+	* @param stateVector                  卫星轨道数据（未插值）
+	* @param interp_times                 84坐标系DEM插值倍数（默认值为10）
+	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
+	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @return 成功返回0，否则返回-1
+	*/
+	int demMapping_float(
+		Mat& DEM84,
+		Mat& mappedDEM,
+		double lon_upperleft,
+		double lat_upperleft,
+		int offset_row,
+		int offset_col,
+		int sceneHeight,
+		int sceneWidth,
+		double prf,
+		double rangeSpacing,
+		double wavelength,
+		double nearRangeTime,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		Mat& stateVector,
+		int interp_times = 10,
+		double lon_spacing = 1.0 / 2400.0,
+		double lat_spacing = 1.0 / 3600.0
+	);
 	/*@brief 去除配准SLC图像中的参考地形相位（包括平地相位）
 	* @param slc_deramped                           去参考相位后SLC图像（返回值）
 	* @param mappedDEM                              配准主图像坐标系DEM
@@ -271,6 +312,23 @@ public:
 	*/
 	int SLC_deramp(
 		ComplexMat& slc,
+		Mat& mappedDEM,
+		Mat& mappedLat,
+		Mat& mappedLon,
+		const char* slcH5File,
+		int mode = 1
+	);
+	/*@brief 计算斜距
+	* @param slant_range                            斜距（返回值）
+	* @param mappedDEM                              配准主图像坐标系DEM
+	* @param mappedLat                              DEM纬度坐标
+	* @param mappedLon                              DEM经度坐标
+	* @param slcH5File                              配准SLC图像h5文件
+	* @param mode                                   收发模式（1：自发自收，2：一发多收，默认为自发自收）
+	* @return 成功返回0，否则返回-1
+	*/
+	int slantrange_compute_test(
+		Mat& slant_range,
 		Mat& mappedDEM,
 		Mat& mappedLat,
 		Mat& mappedLon,
