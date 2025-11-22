@@ -855,7 +855,7 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 		ComplexMat master_sub, slave_sub, master_sub_interp, slave_sub_interp, master1, slave1;
 		Mat amplitude_slave, sign, coh1;
 		int offset_row, offset_col;
-		double mean_coh, coh_thresh = 0.65;
+		double mean_coh, coh_thresh = 0.05;
 		for (int j = 0; j < n; j++)
 		{
 			//计算相关系数判断是否是有效数据
