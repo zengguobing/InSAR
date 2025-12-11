@@ -9263,6 +9263,8 @@ int Utils::getCopernicusDEM(
 			outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
 			*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
 			*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+			*lon_spacing = lonSpacing;
+			*lat_spacing = latSpacing;
 		}
 		//Í¬Ò»ÐÐ
 		else if (xx == xx2)
