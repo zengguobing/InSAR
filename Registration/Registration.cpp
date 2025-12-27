@@ -801,10 +801,15 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	}
 	else
 	{
-		start_r = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? (slave.GetRows() + offset_rows_pre - master.GetRows()) : 0;
-		start_r2 = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? 0 : (master.GetRows() - slave.GetRows() - offset_rows_pre);
-		end_r = slave.GetRows() + offset_rows_pre;
-		end_r2 = master.GetRows();
+		//start_r = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? (slave.GetRows() + offset_rows_pre - master.GetRows()) : 0;
+		//start_r2 = (slave.GetRows() + offset_rows_pre) > master.GetRows() ? 0 : (master.GetRows() - slave.GetRows() - offset_rows_pre);
+		//end_r = slave.GetRows() + offset_rows_pre;
+		//end_r2 = master.GetRows();
+
+		start_r = 0;
+		start_r2 = -offset_rows_pre;
+		end_r = (slave.GetRows() - offset_rows_pre) > master.GetRows() ? (master.GetRows() + offset_rows_pre) : slave.GetRows();
+		end_r2 = (slave.GetRows() - offset_rows_pre) > master.GetRows() ? master.GetRows() : slave.GetRows() - offset_rows_pre;
 	}
 	if (offset_cols_pre > 0)
 	{
@@ -815,10 +820,15 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 	}
 	else
 	{
-		start_c = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? (slave.GetCols() + offset_cols_pre - master.GetCols()) : 0;
-		start_c2 = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? 0 : (master.GetCols() - slave.GetCols() - offset_cols_pre);
-		end_c = slave.GetCols() + offset_cols_pre;
-		end_c2 = master.GetCols();
+		//start_c = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? (slave.GetCols() + offset_cols_pre - master.GetCols()) : 0;
+		//start_c2 = (slave.GetCols() + offset_cols_pre) > master.GetCols() ? 0 : (master.GetCols() - slave.GetCols() - offset_cols_pre);
+		//end_c = slave.GetCols() + offset_cols_pre;
+		//end_c2 = master.GetCols();
+
+		start_c = 0;
+		start_c2 = -offset_cols_pre;
+		end_c = (slave.GetCols() - offset_cols_pre) > master.GetCols() ? (master.GetCols() + offset_cols_pre) : slave.GetCols();
+		end_c2 = (slave.GetCols() - offset_cols_pre) > master.GetCols() ? master.GetCols() : slave.GetCols() - offset_cols_pre;
 	}
 	slave.re(cv::Range(start_r, end_r), cv::Range(start_c, end_c)).copyTo(slave_r.re(cv::Range(start_r2, end_r2), cv::Range(start_c2, end_c2)));
 	slave.im(cv::Range(start_r, end_r), cv::Range(start_c, end_c)).copyTo(slave_r.im(cv::Range(start_r2, end_r2), cv::Range(start_c2, end_c2)));
@@ -892,11 +902,12 @@ int Registration::coregistration_subpixel(ComplexMat& master, ComplexMat& slave,
 				}
 			}
 			//sign = amplitude_slave < 0.0000001;
-			/*int thresh = blocksize * blocksize / 4;
+			int thresh = blocksize * blocksize / 4;
 			if (count_zero > thresh)
 			{
 				sentinel0.at<double>(i, j) = 1.0;
-			}*/
+				continue;
+			}
 			interp_paddingzero(slave_sub, slave_sub_interp, interp_times);
 			//ÇóÈ¡Æ«ÒÆÁ¿
 			real_coherent(master_sub_interp, slave_sub_interp, &offset_row, &offset_col);
