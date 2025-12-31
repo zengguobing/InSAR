@@ -6,4 +6,4 @@ If you have any problems, feel free to contact me at guobing.zeng@ntu.edu.sg or 
 
 # Applicable SAR dataset
 
-Sentinel-1A/B/C, TerraSAR-X/TanDEM-X, ALOS2, COSMO-SkyMed, LuTan-1, Hongtu-1 constellation, Fucheng-1(Spacety).
+Sentinel-1A/B/C, TerraSAR-X/TanDEM-X, ALOS2, COSMO-SkyMed, LuTan-1, Hongtu-1 constellation, Fucheng-1(Spacety), AIRSAT.
