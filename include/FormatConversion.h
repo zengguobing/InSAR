@@ -1485,6 +1485,84 @@ private:
 
 
 /*------------------------------------------------*/
+/*                Biomass L1A reader              */
+/*------------------------------------------------*/
+class InSAR_API Biomass1A_reader
+{
+public:
+	Biomass1A_reader(const char* amp_file, const char* phase_file, const char* xml_file, const char* orbit_file, const char* polarization);
+	~Biomass1A_reader();
+	/*@brief 初始化
+	* @return 成功返回0，否则返回-1
+	*/
+	int init();
+
+	/*@brief 将数据写入到指定h5文件
+	* @param dst_h5                          指定hdf5文件
+	* @return 成功返回0，否则返回-1
+	*/
+	int write_to_h5(
+		const char* dst_h5
+	);
+
+private:
+
+	/*@brief 时间戳转换（UTC2GPS）
+	* @param utc_time                  UTC时间戳
+	* @param gps_time                  GPS时间
+	* @return 成功返回0，否则返回-1
+	*/
+	int UTC2GPS(const char* utc_time, double* gps_time);
+
+	/*@brief 从L1产品中读取数据
+	@param xml_file                    xml数据文件（.xml）
+	@param amp_file                    幅度数据文件（.tiff）
+	@param orbit_file                  轨道数据文件（.tiff）
+	@param phase_file                  相位数据文件（.tiff）
+	@return 成功返回0，否则返回-1
+	*/
+	int read_data(
+		const char* xml_file,
+		const char* amp_file,
+		const char* orbit_file,
+		const char* phase_file
+	);
+	/*@brief 从L1产品中读取单视复图像
+	* @param amp_file                         幅度数据文件（.tiff）
+	* @param phase_file                       相位数据文件（.tiff）
+	* @param slc                              读出的单视复数据矩阵
+	* @return 成功返回0，否则返回-1
+	*/
+
+	int read_slc(
+		const char* amp_file,
+		const char* phase_file,
+		ComplexMat& slc
+	);
+private:
+	string Biomass1A_reader_amp_file, Biomass1A_reader_phase_file, Biomass1A_reader_orbit_file, Biomass1A_reader_xml_file;
+	bool b_initialized;
+	string acquisition_start_time;
+	string acquisition_stop_time;
+	double azimuth_resolution;
+	double azimuth_spacing;
+	double carrier_frequency;
+	double inc_center;
+	double prf;
+	double range_resolution;
+	double range_spacing;
+	double slant_range_first_pixel;
+	double slant_range_last_pixel;
+	double topleft_lon, topright_lon, bottomleft_lon, bottomright_lon,
+		topleft_lat, topright_lat, bottomleft_lat, bottomright_lat;
+	Mat state_vec;
+	string sensor;
+	ComplexMat slc;
+	string polarization;
+};
+
+
+/*------------------------------------------------*/
 /*               陆探1号数据读取工具              */
 /*------------------------------------------------*/
 class InSAR_API LUTAN_reader

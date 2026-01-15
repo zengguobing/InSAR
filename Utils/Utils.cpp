@@ -8,6 +8,7 @@
 #include<tchar.h>
 #include <atlconv.h>
 #include"gdal_priv.h"
+#include"gdal.h"
 #include"../include/FormatConversion.h"
 #include"Eigen/Dense"
 
@@ -10066,59 +10067,84 @@ int Utils::downloadCopernicusDEM(const char* name, const char* DEMpath)
 
 int Utils::CopernicusDEM_geotiffread(const char* filename, Mat& outDEM)
 {
-	if (!filename) return -1;
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//打开geotiff文件
-	if (poDataset == NULL)
+	if (!filename)
+		return -1;
+
+	GDALAllRegister();   // 注册驱动
+
+	GDALDatasetH hDataset = GDALOpen(filename, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
-		fprintf(stderr, "CopernicusDEM_geotiffread(): failed to open %s!\n", filename);
-		GDALDestroyDriverManager();
+		fprintf(stderr,
+			"CopernicusDEM_geotiffread(): failed to open %s!\n",
+			filename);
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（geotiff应为1）
-	int xsize = 0;
-	int ysize = 0;
-	if (nBand == 1)
+
+	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand != 1)
 	{
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//获取指向波段1的指针
-		xsize = poBand->GetXSize();		//cols
-		ysize = poBand->GetYSize();		//rows
-		if (xsize < 0 || ysize < 0)
-		{
-			fprintf(stderr, "CopernicusDEM_geotiffread(): band rows and cols error!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，geotiff应为16位整型
-		float* pbuf = NULL;
-		pbuf = (float*)malloc(sizeof(float) * xsize * ysize);		//分配数据指针空间
-		if (!pbuf)
-		{
-			fprintf(stderr, "CopernicusDEM_geotiffread(): out of memory!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-		int i, j;
-		outDEM.create(ysize, xsize, CV_32F);
-		memcpy(outDEM.data, pbuf, sizeof(float) * xsize * ysize);
-		if (pbuf)
-		{
-			free(pbuf);
-			pbuf = NULL;
-		}
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-	}
-	else
-	{
-		fprintf(stderr, "CopernicusDEM_geotiffread(): number of Bands != 1\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		fprintf(stderr,
+			"CopernicusDEM_geotiffread(): number of Bands != 1\n");
+		GDALClose(hDataset);
 		return -1;
 	}
+
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr,
+			"CopernicusDEM_geotiffread(): failed to get band!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand);   // cols
+	int ysize = GDALGetRasterBandYSize(hBand);   // rows
+
+	if (xsize <= 0 || ysize <= 0)
+	{
+		fprintf(stderr,
+			"CopernicusDEM_geotiffread(): band rows and cols error!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	GDALDataType dataType = GDALGetRasterDataType(hBand);
+	/* Copernicus DEM 通常是 GDT_Int16 或 GDT_Float32 */
+
+	float* pbuf = (float*)malloc(sizeof(float) * xsize * ysize);
+	if (!pbuf)
+	{
+		fprintf(stderr,
+			"CopernicusDEM_geotiffread(): out of memory!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Float32,   /* 直接转成 float */
+		0, 0) != CE_None)
+	{
+		fprintf(stderr,
+			"CopernicusDEM_geotiffread(): RasterIO failed!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	outDEM.create(ysize, xsize, CV_32F);
+	memcpy(outDEM.data, pbuf, sizeof(float) * xsize * ysize);
+
+	free(pbuf);
+	GDALClose(hDataset);
+
 	return 0;
 }
 
@@ -13780,204 +13806,204 @@ int Utils::geo_transformation(
 	int SAR_extent_y
 )
 {
-	if (!grille_file || DTM.empty() || fabs(lon_upleft) > 180.0 || fabs(lat_upleft) > 90.0)
-	{
-		fprintf(stderr, "geo_transformation(): input check failed!\n");
-		return -1;
-	}
-	int ret;
-	if (DTM.type() != CV_64F)
-	{
-		DTM.convertTo(DTM, CV_64F);
-	}
-	FormatConversion conversion;
-	Mat row_matrix, col_matrix, utm_x, utm_y;
-	vector<Mat> lon_matrix;
-	vector<Mat> lat_matrix;
-	vector<double> height_vector;
-	mapped_DTM.create(SAR_extent_y, SAR_extent_x, CV_64F);
-	mapped_DTM = -1.0;
-	ret = read_grille(grille_file, row_matrix, col_matrix, lon_matrix, lat_matrix, height_vector);
-	if (return_check(ret, "read_grille()", error_head)) return -1;
-	//cvmat2bin("D:\\working_dir\\projects\\software\\InSAR\\bin\\row_matrix.bin", row_matrix);
-	//cvmat2bin("D:\\working_dir\\projects\\software\\InSAR\\bin\\col_matrix.bin", col_matrix);
-	//经纬度转UTM
-	for (int i = 0; i < height_vector.size(); i++)
-	{
-		ret = lonlat2utm(lon_matrix[i], lat_matrix[i], utm_x, utm_y);
-		if (return_check(ret, "lonlat2utm()", error_head)) return -1;
-		//conversion.creat_new_h5("D:\\working_dir\\projects\\software\\InSAR\\bin\\utm_x.h5");
-		//conversion.write_array_to_h5("D:\\working_dir\\projects\\software\\InSAR\\bin\\utm_x.h5", "X", utm_x);
-		//conversion.write_array_to_h5("D:\\working_dir\\projects\\software\\InSAR\\bin\\utm_x.h5", "Y", utm_y);
-		utm_x.copyTo(lon_matrix[i]);
-		utm_y.copyTo(lat_matrix[i]);
-	}
-
-	
-
-	int DTM_rows = DTM.rows;
-	int DTM_cols = DTM.cols;
-	//DTM逐点转换
-	Mat DTM_mapped_X, DTM_mapped_Y;
-	DTM_mapped_X = Mat::zeros(DTM_rows, DTM_cols, CV_64F);
-	DTM_mapped_Y = Mat::zeros(DTM_rows, DTM_cols, CV_64F);
-	DTM_mapped_X = -1;
-	DTM_mapped_Y = -1;
-	volatile int count = 0;
-	//Mat mask = Mat::zeros(DTM_rows, DTM_cols, CV_8UC1);
-#pragma omp parallel for schedule(guided)
-	for (int i = 0; i < SAR_extent_y; i++)
-	{
-		const char* path[] = { "D:\\softwarepackages\\release-1928-x64-gdal-3-3-1-mapserver-7-6-4\\bin\\proj7\\share" ,nullptr };
-		OSRSetPROJSearchPaths(path);
-		OGRSpatialReference monUtm;
-		monUtm.SetWellKnownGeogCS("WGS84");
-		monUtm.SetUTM(22, 1);
-		OGRSpatialReference monGeo;
-		monGeo.SetWellKnownGeogCS("WGS84");
-		OGRCoordinateTransformation* coordTrans = OGRCreateCoordinateTransformation(&monUtm, &monGeo);
-
-		for (int j = 0; j < SAR_extent_x; j++)
-		{
-			//首先确定DTM值是否有效
-			double h = prior_DTM.at<double>(i, j);
-			//double h = 20.6;
-			if (h < -9000)
-			{
-				continue;
-			}
-			//mask.at<uchar>(i, j) = 1;
-			//定位相邻的网格层
-			int low_ix, high_ix;
-			for (int k = 0; k < height_vector.size() - 1; k++)
-			{
-				if (h >= height_vector[k] && h <= height_vector[k + 1])
-				{
-					low_ix = k;
-					high_ix = k + 1;
-					//对下层网格寻找定位点
-					bool located1 = false;
-					for (int ii = 0; ii < row_matrix.rows - 1; ii++)
-					{
-						for (int jj = 0; jj < row_matrix.cols - 1; jj++)
-						{
-							//located1 = false; located2 = false;
-							//判断该点是否在四个点中间
-							double Mx, My, Ax, Ay, Bx, By, Cx, Cy, Dx, Dy;
-							Ax = row_matrix.at<double>(ii, jj); Ay = col_matrix.at<double>(ii, jj);
-							Bx = row_matrix.at<double>(ii + 1, jj); Dy = col_matrix.at<double>(ii, jj + 1);
-
-							if (i >= Ax &&
-								i <= Bx &&
-								j >= Ay &&
-								j <= Dy &&
-								!located1
-								)
-							{
-								located1 = true;
-								//线性插值得到在下层网格上的UTM坐标
-								//UTM_x插值
-								double UTM_x_upleft = lon_matrix[low_ix].at<double>(ii, jj);
-								double UTM_x_upright = lon_matrix[low_ix].at<double>(ii, jj + 1);
-								double UTM_x_lowleft = lon_matrix[low_ix].at<double>(ii + 1, jj);
-								double UTM_x_lowright = lon_matrix[low_ix].at<double>(ii + 1, jj + 1);
-								double upper = UTM_x_upleft + (UTM_x_upright - UTM_x_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
-									(j - col_matrix.at<double>(ii, jj));
-								double lower = UTM_x_lowleft + (UTM_x_lowright - UTM_x_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
-									(j - col_matrix.at<double>(ii + 1, jj));
-								double UTM_x_final_lower = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
-									(i - row_matrix.at<double>(ii + 1, jj));
-
-								//UTM_y插值
-								double UTM_y_upleft = lat_matrix[low_ix].at<double>(ii, jj);
-								double UTM_y_upright = lat_matrix[low_ix].at<double>(ii, jj + 1);
-								double UTM_y_lowleft = lat_matrix[low_ix].at<double>(ii + 1, jj);
-								double UTM_y_lowright = lat_matrix[low_ix].at<double>(ii + 1, jj + 1);
-								upper = UTM_y_upleft + (UTM_y_upright - UTM_y_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
-									(j - col_matrix.at<double>(ii, jj));
-								lower = UTM_y_lowleft + (UTM_y_lowright - UTM_y_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
-									(j - col_matrix.at<double>(ii + 1, jj));
-								double UTM_y_final_lower = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
-									(i - row_matrix.at<double>(ii + 1, jj));
-
-								//线性插值得到在上层网格上的UTM坐标
-								//UTM_x插值
-								UTM_x_upleft = lon_matrix[high_ix].at<double>(ii, jj);
-								UTM_x_upright = lon_matrix[high_ix].at<double>(ii, jj + 1);
-								UTM_x_lowleft = lon_matrix[high_ix].at<double>(ii + 1, jj);
-								UTM_x_lowright = lon_matrix[high_ix].at<double>(ii + 1, jj + 1);
-								upper = UTM_x_upleft + (UTM_x_upright - UTM_x_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
-									(j - col_matrix.at<double>(ii, jj));
-								lower = UTM_x_lowleft + (UTM_x_lowright - UTM_x_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
-									(j - col_matrix.at<double>(ii + 1, jj));
-								double UTM_x_final_higher = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
-									(i - row_matrix.at<double>(ii + 1, jj));
-
-								//UTM_y插值
-								UTM_y_upleft = lat_matrix[high_ix].at<double>(ii, jj);
-								UTM_y_upright = lat_matrix[high_ix].at<double>(ii, jj + 1);
-								UTM_y_lowleft = lat_matrix[high_ix].at<double>(ii + 1, jj);
-								UTM_y_lowright = lat_matrix[high_ix].at<double>(ii + 1, jj + 1);
-								upper = UTM_y_upleft + (UTM_y_upright - UTM_y_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
-									(j - col_matrix.at<double>(ii, jj));
-								lower = UTM_y_lowleft + (UTM_y_lowright - UTM_y_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
-									(j - col_matrix.at<double>(ii + 1, jj));
-								double UTM_y_final_higher = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
-									(i - row_matrix.at<double>(ii + 1, jj));
-
-
-
-								//上下两层之间插值得到UTM_x和UTM_y
-								double UTM_x_final = UTM_x_final_lower + (UTM_x_final_higher - UTM_x_final_lower) / (height_vector[high_ix] - height_vector[low_ix]) *
-									(h - height_vector[low_ix]);
-								double UTM_y_final = UTM_y_final_lower + (UTM_y_final_higher - UTM_y_final_lower) / (height_vector[high_ix] - height_vector[low_ix]) *
-									(h - height_vector[low_ix]);
-
-								double lat_x, lon_y;
-								lat_x = UTM_x_final;
-								lon_y = UTM_y_final;
-								int reprojected = coordTrans->Transform(1, &lat_x, &lon_y);
-
-
-								//通过插值得到的lat_x和lon_y再次插值得到DTM
-								if (lat_x <= lat_upleft &&
-									lat_x >= (lat_upleft - (DTM_rows - 1)*lat_interval) &&
-									lon_y <= (lon_upleft + (DTM_cols - 1)*lon_interval) &&
-									lon_y >= lon_upleft
-									)
-								{
-									int row = floor((lat_upleft - lat_x) / lat_interval);
-									double delta_row = ((lat_upleft - lat_x) / lat_interval - row);
-									int col = floor((lon_y - lon_upleft) / lon_interval);
-									double delta_col = ((lon_y - lon_upleft) / lon_interval - col);
-									if (row < 0 || row >= DTM_rows - 1 || col < 0 || col >= DTM_cols - 1) continue;
-									if (DTM.at<double>(row, col) > -1000 &&
-										DTM.at<double>(row + 1, col) > -1000 &&
-										DTM.at<double>(row + 1, col + 1) > -1000 &&
-										DTM.at<double>(row, col + 1) > -1000
-										)
-									{
-										upper = DTM.at<double>(row, col) + (DTM.at<double>(row, col + 1) - DTM.at<double>(row, col)) * delta_row;
-										lower = DTM.at<double>(row + 1, col) + (DTM.at<double>(row + 1, col + 1) - DTM.at<double>(row + 1, col)) * delta_row;
-										mapped_DTM.at<double>(i, j) = lower + (upper - lower) * delta_col;
-									}
-
-								}
-								break;
-							}
-						}
-						if (located1)break;
-					}
-				}
-			}
-		}
-		count++;
-		if (count % 10 == 0)
-		{
-			printf("\r估计进度1：%lf%%", double(count) / double(SAR_extent_y) * 100.0);
-			fflush(stdout);
-		}
-	}
+//	if (!grille_file || DTM.empty() || fabs(lon_upleft) > 180.0 || fabs(lat_upleft) > 90.0)
+//	{
+//		fprintf(stderr, "geo_transformation(): input check failed!\n");
+//		return -1;
+//	}
+//	int ret;
+//	if (DTM.type() != CV_64F)
+//	{
+//		DTM.convertTo(DTM, CV_64F);
+//	}
+//	FormatConversion conversion;
+//	Mat row_matrix, col_matrix, utm_x, utm_y;
+//	vector<Mat> lon_matrix;
+//	vector<Mat> lat_matrix;
+//	vector<double> height_vector;
+//	mapped_DTM.create(SAR_extent_y, SAR_extent_x, CV_64F);
+//	mapped_DTM = -1.0;
+//	ret = read_grille(grille_file, row_matrix, col_matrix, lon_matrix, lat_matrix, height_vector);
+//	if (return_check(ret, "read_grille()", error_head)) return -1;
+//	//cvmat2bin("D:\\working_dir\\projects\\software\\InSAR\\bin\\row_matrix.bin", row_matrix);
+//	//cvmat2bin("D:\\working_dir\\projects\\software\\InSAR\\bin\\col_matrix.bin", col_matrix);
+//	//经纬度转UTM
+//	for (int i = 0; i < height_vector.size(); i++)
+//	{
+//		ret = lonlat2utm(lon_matrix[i], lat_matrix[i], utm_x, utm_y);
+//		if (return_check(ret, "lonlat2utm()", error_head)) return -1;
+//		//conversion.creat_new_h5("D:\\working_dir\\projects\\software\\InSAR\\bin\\utm_x.h5");
+//		//conversion.write_array_to_h5("D:\\working_dir\\projects\\software\\InSAR\\bin\\utm_x.h5", "X", utm_x);
+//		//conversion.write_array_to_h5("D:\\working_dir\\projects\\software\\InSAR\\bin\\utm_x.h5", "Y", utm_y);
+//		utm_x.copyTo(lon_matrix[i]);
+//		utm_y.copyTo(lat_matrix[i]);
+//	}
+//
+//	
+//
+//	int DTM_rows = DTM.rows;
+//	int DTM_cols = DTM.cols;
+//	//DTM逐点转换
+//	Mat DTM_mapped_X, DTM_mapped_Y;
+//	DTM_mapped_X = Mat::zeros(DTM_rows, DTM_cols, CV_64F);
+//	DTM_mapped_Y = Mat::zeros(DTM_rows, DTM_cols, CV_64F);
+//	DTM_mapped_X = -1;
+//	DTM_mapped_Y = -1;
+//	volatile int count = 0;
+//	//Mat mask = Mat::zeros(DTM_rows, DTM_cols, CV_8UC1);
+//#pragma omp parallel for schedule(guided)
+//	for (int i = 0; i < SAR_extent_y; i++)
+//	{
+//		const char* path[] = { "D:\\softwarepackages\\release-1928-x64-gdal-3-3-1-mapserver-7-6-4\\bin\\proj7\\share" ,nullptr };
+//		OSRSetPROJSearchPaths(path);
+//		OGRSpatialReference monUtm;
+//		monUtm.SetWellKnownGeogCS("WGS84");
+//		monUtm.SetUTM(22, 1);
+//		OGRSpatialReference monGeo;
+//		monGeo.SetWellKnownGeogCS("WGS84");
+//		OGRCoordinateTransformation* coordTrans = OGRCreateCoordinateTransformation(&monUtm, &monGeo);
+//
+//		for (int j = 0; j < SAR_extent_x; j++)
+//		{
+//			//首先确定DTM值是否有效
+//			double h = prior_DTM.at<double>(i, j);
+//			//double h = 20.6;
+//			if (h < -9000)
+//			{
+//				continue;
+//			}
+//			//mask.at<uchar>(i, j) = 1;
+//			//定位相邻的网格层
+//			int low_ix, high_ix;
+//			for (int k = 0; k < height_vector.size() - 1; k++)
+//			{
+//				if (h >= height_vector[k] && h <= height_vector[k + 1])
+//				{
+//					low_ix = k;
+//					high_ix = k + 1;
+//					//对下层网格寻找定位点
+//					bool located1 = false;
+//					for (int ii = 0; ii < row_matrix.rows - 1; ii++)
+//					{
+//						for (int jj = 0; jj < row_matrix.cols - 1; jj++)
+//						{
+//							//located1 = false; located2 = false;
+//							//判断该点是否在四个点中间
+//							double Mx, My, Ax, Ay, Bx, By, Cx, Cy, Dx, Dy;
+//							Ax = row_matrix.at<double>(ii, jj); Ay = col_matrix.at<double>(ii, jj);
+//							Bx = row_matrix.at<double>(ii + 1, jj); Dy = col_matrix.at<double>(ii, jj + 1);
+//
+//							if (i >= Ax &&
+//								i <= Bx &&
+//								j >= Ay &&
+//								j <= Dy &&
+//								!located1
+//								)
+//							{
+//								located1 = true;
+//								//线性插值得到在下层网格上的UTM坐标
+//								//UTM_x插值
+//								double UTM_x_upleft = lon_matrix[low_ix].at<double>(ii, jj);
+//								double UTM_x_upright = lon_matrix[low_ix].at<double>(ii, jj + 1);
+//								double UTM_x_lowleft = lon_matrix[low_ix].at<double>(ii + 1, jj);
+//								double UTM_x_lowright = lon_matrix[low_ix].at<double>(ii + 1, jj + 1);
+//								double upper = UTM_x_upleft + (UTM_x_upright - UTM_x_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
+//									(j - col_matrix.at<double>(ii, jj));
+//								double lower = UTM_x_lowleft + (UTM_x_lowright - UTM_x_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
+//									(j - col_matrix.at<double>(ii + 1, jj));
+//								double UTM_x_final_lower = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
+//									(i - row_matrix.at<double>(ii + 1, jj));
+//
+//								//UTM_y插值
+//								double UTM_y_upleft = lat_matrix[low_ix].at<double>(ii, jj);
+//								double UTM_y_upright = lat_matrix[low_ix].at<double>(ii, jj + 1);
+//								double UTM_y_lowleft = lat_matrix[low_ix].at<double>(ii + 1, jj);
+//								double UTM_y_lowright = lat_matrix[low_ix].at<double>(ii + 1, jj + 1);
+//								upper = UTM_y_upleft + (UTM_y_upright - UTM_y_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
+//									(j - col_matrix.at<double>(ii, jj));
+//								lower = UTM_y_lowleft + (UTM_y_lowright - UTM_y_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
+//									(j - col_matrix.at<double>(ii + 1, jj));
+//								double UTM_y_final_lower = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
+//									(i - row_matrix.at<double>(ii + 1, jj));
+//
+//								//线性插值得到在上层网格上的UTM坐标
+//								//UTM_x插值
+//								UTM_x_upleft = lon_matrix[high_ix].at<double>(ii, jj);
+//								UTM_x_upright = lon_matrix[high_ix].at<double>(ii, jj + 1);
+//								UTM_x_lowleft = lon_matrix[high_ix].at<double>(ii + 1, jj);
+//								UTM_x_lowright = lon_matrix[high_ix].at<double>(ii + 1, jj + 1);
+//								upper = UTM_x_upleft + (UTM_x_upright - UTM_x_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
+//									(j - col_matrix.at<double>(ii, jj));
+//								lower = UTM_x_lowleft + (UTM_x_lowright - UTM_x_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
+//									(j - col_matrix.at<double>(ii + 1, jj));
+//								double UTM_x_final_higher = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
+//									(i - row_matrix.at<double>(ii + 1, jj));
+//
+//								//UTM_y插值
+//								UTM_y_upleft = lat_matrix[high_ix].at<double>(ii, jj);
+//								UTM_y_upright = lat_matrix[high_ix].at<double>(ii, jj + 1);
+//								UTM_y_lowleft = lat_matrix[high_ix].at<double>(ii + 1, jj);
+//								UTM_y_lowright = lat_matrix[high_ix].at<double>(ii + 1, jj + 1);
+//								upper = UTM_y_upleft + (UTM_y_upright - UTM_y_upleft) / (col_matrix.at<double>(ii, jj + 1) - col_matrix.at<double>(ii, jj)) *
+//									(j - col_matrix.at<double>(ii, jj));
+//								lower = UTM_y_lowleft + (UTM_y_lowright - UTM_y_lowleft) / (col_matrix.at<double>(ii + 1, jj + 1) - col_matrix.at<double>(ii + 1, jj)) *
+//									(j - col_matrix.at<double>(ii + 1, jj));
+//								double UTM_y_final_higher = lower + (upper - lower) / (row_matrix.at<double>(ii, jj) - row_matrix.at<double>(ii + 1, jj)) *
+//									(i - row_matrix.at<double>(ii + 1, jj));
+//
+//
+//
+//								//上下两层之间插值得到UTM_x和UTM_y
+//								double UTM_x_final = UTM_x_final_lower + (UTM_x_final_higher - UTM_x_final_lower) / (height_vector[high_ix] - height_vector[low_ix]) *
+//									(h - height_vector[low_ix]);
+//								double UTM_y_final = UTM_y_final_lower + (UTM_y_final_higher - UTM_y_final_lower) / (height_vector[high_ix] - height_vector[low_ix]) *
+//									(h - height_vector[low_ix]);
+//
+//								double lat_x, lon_y;
+//								lat_x = UTM_x_final;
+//								lon_y = UTM_y_final;
+//								int reprojected = coordTrans->Transform(1, &lat_x, &lon_y);
+//
+//
+//								//通过插值得到的lat_x和lon_y再次插值得到DTM
+//								if (lat_x <= lat_upleft &&
+//									lat_x >= (lat_upleft - (DTM_rows - 1)*lat_interval) &&
+//									lon_y <= (lon_upleft + (DTM_cols - 1)*lon_interval) &&
+//									lon_y >= lon_upleft
+//									)
+//								{
+//									int row = floor((lat_upleft - lat_x) / lat_interval);
+//									double delta_row = ((lat_upleft - lat_x) / lat_interval - row);
+//									int col = floor((lon_y - lon_upleft) / lon_interval);
+//									double delta_col = ((lon_y - lon_upleft) / lon_interval - col);
+//									if (row < 0 || row >= DTM_rows - 1 || col < 0 || col >= DTM_cols - 1) continue;
+//									if (DTM.at<double>(row, col) > -1000 &&
+//										DTM.at<double>(row + 1, col) > -1000 &&
+//										DTM.at<double>(row + 1, col + 1) > -1000 &&
+//										DTM.at<double>(row, col + 1) > -1000
+//										)
+//									{
+//										upper = DTM.at<double>(row, col) + (DTM.at<double>(row, col + 1) - DTM.at<double>(row, col)) * delta_row;
+//										lower = DTM.at<double>(row + 1, col) + (DTM.at<double>(row + 1, col + 1) - DTM.at<double>(row + 1, col)) * delta_row;
+//										mapped_DTM.at<double>(i, j) = lower + (upper - lower) * delta_col;
+//									}
+//
+//								}
+//								break;
+//							}
+//						}
+//						if (located1)break;
+//					}
+//				}
+//			}
+//		}
+//		count++;
+//		if (count % 10 == 0)
+//		{
+//			printf("\r估计进度1：%lf%%", double(count) / double(SAR_extent_y) * 100.0);
+//			fflush(stdout);
+//		}
+//	}
 	return 0;
 }
 
@@ -14049,47 +14075,47 @@ int Utils::read_grille(
 
 int Utils::lonlat2utm(Mat lon, Mat lat, Mat& UTM_X, Mat& UTM_Y)
 {
-	if (lon.empty() || lat.empty() || lon.size() != lat.size() || lon.type() != lat.type() || lon.type() != CV_64F)
-	{
-		fprintf(stderr, "lonlat2utm(): input check failed!\n");
-		return -1;
-	}
-	const char* path[] = { "D:\\softwarepackages\\release-1928-x64-gdal-3-3-1-mapserver-7-6-4\\bin\\proj7\\share" ,nullptr };
-	OSRSetPROJSearchPaths(path);
-	OGRSpatialReference monUtm;
-	monUtm.SetWellKnownGeogCS("WGS84");
-	monUtm.SetUTM(22, true);
+	//if (lon.empty() || lat.empty() || lon.size() != lat.size() || lon.type() != lat.type() || lon.type() != CV_64F)
+	//{
+	//	fprintf(stderr, "lonlat2utm(): input check failed!\n");
+	//	return -1;
+	//}
+	//const char* path[] = { "D:\\softwarepackages\\release-1928-x64-gdal-3-3-1-mapserver-7-6-4\\bin\\proj7\\share" ,nullptr };
+	//OSRSetPROJSearchPaths(path);
+	//OGRSpatialReference monUtm;
+	//monUtm.SetWellKnownGeogCS("WGS84");
+	//monUtm.SetUTM(22, true);
 
-	OGRSpatialReference monGeo;
-	monGeo.SetWellKnownGeogCS("WGS84");
+	//OGRSpatialReference monGeo;
+	//monGeo.SetWellKnownGeogCS("WGS84");
 
-	OGRCoordinateTransformation* coordTrans = OGRCreateCoordinateTransformation(&monGeo, &monUtm);
+	//OGRCoordinateTransformation* coordTrans = OGRCreateCoordinateTransformation(&monGeo, &monUtm);
 
-	int nr = lon.rows;
-	int nc = lon.cols;
-	lon.copyTo(UTM_X);
-	lon.copyTo(UTM_Y);
-	for (int i = 0; i < nr; i++)
-	{
-		for (int j = 0; j < nc; j++)
-		{
-			double x, y;
-			x = lat.at<double>(i, j);
-			y = lon.at<double>(i, j);
-			int reprojected = coordTrans->Transform(1, &x, &y);
-			UTM_X.at<double>(i, j) = x;
-			UTM_Y.at<double>(i, j) = y;
-		}
-	}
-	/*int reprojected = coordTrans->Transform(1, &x, &y);*/
-	// If OK, print the coords.
+	//int nr = lon.rows;
+	//int nc = lon.cols;
+	//lon.copyTo(UTM_X);
+	//lon.copyTo(UTM_Y);
+	//for (int i = 0; i < nr; i++)
+	//{
+	//	for (int j = 0; j < nc; j++)
+	//	{
+	//		double x, y;
+	//		x = lat.at<double>(i, j);
+	//		y = lon.at<double>(i, j);
+	//		int reprojected = coordTrans->Transform(1, &x, &y);
+	//		UTM_X.at<double>(i, j) = x;
+	//		UTM_Y.at<double>(i, j) = y;
+	//	}
+	//}
+	///*int reprojected = coordTrans->Transform(1, &x, &y);*/
+	//// If OK, print the coords.
 
+	////delete coordTrans;
+	////coordTrans = OGRCreateCoordinateTransformation(&monGeo, &monUtm);
+	////reprojected = coordTrans->Transform(1, &x, &y);
+
+	//// If OK, Print the coords.
 	//delete coordTrans;
-	//coordTrans = OGRCreateCoordinateTransformation(&monGeo, &monUtm);
-	//reprojected = coordTrans->Transform(1, &x, &y);
-
-	// If OK, Print the coords.
-	delete coordTrans;
 	return 0;
 }
 
@@ -14190,164 +14216,164 @@ int Utils::geo2sar_DLR(
 	Mat& mapped_h0
 )
 {
-	if (pixel_spacing < 0 ||
-		sr2geo_az.empty() || sr2geo_az.type() != CV_64F ||
-		sr2geo_az.size() != sr2geo_rg.size() || sr2geo_az.size() != sr2geo_h_ref.size() || sr2geo_az.size() != sr2geo3d_rg_o1.size() || 
-		sr2geo_az.size() != sr2geo3d_rg_o2.size() || sr2geo_az.size() != sr2geo3d_az_o1.size() || sr2geo_az.size() != sr2geo3d_az_o2.size() ||
-		DTM.empty() || DTM.type() != CV_64F ||
-		DTM.size() != DTM_lon.size() || DTM.size() != DTM_lat.size()
-		)
-	{
-		fprintf(stderr, "geo2sar_DLR(): input check failed!\n");
-		return -1;
-	}
-	//确定场景的经纬度范围
-	Mat lon, lat;
-	lon.create(4, 1, CV_64F); lon = 0.0; lon.copyTo(lat);
-	double utm_x, utm_y;
-	const char* path[] = { "D:\\softwarepackages\\release-1928-x64-gdal-3-3-1-mapserver-7-6-4\\bin\\proj7\\share" ,nullptr };
-	OSRSetPROJSearchPaths(path);
-	OGRSpatialReference monUtm;
-	monUtm.SetWellKnownGeogCS("WGS84");
-	monUtm.SetUTM(abs(projection_zone), projection_zone>0);
-	OGRSpatialReference monGeo;
-	monGeo.SetWellKnownGeogCS("WGS84");
-	OGRCoordinateTransformation* coordTrans = OGRCreateCoordinateTransformation(&monUtm, &monGeo);
-	double x, y;
-	x = east_min; y = north_min;
-	int reprojected = coordTrans->Transform(1, &x, &y);
-	lon.at<double>(0, 0) = y; lat.at<double>(0, 0) = x;
+	//if (pixel_spacing < 0 ||
+	//	sr2geo_az.empty() || sr2geo_az.type() != CV_64F ||
+	//	sr2geo_az.size() != sr2geo_rg.size() || sr2geo_az.size() != sr2geo_h_ref.size() || sr2geo_az.size() != sr2geo3d_rg_o1.size() || 
+	//	sr2geo_az.size() != sr2geo3d_rg_o2.size() || sr2geo_az.size() != sr2geo3d_az_o1.size() || sr2geo_az.size() != sr2geo3d_az_o2.size() ||
+	//	DTM.empty() || DTM.type() != CV_64F ||
+	//	DTM.size() != DTM_lon.size() || DTM.size() != DTM_lat.size()
+	//	)
+	//{
+	//	fprintf(stderr, "geo2sar_DLR(): input check failed!\n");
+	//	return -1;
+	//}
+	////确定场景的经纬度范围
+	//Mat lon, lat;
+	//lon.create(4, 1, CV_64F); lon = 0.0; lon.copyTo(lat);
+	//double utm_x, utm_y;
+	//const char* path[] = { "D:\\softwarepackages\\release-1928-x64-gdal-3-3-1-mapserver-7-6-4\\bin\\proj7\\share" ,nullptr };
+	//OSRSetPROJSearchPaths(path);
+	//OGRSpatialReference monUtm;
+	//monUtm.SetWellKnownGeogCS("WGS84");
+	//monUtm.SetUTM(abs(projection_zone), projection_zone>0);
+	//OGRSpatialReference monGeo;
+	//monGeo.SetWellKnownGeogCS("WGS84");
+	//OGRCoordinateTransformation* coordTrans = OGRCreateCoordinateTransformation(&monUtm, &monGeo);
+	//double x, y;
+	//x = east_min; y = north_min;
+	//int reprojected = coordTrans->Transform(1, &x, &y);
+	//lon.at<double>(0, 0) = y; lat.at<double>(0, 0) = x;
 
-	x = east_min; y = north_max;
-	reprojected = coordTrans->Transform(1, &x, &y);
-	lon.at<double>(1, 0) = y; lat.at<double>(1, 0) = x;
+	//x = east_min; y = north_max;
+	//reprojected = coordTrans->Transform(1, &x, &y);
+	//lon.at<double>(1, 0) = y; lat.at<double>(1, 0) = x;
 
-	x = east_max; y = north_min;
-	reprojected = coordTrans->Transform(1, &x, &y);
-	lon.at<double>(2, 0) = y; lat.at<double>(2, 0) = x;
+	//x = east_max; y = north_min;
+	//reprojected = coordTrans->Transform(1, &x, &y);
+	//lon.at<double>(2, 0) = y; lat.at<double>(2, 0) = x;
 
-	x = east_max; y = north_max;
-	reprojected = coordTrans->Transform(1, &x, &y);
-	lon.at<double>(3, 0) = y; lat.at<double>(3, 0) = x;
+	//x = east_max; y = north_max;
+	//reprojected = coordTrans->Transform(1, &x, &y);
+	//lon.at<double>(3, 0) = y; lat.at<double>(3, 0) = x;
 
-	double lon_min, lon_max, lat_min, lat_max;
-	cv::minMaxLoc(lon, &lon_min, &lon_max);
-	cv::minMaxLoc(lat, &lat_min, &lat_max);
-	delete coordTrans;
+	//double lon_min, lon_max, lat_min, lat_max;
+	//cv::minMaxLoc(lon, &lon_min, &lon_max);
+	//cv::minMaxLoc(lat, &lat_min, &lat_max);
+	//delete coordTrans;
 
-	
-	mapped_slc_rg.create(DTM.rows, DTM.cols, CV_64F); mapped_slc_rg = -1;
-	mapped_slc_az.create(DTM.rows, DTM.cols, CV_64F); mapped_slc_az = -1;
-	mapped_h0.create(DTM.rows, DTM.cols, CV_64F); mapped_h0 = -1;
-	Mat UTM_x, UTM_y;
-	DTM_lat.copyTo(UTM_x);
-	DTM_lon.copyTo(UTM_y);
-	OGRCoordinateTransformation* coordTrans2 = OGRCreateCoordinateTransformation(&monGeo , &monUtm);
-	//将DTM的经纬度转换为UTM
-	for (int i = 0; i < DTM.rows; i++)
-	{
-		for (int j = 0; j < DTM.cols; j++)
-		{
-			if (DTM.at<double>(i, j) < -9000.0) continue;
-			double xx, yy;
-			xx = DTM_lat.at<double>(i, j);
-			yy = DTM_lon.at<double>(i, j);
-			int reprojected = coordTrans2->Transform(1, &xx, &yy);
-			UTM_x.at<double>(i, j) = xx;
-			UTM_y.at<double>(i, j) = yy;
-		}
-	}
-	delete coordTrans2;
-	//开始投影
-	for (int i = 0; i < DTM.rows; i++)
-	{
-		for (int j = 0; j < DTM.cols; j++)
-		{
-			if (DTM.at<double>(i, j) < -9000.0) continue;
-			double utm_x, utm_y, h;
-			utm_x = UTM_x.at<double>(i, j);
-			utm_y = UTM_y.at<double>(i, j);
-			h = DTM.at<double>(i, j);
-			if (DTM_lon.at<double>(i, j) <= lon_min || DTM_lon.at<double>(i, j) >= lon_max ||
-				DTM_lat.at<double>(i, j) <= lat_min || DTM_lat.at<double>(i, j) >= lat_max
-				)
-			{
-				continue;
-			}
-			//插值得到2D地理编码下的距离方位坐标，参考DEM和3D地理编码系数
-			double easting, northing, rg0, az0, h0, rg_o1, rg_o2, az_o1, az_o2, upper, lower, left, right;
-			int row, col;
-			easting = (utm_x - east_min) / pixel_spacing;
-			northing = (utm_y - north_min) / pixel_spacing;
+	//
+	//mapped_slc_rg.create(DTM.rows, DTM.cols, CV_64F); mapped_slc_rg = -1;
+	//mapped_slc_az.create(DTM.rows, DTM.cols, CV_64F); mapped_slc_az = -1;
+	//mapped_h0.create(DTM.rows, DTM.cols, CV_64F); mapped_h0 = -1;
+	//Mat UTM_x, UTM_y;
+	//DTM_lat.copyTo(UTM_x);
+	//DTM_lon.copyTo(UTM_y);
+	//OGRCoordinateTransformation* coordTrans2 = OGRCreateCoordinateTransformation(&monGeo , &monUtm);
+	////将DTM的经纬度转换为UTM
+	//for (int i = 0; i < DTM.rows; i++)
+	//{
+	//	for (int j = 0; j < DTM.cols; j++)
+	//	{
+	//		if (DTM.at<double>(i, j) < -9000.0) continue;
+	//		double xx, yy;
+	//		xx = DTM_lat.at<double>(i, j);
+	//		yy = DTM_lon.at<double>(i, j);
+	//		int reprojected = coordTrans2->Transform(1, &xx, &yy);
+	//		UTM_x.at<double>(i, j) = xx;
+	//		UTM_y.at<double>(i, j) = yy;
+	//	}
+	//}
+	//delete coordTrans2;
+	////开始投影
+	//for (int i = 0; i < DTM.rows; i++)
+	//{
+	//	for (int j = 0; j < DTM.cols; j++)
+	//	{
+	//		if (DTM.at<double>(i, j) < -9000.0) continue;
+	//		double utm_x, utm_y, h;
+	//		utm_x = UTM_x.at<double>(i, j);
+	//		utm_y = UTM_y.at<double>(i, j);
+	//		h = DTM.at<double>(i, j);
+	//		if (DTM_lon.at<double>(i, j) <= lon_min || DTM_lon.at<double>(i, j) >= lon_max ||
+	//			DTM_lat.at<double>(i, j) <= lat_min || DTM_lat.at<double>(i, j) >= lat_max
+	//			)
+	//		{
+	//			continue;
+	//		}
+	//		//插值得到2D地理编码下的距离方位坐标，参考DEM和3D地理编码系数
+	//		double easting, northing, rg0, az0, h0, rg_o1, rg_o2, az_o1, az_o2, upper, lower, left, right;
+	//		int row, col;
+	//		easting = (utm_x - east_min) / pixel_spacing;
+	//		northing = (utm_y - north_min) / pixel_spacing;
 
-			row = sr2geo_h_ref.rows - 1 - int(floor(northing));
-			col = int(floor(easting));
-			if (row < 1 || row > sr2geo_h_ref.rows - 1 || col < 0 || col >= sr2geo_h_ref.cols - 1)
-			{
-				continue;
-			}
-			if (sr2geo_h_ref.at<double>(row, col) < -9000 ||
-				sr2geo_h_ref.at<double>(row, col + 1) < -9000 ||
-				sr2geo_h_ref.at<double>(row - 1, col) < -9000 ||
-				sr2geo_h_ref.at<double>(row - 1, col + 1) < -9000
-				)
-			{
-				continue;
-			}
-				
-
-
-			lower = sr2geo_rg.at<double>(row, col) + (easting - double(col)) * (sr2geo_rg.at<double>(row, col + 1) - sr2geo_rg.at<double>(row, col));
-			upper = sr2geo_rg.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo_rg.at<double>(row - 1, col + 1) - sr2geo_rg.at<double>(row - 1, col));
-			rg0 = lower + (upper - lower) * (northing - floor(northing));
-
-			lower = sr2geo_az.at<double>(row, col) + (easting - double(col)) * (sr2geo_az.at<double>(row, col + 1) - sr2geo_az.at<double>(row, col));
-			upper = sr2geo_az.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo_az.at<double>(row - 1, col + 1) - sr2geo_az.at<double>(row - 1, col));
-			az0 = lower + (upper - lower) * (northing - floor(northing));
-
-			lower = sr2geo_h_ref.at<double>(row, col) + (easting - double(col)) * (sr2geo_h_ref.at<double>(row, col + 1) - sr2geo_h_ref.at<double>(row, col));
-			upper = sr2geo_h_ref.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo_h_ref.at<double>(row - 1, col + 1) - sr2geo_h_ref.at<double>(row - 1, col));
-			h0 = lower + (upper - lower) * (northing - floor(northing));
-
-			lower = sr2geo3d_rg_o1.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_rg_o1.at<double>(row, col + 1) - sr2geo3d_rg_o1.at<double>(row, col));
-			upper = sr2geo3d_rg_o1.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_rg_o1.at<double>(row - 1, col + 1) - sr2geo3d_rg_o1.at<double>(row - 1, col));
-			rg_o1 = lower + (upper - lower) * (northing - floor(northing));
-
-			lower = sr2geo3d_rg_o2.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_rg_o2.at<double>(row, col + 1) - sr2geo3d_rg_o2.at<double>(row, col));
-			upper = sr2geo3d_rg_o2.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_rg_o2.at<double>(row - 1, col + 1) - sr2geo3d_rg_o2.at<double>(row - 1, col));
-			rg_o2 = lower + (upper - lower) * (northing - floor(northing));
-
-			lower = sr2geo3d_az_o1.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_az_o1.at<double>(row, col + 1) - sr2geo3d_az_o1.at<double>(row, col));
-			upper = sr2geo3d_az_o1.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_az_o1.at<double>(row - 1, col + 1) - sr2geo3d_az_o1.at<double>(row - 1, col));
-			az_o1 = lower + (upper - lower) * (northing - floor(northing));
-
-			lower = sr2geo3d_az_o2.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_az_o2.at<double>(row, col + 1) - sr2geo3d_az_o2.at<double>(row, col));
-			upper = sr2geo3d_az_o2.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_az_o2.at<double>(row - 1, col + 1) - sr2geo3d_az_o2.at<double>(row - 1, col));
-			az_o2 = lower + (upper - lower) * (northing - floor(northing));
+	//		row = sr2geo_h_ref.rows - 1 - int(floor(northing));
+	//		col = int(floor(easting));
+	//		if (row < 1 || row > sr2geo_h_ref.rows - 1 || col < 0 || col >= sr2geo_h_ref.cols - 1)
+	//		{
+	//			continue;
+	//		}
+	//		if (sr2geo_h_ref.at<double>(row, col) < -9000 ||
+	//			sr2geo_h_ref.at<double>(row, col + 1) < -9000 ||
+	//			sr2geo_h_ref.at<double>(row - 1, col) < -9000 ||
+	//			sr2geo_h_ref.at<double>(row - 1, col + 1) < -9000
+	//			)
+	//		{
+	//			continue;
+	//		}
+	//			
 
 
-			//left = sr2geo_rg.at<double>(row, col) + (northing - floor(northing)) * (sr2geo_rg.at<double>(row - 1, col) - sr2geo_rg.at<double>(row, col));
-			//right = sr2geo_rg.at<double>(row, col + 1) + (northing - floor(northing)) * (sr2geo_rg.at<double>(row - 1, col + 1) - sr2geo_rg.at<double>(row, col + 1));
-			//rg0 = left + (right - left) * (easting - double(col));
+	//		lower = sr2geo_rg.at<double>(row, col) + (easting - double(col)) * (sr2geo_rg.at<double>(row, col + 1) - sr2geo_rg.at<double>(row, col));
+	//		upper = sr2geo_rg.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo_rg.at<double>(row - 1, col + 1) - sr2geo_rg.at<double>(row - 1, col));
+	//		rg0 = lower + (upper - lower) * (northing - floor(northing));
 
-			//left = sr2geo_az.at<double>(row, col) + (northing - floor(northing)) * (sr2geo_az.at<double>(row - 1, col) - sr2geo_az.at<double>(row, col));
-			//right = sr2geo_az.at<double>(row, col + 1) + (northing - floor(northing)) * (sr2geo_az.at<double>(row - 1, col + 1) - sr2geo_az.at<double>(row, col + 1));
-			//az0 = left + (right - left) * (easting - double(col));
+	//		lower = sr2geo_az.at<double>(row, col) + (easting - double(col)) * (sr2geo_az.at<double>(row, col + 1) - sr2geo_az.at<double>(row, col));
+	//		upper = sr2geo_az.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo_az.at<double>(row - 1, col + 1) - sr2geo_az.at<double>(row - 1, col));
+	//		az0 = lower + (upper - lower) * (northing - floor(northing));
 
-			//left = sr2geo_h_ref.at<double>(row, col) + (northing - floor(northing)) * (sr2geo_h_ref.at<double>(row - 1, col) - sr2geo_h_ref.at<double>(row, col));
-			//right = sr2geo_h_ref.at<double>(row, col + 1) + (northing - floor(northing)) * (sr2geo_h_ref.at<double>(row - 1, col + 1) - sr2geo_h_ref.at<double>(row, col + 1));
-			//h0 = left + (right - left) * (easting - double(col));
+	//		lower = sr2geo_h_ref.at<double>(row, col) + (easting - double(col)) * (sr2geo_h_ref.at<double>(row, col + 1) - sr2geo_h_ref.at<double>(row, col));
+	//		upper = sr2geo_h_ref.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo_h_ref.at<double>(row - 1, col + 1) - sr2geo_h_ref.at<double>(row - 1, col));
+	//		h0 = lower + (upper - lower) * (northing - floor(northing));
 
-			double delta_h, rg_new, az_new;
-			delta_h = h - h0;
-			rg_new = rg0 + rg_o1 * delta_h + rg_o2 * delta_h * delta_h;
-			az_new = az0 + az_o1 * delta_h + az_o2 * delta_h * delta_h;
-	
-			mapped_slc_rg.at<double>(i, j) = rg0;
-			mapped_slc_az.at<double>(i, j) = az0;
-			mapped_h0.at<double>(i, j) = h0;
-		}
-	}
+	//		lower = sr2geo3d_rg_o1.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_rg_o1.at<double>(row, col + 1) - sr2geo3d_rg_o1.at<double>(row, col));
+	//		upper = sr2geo3d_rg_o1.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_rg_o1.at<double>(row - 1, col + 1) - sr2geo3d_rg_o1.at<double>(row - 1, col));
+	//		rg_o1 = lower + (upper - lower) * (northing - floor(northing));
+
+	//		lower = sr2geo3d_rg_o2.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_rg_o2.at<double>(row, col + 1) - sr2geo3d_rg_o2.at<double>(row, col));
+	//		upper = sr2geo3d_rg_o2.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_rg_o2.at<double>(row - 1, col + 1) - sr2geo3d_rg_o2.at<double>(row - 1, col));
+	//		rg_o2 = lower + (upper - lower) * (northing - floor(northing));
+
+	//		lower = sr2geo3d_az_o1.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_az_o1.at<double>(row, col + 1) - sr2geo3d_az_o1.at<double>(row, col));
+	//		upper = sr2geo3d_az_o1.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_az_o1.at<double>(row - 1, col + 1) - sr2geo3d_az_o1.at<double>(row - 1, col));
+	//		az_o1 = lower + (upper - lower) * (northing - floor(northing));
+
+	//		lower = sr2geo3d_az_o2.at<double>(row, col) + (easting - double(col)) * (sr2geo3d_az_o2.at<double>(row, col + 1) - sr2geo3d_az_o2.at<double>(row, col));
+	//		upper = sr2geo3d_az_o2.at<double>(row - 1, col) + (easting - double(col)) * (sr2geo3d_az_o2.at<double>(row - 1, col + 1) - sr2geo3d_az_o2.at<double>(row - 1, col));
+	//		az_o2 = lower + (upper - lower) * (northing - floor(northing));
+
+
+	//		//left = sr2geo_rg.at<double>(row, col) + (northing - floor(northing)) * (sr2geo_rg.at<double>(row - 1, col) - sr2geo_rg.at<double>(row, col));
+	//		//right = sr2geo_rg.at<double>(row, col + 1) + (northing - floor(northing)) * (sr2geo_rg.at<double>(row - 1, col + 1) - sr2geo_rg.at<double>(row, col + 1));
+	//		//rg0 = left + (right - left) * (easting - double(col));
+
+	//		//left = sr2geo_az.at<double>(row, col) + (northing - floor(northing)) * (sr2geo_az.at<double>(row - 1, col) - sr2geo_az.at<double>(row, col));
+	//		//right = sr2geo_az.at<double>(row, col + 1) + (northing - floor(northing)) * (sr2geo_az.at<double>(row - 1, col + 1) - sr2geo_az.at<double>(row, col + 1));
+	//		//az0 = left + (right - left) * (easting - double(col));
+
+	//		//left = sr2geo_h_ref.at<double>(row, col) + (northing - floor(northing)) * (sr2geo_h_ref.at<double>(row - 1, col) - sr2geo_h_ref.at<double>(row, col));
+	//		//right = sr2geo_h_ref.at<double>(row, col + 1) + (northing - floor(northing)) * (sr2geo_h_ref.at<double>(row - 1, col + 1) - sr2geo_h_ref.at<double>(row, col + 1));
+	//		//h0 = left + (right - left) * (easting - double(col));
+
+	//		double delta_h, rg_new, az_new;
+	//		delta_h = h - h0;
+	//		rg_new = rg0 + rg_o1 * delta_h + rg_o2 * delta_h * delta_h;
+	//		az_new = az0 + az_o1 * delta_h + az_o2 * delta_h * delta_h;
+	//
+	//		mapped_slc_rg.at<double>(i, j) = rg0;
+	//		mapped_slc_az.at<double>(i, j) = az0;
+	//		mapped_h0.at<double>(i, j) = h0;
+	//	}
+	//}
 	return 0;
 }
 
@@ -14356,46 +14382,57 @@ double Utils::getGeoidHeight(const std::string& geoidFilePath, double lon, doubl
 	// 注册 GDAL 驱动
 	GDALAllRegister();
 
-	// 打开 Geoid 文件
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(geoidFilePath.c_str(), GA_ReadOnly);
-	if (poDataset == nullptr) {
-		std::cerr << "无法打开 Geoid 文件: " << geoidFilePath << std::endl;
+	/* 打开 Geoid 文件 */
+	GDALDatasetH hDataset = GDALOpen(geoidFilePath.c_str(), GA_ReadOnly);
+	if (hDataset == NULL)
+	{
+		fprintf(stderr,
+			"无法打开 Geoid 文件: %s\n",
+			geoidFilePath);
 		return 0.0;
 	}
 
-	// 获取第一个波段（Geoid 数据）
-	GDALRasterBand* poBand = poDataset->GetRasterBand(1);
-	if (poBand == nullptr) {
-		std::cerr << "无法获取波段数据" << std::endl;
-		GDALClose(poDataset);
+	/* 获取第一个波段 */
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "无法获取波段数据\n");
+		GDALClose(hDataset);
 		return 0.0;
 	}
 
-	// 获取 Geoid 文件的地理变换信息
+	/* 获取地理变换 */
 	double adfGeoTransform[6];
-	if (poDataset->GetGeoTransform(adfGeoTransform) != CE_None) {
-		std::cerr << "无法获取地理变换信息" << std::endl;
-		GDALClose(poDataset);
+	if (GDALGetGeoTransform(hDataset, adfGeoTransform) != CE_None)
+	{
+		fprintf(stderr, "无法获取地理变换信息\n");
+		GDALClose(hDataset);
 		return 0.0;
 	}
 
-	// 将经纬度转换为像素坐标
+	/* 经纬度 → 像素坐标 */
 	double x = (lon - adfGeoTransform[0]) / adfGeoTransform[1];
 	double y = (lat - adfGeoTransform[3]) / adfGeoTransform[5];
 
-	// 插值获取 Geoid Height
-	float geoidHeight = 0.0;
-	if (poBand->RasterIO(GF_Read, static_cast<int>(x), static_cast<int>(y), 1, 1,
-		&geoidHeight, 1, 1, GDT_Float32, 0, 0) != CE_None) {
-		std::cerr << "无法读取 Geoid 数据" << std::endl;
-		GDALClose(poDataset);
+	/* 读取 Geoid Height */
+	float geoidHeight = 0.0f;
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		(int)x, (int)y,
+		1, 1,
+		&geoidHeight,
+		1, 1,
+		GDT_Float32,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "无法读取 Geoid 数据\n");
+		GDALClose(hDataset);
 		return 0.0;
 	}
 
-	// 关闭数据集
-	GDALClose(poDataset);
-
-	return static_cast<double>(geoidHeight);
+	GDALClose(hDataset);
+	return (double)geoidHeight;
 }
 
 

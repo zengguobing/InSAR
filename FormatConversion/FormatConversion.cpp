@@ -1,5 +1,7 @@
 #include"pch.h"
-#include"gdal_priv.h"
+//#include"gdal_priv.h"
+#include"gdal.h"
+#include "cpl_conv.h"
 #include"..\include\FormatConversion.h"
 //#include<atlconv.h>
 //#include<tchar.h>
@@ -873,72 +875,108 @@ int FormatConversion::read_slc_from_TSXcos(const char* filename, ComplexMat& slc
 		fprintf(stderr, "read_slc_from_TSXcos(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//打开cos文件
-	if (poDataset == NULL)
+
+	GDALAllRegister();   /* 注册驱动 */
+
+	GDALDatasetH hDataset = GDALOpen(filename, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
 		fprintf(stderr, "read_slc_from_TSXcos(): failed to open %s!\n", filename);
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
-	int xsize = 0;
-	int ysize = 0;
-	if (nBand == 1)
-	{
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//获取指向波段1的指针
-		xsize = poBand->GetXSize();		//cols
-		ysize = poBand->GetYSize();		//rows
-		if (xsize < 0 || ysize < 0)
-		{
-			fprintf(stderr, "read_slc_from_TSXcos(): band rows and cols error!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-		int* pbuf = NULL;
-		pbuf = (int*)malloc(sizeof(int) * xsize * ysize);		//分配数据指针空间
-		if (!pbuf)
-		{
-			fprintf(stderr, "read_slc_from_TSXcos(): out of memory!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-		int i, j;
-		//ComplexMat CMat;
-		//CMat.re = Mat::zeros(ysize, xsize, CV_64F);
-		//CMat.im = Mat::zeros(ysize, xsize, CV_64F);
-		slc.re.create(ysize, xsize, CV_16S);
-		slc.im.create(ysize, xsize, CV_16S);
-		for (i = 0; i < ysize; i++)
-			for (j = 0; j < xsize; j++)
-			{
-				/*将数据按照实部、虚部读入Mat中
-				由于cos按照大端存储，RasterIO会自动转化为小端，但会导致实部虚部位置颠倒
-				因此高16位为虚部，低16位为实部
-				*/
-				slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
-				slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
-			}
-		if (pbuf)
-		{
-			free(pbuf);
-			pbuf = NULL;
-		}
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-	}
-	else
+
+	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand != 1)
 	{
 		fprintf(stderr, "read_slc_from_TSXcos(): number of Bands != 1\n");
-		GDALClose(poDataset);
+		GDALClose(hDataset);
 		GDALDestroyDriverManager();
 		return -1;
 	}
-	
+
+	/* 获取波段 1 */
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc_from_TSXcos(): failed to get band 1\n");
+		GDALClose(hDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand);
+	int ysize = GDALGetRasterBandYSize(hBand);
+
+	if (xsize <= 0 || ysize <= 0)
+	{
+		fprintf(stderr, "read_slc_from_TSXcos(): band rows and cols error!\n");
+		GDALClose(hDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+
+	GDALDataType dataType = GDALGetRasterDataType(hBand);
+	if (dataType != GDT_CInt16)
+	{
+		fprintf(stderr, "read_slc_from_TSXcos(): unexpected data type\n");
+		GDALClose(hDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+
+	/* 分配缓冲区（int32，实部+虚部打包） */
+	int* pbuf = (int*)malloc(sizeof(int) * xsize * ysize);
+	if (pbuf == NULL)
+	{
+		fprintf(stderr, "read_slc_from_TSXcos(): out of memory!\n");
+		GDALClose(hDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+
+	/* 读取数据 */
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_CInt16,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "read_slc_from_TSXcos(): RasterIO failed\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		GDALDestroyDriverManager();
+		return -1;
+	}
+
+	/* 创建输出矩阵（假设 slc.re / slc.im 已存在） */
+	slc.re.create(ysize, xsize, CV_16S);
+	slc.im.create(ysize, xsize, CV_16S);
+
+	/* COS 数据解析：
+	   高 16 位：虚部
+	   低 16 位：实部
+	*/
+	for (int i = 0; i < ysize; ++i)
+	{
+		for (int j = 0; j < xsize; ++j)
+		{
+			int v = pbuf[j + i * xsize];
+			slc.re.ptr<short>(i)[j] = (short)((v << 16) >> 16);
+			slc.im.ptr<short>(i)[j] = (short)(v >> 16);
+		}
+	}
+
+	free(pbuf);
+	pbuf = NULL;
+
+	GDALClose(hDataset);
+	GDALDestroyDriverManager();
+
 	return 0;
 }
 
@@ -11362,69 +11400,94 @@ int DigitalElevationModel::getElevation(double lon, double lat, double* elevatio
 
 int DigitalElevationModel::geotiffread(const char* filename, Mat& outDEM)
 {
-	if (!filename) return -1;
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(filename, GA_ReadOnly);	//打开geotiff文件
-	if (poDataset == NULL)
+	if (!filename)
+		return -1;
+
+	GDALAllRegister();
+
+	GDALDatasetH hDataset = GDALOpen(filename, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
 		fprintf(stderr, "geotiffread(): failed to open %s!\n", filename);
-		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（geotiff应为1）
-	int xsize = 0;
-	int ysize = 0;
-	if (nBand == 1)
-	{
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);	//获取指向波段1的指针
-		xsize = poBand->GetXSize();		//cols
-		ysize = poBand->GetYSize();		//rows
-		if (xsize < 0 || ysize < 0)
-		{
-			fprintf(stderr, "geotiffread(): band rows and cols error!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，geotiff应为16位整型
-		short* pbuf = NULL;
-		pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
-		if (!pbuf)
-		{
-			fprintf(stderr, "geotiffread(): out of memory!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-		int i, j;
-		outDEM.create(ysize, xsize, CV_16S);
-		memcpy(outDEM.data, pbuf, sizeof(short) * xsize * ysize);
-		if (pbuf)
-		{
-			free(pbuf);
-			pbuf = NULL;
-		}
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-	}
-	else
+
+	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand != 1)
 	{
 		fprintf(stderr, "geotiffread(): number of Bands != 1\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
+
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "geotiffread(): failed to get band!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand);  // cols
+	int ysize = GDALGetRasterBandYSize(hBand);  // rows
+	if (xsize <= 0 || ysize <= 0)
+	{
+		fprintf(stderr, "geotiffread(): band rows and cols error!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	/* 原始数据类型（常见为 GDT_Int16） */
+	GDALDataType srcType = GDALGetRasterDataType(hBand);
+
+	/* 分配缓冲区（short） */
+	short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize);
+	if (!pbuf)
+	{
+		fprintf(stderr, "geotiffread(): out of memory!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	/* 读取：强制以 GDT_Int16 输出，避免 memcpy 类型不匹配 */
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		srcType,     /* 强制输出为 int16 */
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "geotiffread(): RasterIO failed!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	/* 拷贝到 OpenCV Mat */
+	outDEM.create(ysize, xsize, CV_16S);
+	memcpy(outDEM.data, pbuf, sizeof(short) * xsize * ysize);
+
+	free(pbuf);
+	GDALClose(hDataset);
+
+	/* 将负值置零（保持你原来的 OpenMP 逻辑） */
 	int rows = outDEM.rows;
 	int cols = outDEM.cols;
+
 #pragma omp parallel for schedule(guided)
 	for (int i = 0; i < rows; i++)
 	{
+		short* rowp = outDEM.ptr<short>(i);
 		for (int j = 0; j < cols; j++)
 		{
-			if (outDEM.at<short>(i, j) < 0) outDEM.at<short>(i, j) = 0;
+			if (rowp[j] < 0)
+				rowp[j] = 0;
 		}
 	}
+
 	return 0;
 }
 
@@ -12986,76 +13049,114 @@ int HTHT_reader::read_slc(const char* data_file, ComplexMat& slc)
 		fprintf(stderr, "read_slc(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//打开tiff文件
-	if (poDataset == NULL)
+
+	GDALAllRegister();
+
+	GDALDatasetH hDataset = GDALOpen(data_file, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
-		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
-	int xsize = 0;
-	int ysize = 0;
-	//获取指向波段1的指针
-	GDALRasterBand* poBand = poDataset->GetRasterBand(1);	
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+
+	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand < 2)
+	{
+		fprintf(stderr, "read_slc(): number of bands < 2!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	/* ---------- Band 1: Real ---------- */
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 1!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand);
+	int ysize = GDALGetRasterBandYSize(hBand);
+	if (xsize <= 0 || ysize <= 0)
 	{
 		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
-	GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	short* pbuf = NULL;
-	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+
+	short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize);
 	if (!pbuf)
 	{
 		fprintf(stderr, "read_slc(): out of memory!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	int i, j;
-	slc.re.create(ysize, xsize, CV_16S);
-	slc.im.create(ysize, xsize, CV_16S);
-	size_t offset = 0;
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
-		{
-			slc.re.ptr<short>(i)[j] = pbuf[offset];
-			offset++;
-		}
-	//获取指向波段2的指针
-	poBand = poDataset->GetRasterBand(2);
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Int16,
+		0, 0) != CE_None)
 	{
-		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-		return -1;
-	}
-	dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	offset = 0;
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
-		{
-			slc.im.ptr<short>(i)[j] = pbuf[offset];
-			offset++;
-		}
-	if (pbuf)
-	{
+		fprintf(stderr, "read_slc(): RasterIO failed on band 1!\n");
 		free(pbuf);
-		pbuf = NULL;
+		GDALClose(hDataset);
+		return -1;
 	}
-	GDALClose(poDataset);
-	GDALDestroyDriverManager();
+
+	slc.re.create(ysize, xsize, CV_16S);
+
+	size_t offset = 0;
+	for (int i = 0; i < ysize; i++)
+	{
+		short* rowp = slc.re.ptr<short>(i);
+		for (int j = 0; j < xsize; j++)
+			rowp[j] = pbuf[offset++];
+	}
+
+	/* ---------- Band 2: Imag ---------- */
+	hBand = GDALGetRasterBand(hDataset, 2);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 2!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Int16,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "read_slc(): RasterIO failed on band 2!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	slc.im.create(ysize, xsize, CV_16S);
+
+	offset = 0;
+	for (int i = 0; i < ysize; i++)
+	{
+		short* rowp = slc.im.ptr<short>(i);
+		for (int j = 0; j < xsize; j++)
+			rowp[j] = pbuf[offset++];
+	}
+
+	free(pbuf);
+	GDALClose(hDataset);
 
 	return 0;
 }
@@ -13286,76 +13387,114 @@ int AIRSAT_reader::read_slc(const char* data_file, ComplexMat& slc)
 		fprintf(stderr, "read_slc(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//打开tiff文件
-	if (poDataset == NULL)
+
+	GDALAllRegister();
+
+	GDALDatasetH hDataset = GDALOpen(data_file, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
-		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
-	int xsize = 0;
-	int ysize = 0;
-	//获取指向波段1的指针
-	GDALRasterBand* poBand = poDataset->GetRasterBand(1);
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+
+	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand < 2)
+	{
+		fprintf(stderr, "read_slc(): number of bands < 2!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	/* ================= Band 1 : Real ================= */
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 1!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand);
+	int ysize = GDALGetRasterBandYSize(hBand);
+	if (xsize <= 0 || ysize <= 0)
 	{
 		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
-	GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	short* pbuf = NULL;
-	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+
+	short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize);
 	if (!pbuf)
 	{
 		fprintf(stderr, "read_slc(): out of memory!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	int i, j;
-	slc.re.create(ysize, xsize, CV_16S);
-	slc.im.create(ysize, xsize, CV_16S);
-	size_t offset = 0;
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
-		{
-			slc.re.ptr<short>(i)[j] = pbuf[offset];
-			offset++;
-		}
-	//获取指向波段2的指针
-	poBand = poDataset->GetRasterBand(2);
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Int16,
+		0, 0) != CE_None)
 	{
-		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-		return -1;
-	}
-	dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	offset = 0;
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
-		{
-			slc.im.ptr<short>(i)[j] = pbuf[offset];
-			offset++;
-		}
-	if (pbuf)
-	{
+		fprintf(stderr, "read_slc(): RasterIO failed on band 1!\n");
 		free(pbuf);
-		pbuf = NULL;
+		GDALClose(hDataset);
+		return -1;
 	}
-	GDALClose(poDataset);
-	GDALDestroyDriverManager();
+
+	slc.re.create(ysize, xsize, CV_16S);
+
+	size_t offset = 0;
+	for (int i = 0; i < ysize; i++)
+	{
+		short* rowp = slc.re.ptr<short>(i);
+		for (int j = 0; j < xsize; j++)
+			rowp[j] = pbuf[offset++];
+	}
+
+	/* ================= Band 2 : Imag ================= */
+	hBand = GDALGetRasterBand(hDataset, 2);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 2!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Int16,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "read_slc(): RasterIO failed on band 2!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	slc.im.create(ysize, xsize, CV_16S);
+
+	offset = 0;
+	for (int i = 0; i < ysize; i++)
+	{
+		short* rowp = slc.im.ptr<short>(i);
+		for (int j = 0; j < xsize; j++)
+			rowp[j] = pbuf[offset++];
+	}
+
+	free(pbuf);
+	GDALClose(hDataset);
 
 	return 0;
 }
@@ -13547,6 +13686,384 @@ int AIRSAT_reader::write_to_h5(const char* dst_h5)
 	return 0;
 }
 
+Biomass1A_reader::Biomass1A_reader(
+	const char* amp_file,
+	const char* phase_file,
+	const char* xml_file, 
+	const char* orbit_file, 
+	const char* polarization
+)
+{
+	b_initialized = false;
+	this->Biomass1A_reader_amp_file = amp_file;
+	this->Biomass1A_reader_phase_file = phase_file;
+	this->Biomass1A_reader_orbit_file = orbit_file;
+	this->Biomass1A_reader_xml_file = xml_file;
+	this->polarization = polarization;
+}
+
+Biomass1A_reader::~Biomass1A_reader()
+{
+}
+
+int Biomass1A_reader::init()
+{
+	if (b_initialized) return 0;
+	if (Biomass1A_reader_amp_file.empty() || Biomass1A_reader_phase_file.empty() || Biomass1A_reader_orbit_file.empty())
+	{
+		fprintf(stderr, "init(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_data(this->Biomass1A_reader_xml_file.c_str(), this->Biomass1A_reader_amp_file.c_str(),
+		this->Biomass1A_reader_phase_file.c_str(), this->Biomass1A_reader_orbit_file.c_str());
+	if (ret < 0)
+	{
+		fprintf(stderr, "init(): read_data failed!\n");
+		return -1;
+	}
+	b_initialized = true;
+	return 0;
+}
+
+int Biomass1A_reader::UTC2GPS(const char* utc_time, double* gps_time)
+{
+	if (utc_time == NULL || gps_time == NULL)
+	{
+		fprintf(stderr, "UTC2GPS(): input check failed!\n");
+		return -1;
+	}
+	int ret, year, month, day, hour, minute, second, s;
+	double sec;
+	ret = sscanf(utc_time, "UTC=%d-%d-%dT%d:%d:%lf\n", &year, &month, &day, &hour, &minute, &sec);
+	if (ret != 6)
+	{
+		fprintf(stderr, "UTC2GPS(): %s: unknown format!\n", utc_time);
+		return -1;
+	}
+	second = int(floor(sec));
+	sec = sec - (double)second;
+	tm TM;
+	TM.tm_year = year - 1900;
+	TM.tm_mon = month - 1;
+	TM.tm_mday = day;
+	TM.tm_hour = hour;
+	TM.tm_min = minute;
+	TM.tm_sec = second;
+	TM.tm_isdst = 0;
+	*gps_time = double(mktime(&TM) - 315964809) + sec;
+	return 0;
+}
+
+int Biomass1A_reader::read_slc(
+	const char* amp_file,
+	const char* phase_file,
+	ComplexMat& slc)
+{
+	if (amp_file == NULL || phase_file == NULL)
+	{
+		fprintf(stderr, "read_slc(): input check failed!\n");
+		return -1;
+	}
+
+	GDALAllRegister();
+
+	/* ===================== 读取幅度 ===================== */
+	GDALDatasetH hDS_amp = GDALOpen(amp_file, GA_ReadOnly);
+	if (hDS_amp == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to open %s!\n", amp_file);
+		return -1;
+	}
+
+	GDALRasterBandH hBand_amp = GDALGetRasterBand(hDS_amp, 1);
+	if (hBand_amp == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get amplitude band!\n");
+		GDALClose(hDS_amp);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand_amp);
+	int ysize = GDALGetRasterBandYSize(hBand_amp);
+
+	if (xsize <= 0 || ysize <= 0)
+	{
+		fprintf(stderr, "read_slc(): band rows and cols error!\n");
+		GDALClose(hDS_amp);
+		return -1;
+	}
+
+	GDALDataType dataType = GDALGetRasterDataType(hBand_amp);
+
+	float* pbuf = (float*)malloc(sizeof(float) * xsize * ysize);
+	if (!pbuf)
+	{
+		fprintf(stderr, "read_slc(): out of memory!\n");
+		GDALClose(hDS_amp);
+		return -1;
+	}
+
+	if (GDALRasterIO(
+		hBand_amp,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		dataType,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "read_slc(): RasterIO (amplitude) failed!\n");
+		free(pbuf);
+		GDALClose(hDS_amp);
+		return -1;
+	}
+
+	cv::Mat amplitude(ysize, xsize, CV_32F);
+	size_t offset = 0;
+	for (int i = 0; i < ysize; i++)
+		for (int j = 0; j < xsize; j++)
+			amplitude.ptr<float>(i)[j] = pbuf[offset++];
+
+	GDALClose(hDS_amp);
+
+	/* ===================== 读取相位 ===================== */
+	GDALDatasetH hDS_phase = GDALOpen(phase_file, GA_ReadOnly);
+	if (hDS_phase == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to open %s!\n", phase_file);
+		free(pbuf);
+		return -1;
+	}
+
+	GDALRasterBandH hBand_phase = GDALGetRasterBand(hDS_phase, 1);
+	if (hBand_phase == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get phase band!\n");
+		GDALClose(hDS_phase);
+		free(pbuf);
+		return -1;
+	}
+
+	if (GDALRasterIO(
+		hBand_phase,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		dataType,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "read_slc(): RasterIO (phase) failed!\n");
+		GDALClose(hDS_phase);
+		free(pbuf);
+		return -1;
+	}
+
+	cv::Mat phase(ysize, xsize, CV_32F);
+	offset = 0;
+	for (int i = 0; i < ysize; i++)
+		for (int j = 0; j < xsize; j++)
+			phase.ptr<float>(i)[j] = pbuf[offset++];
+
+	GDALClose(hDS_phase);
+	free(pbuf);
+
+	/* ===================== 构造复数 SLC ===================== */
+	slc.re.create(ysize, xsize, CV_32F);
+	slc.im.create(ysize, xsize, CV_32F);
+
+	for (int i = 0; i < ysize; i++)
+		for (int j = 0; j < xsize; j++)
+		{
+			float amp = amplitude.at<float>(i, j);
+			float phs = phase.at<float>(i, j);
+			slc.re.ptr<float>(i)[j] = amp * cosf(phs);
+			slc.im.ptr<float>(i)[j] = amp * sinf(phs);
+		}
+
+	return 0;
+}
+
+int Biomass1A_reader::read_data(
+	const char* xml_file,
+	const char* amp_file,
+	const char* phase_file,
+	const char* orbit_file)
+{
+	if (!xml_file || !amp_file || !phase_file || !orbit_file)
+	{
+		fprintf(stderr, "read_data(): input check failed!\n");
+		return -1;
+	}
+	int ret = read_slc(amp_file, phase_file, slc);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't read slc from %s\n", amp_file);
+		return -1;
+	}
+	XMLFile xmldoc, orbitdoc;
+	ret = xmldoc.XMLFile_load(xml_file);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't load %s\n", xml_file);
+		return -1;
+	}
+	ret = orbitdoc.XMLFile_load(orbit_file);
+	if (ret < 0)
+	{
+		fprintf(stderr, "read_data(): can't load %s\n", orbit_file);
+		return -1;
+	}
+
+	//读取轨道参数
+	TiXmlElement* pnode, * pchild, * pchild1;
+	int numOfstateVec = 0;
+	pnode = NULL;
+	ret = orbitdoc.find_node("OSV", pnode);
+	while (pnode)
+	{
+		numOfstateVec += 1;
+		pnode = pnode->NextSiblingElement();
+	}
+
+	ret = orbitdoc.find_node("OSV", pnode);
+	double time, x, y, z, vx, vy, vz;
+	state_vec.create(numOfstateVec, 7, CV_64F);
+	for (int i = 0; i < numOfstateVec; i++)
+	{
+		if (!pnode) break;
+		//GPS时间
+		ret = orbitdoc._find_node(pnode, "UTC", pchild);
+		ret = this->UTC2GPS(pchild->GetText(), &time);
+		//位置x
+		ret = orbitdoc._find_node(pnode, "X", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &x);
+		//位置y
+		ret = orbitdoc._find_node(pnode, "Y", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &y);
+		//位置z
+		ret = orbitdoc._find_node(pnode, "Z", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &z);
+		//速度x
+		ret = orbitdoc._find_node(pnode, "VX", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vx);
+		//速度y
+		ret = orbitdoc._find_node(pnode, "VY", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vy);
+		//速度z
+		ret = orbitdoc._find_node(pnode, "VZ", pchild);
+		ret = sscanf(pchild->GetText(), "%lf", &vz);
+
+		//赋值
+		state_vec.at<double>(i, 0) = time;
+		state_vec.at<double>(i, 1) = x;
+		state_vec.at<double>(i, 2) = y;
+		state_vec.at<double>(i, 3) = z;
+		state_vec.at<double>(i, 4) = vx;
+		state_vec.at<double>(i, 5) = vy;
+		state_vec.at<double>(i, 6) = vz;
+		pnode = pnode->NextSiblingElement();
+	}
+
+	//拍摄起始时间
+	ret = xmldoc.find_node("firstLineAzimuthTime", pnode);
+	this->acquisition_start_time = pnode->GetText();
+	//拍摄结束时间
+	ret = xmldoc.find_node("lastLineAzimuthTime", pnode);
+	this->acquisition_stop_time = pnode->GetText();
+	//卫星名称
+	ret = xmldoc.get_str_para("mission", this->sensor);
+	//脉冲重复频率
+	ret = xmldoc.get_double_para("azimuthTimeInterval", &this->prf);
+	this->prf = 1.0 / this->prf;
+	//中心频率
+	ret = xmldoc.get_double_para("radarCarrierFrequency", &this->carrier_frequency);
+	this->carrier_frequency = this->carrier_frequency;
+	//最近斜距
+	ret = xmldoc.get_double_para("firstSampleSlantRangeTime", &this->slant_range_first_pixel);
+	this->slant_range_first_pixel = this->slant_range_first_pixel * VEL_C / 2.0;
+	//距离方位采样间隔/分辨率
+	ret = xmldoc.get_double_para("rangePixelSpacing", &this->range_spacing);
+	ret = xmldoc.get_double_para("azimuthPixelSpacing", &this->azimuth_spacing);
+	ret = xmldoc.get_double_para("rangePixelSpacing", &this->range_resolution);
+	ret = xmldoc.get_double_para("azimuthPixelSpacing", &this->azimuth_resolution);
+
+	//中心下视角incidenceAngleMidSwath
+	double inc_near = 0, inc_far = 0;
+	this->inc_center = (inc_near + inc_far) * 0.5;
+
+	//四角经纬度
+	ret = xmldoc.find_node("footprint", pnode);
+	ret = sscanf(pnode->GetText(), "%lf %lf %lf %lf %lf %lf %lf %lf",
+		&this->bottomleft_lat, &this->bottomleft_lon,
+		&this->bottomright_lat, &this->bottomright_lon, 
+		&this->topright_lat, &this->topright_lon, 
+		&this->topleft_lat, &this->topleft_lon);
+
+	return 0;
+}
+
+int Biomass1A_reader::write_to_h5(const char* dst_h5)
+{
+	if (!dst_h5)
+	{
+		fprintf(stderr, "write_to_h5(): input check failed!\n");
+		return -1;
+	}
+	int ret;
+	if (!b_initialized)
+	{
+		ret = init();
+		if (ret < 0)
+		{
+			fprintf(stderr, "write_to_h5(): init() failed!\n");
+			return -1;
+		}
+	}
+	FormatConversion conversion;
+	ret = conversion.creat_new_h5(dst_h5);
+	if (ret < 0)
+	{
+		fprintf(stderr, "write_to_h5(): failed to create %s!\n", dst_h5);
+		return -1;
+	}
+	conversion.write_array_to_h5(dst_h5, "state_vec", this->state_vec);
+
+	conversion.write_double_to_h5(dst_h5, "azimuth_spacing", this->azimuth_spacing);
+	conversion.write_double_to_h5(dst_h5, "range_spacing", this->range_spacing);
+	conversion.write_double_to_h5(dst_h5, "slant_range_first_pixel", this->slant_range_first_pixel);
+	conversion.write_double_to_h5(dst_h5, "carrier_frequency", this->carrier_frequency);
+	conversion.write_double_to_h5(dst_h5, "prf", this->prf);
+	conversion.write_double_to_h5(dst_h5, "inc_center", this->inc_center);
+
+	conversion.write_double_to_h5(dst_h5, "topLeftLat", this->topleft_lat);
+	conversion.write_double_to_h5(dst_h5, "topLeftLon", this->topleft_lon);
+	conversion.write_double_to_h5(dst_h5, "topRightLat", this->topright_lat);
+	conversion.write_double_to_h5(dst_h5, "topRightLon", this->topright_lon);
+	conversion.write_double_to_h5(dst_h5, "bottomLeftLat", this->bottomleft_lat);
+	conversion.write_double_to_h5(dst_h5, "bottomLeftLon", this->bottomleft_lon);
+	conversion.write_double_to_h5(dst_h5, "bottomRightLat", this->bottomright_lat);
+	conversion.write_double_to_h5(dst_h5, "bottomRightLon", this->bottomright_lon);
+
+	conversion.write_str_to_h5(dst_h5, "sensor", this->sensor.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_start_time", this->acquisition_start_time.c_str());
+	conversion.write_str_to_h5(dst_h5, "acquisition_stop_time", this->acquisition_stop_time.c_str());
+	conversion.write_str_to_h5(dst_h5, "polarization", this->polarization.c_str());
+
+	conversion.write_int_to_h5(dst_h5, "azimuth_len", slc.GetRows());
+	conversion.write_int_to_h5(dst_h5, "range_len", slc.GetCols());
+
+	conversion.write_int_to_h5(dst_h5, "offset_row", 0);
+	conversion.write_int_to_h5(dst_h5, "offset_col", 0);
+
+
+	conversion.write_slc_to_h5(dst_h5, slc);
+
+	return 0;
+}
+
 LUTAN_reader::LUTAN_reader(const char* data_file, const char* xml_file, int mode)
 {
 	b_initialized = false;
@@ -13584,76 +14101,114 @@ int LUTAN_reader::read_slc(const char* data_file, ComplexMat& slc)
 		fprintf(stderr, "read_slc(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//打开tiff文件
-	if (poDataset == NULL)
+
+	GDALAllRegister();
+
+	GDALDatasetH hDataset = GDALOpen(data_file, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
-		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
-	int xsize = 0;
-	int ysize = 0;
-	//获取指向波段1的指针
-	GDALRasterBand* poBand = poDataset->GetRasterBand(1);
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+
+	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand < 2)
+	{
+		fprintf(stderr, "read_slc(): number of bands < 2!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	/* ================= Band 1 : Real ================= */
+	GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 1!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand);
+	int ysize = GDALGetRasterBandYSize(hBand);
+	if (xsize <= 0 || ysize <= 0)
 	{
 		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
-	GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	short* pbuf = NULL;
-	pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+
+	short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize);
 	if (!pbuf)
 	{
 		fprintf(stderr, "read_slc(): out of memory!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+		GDALClose(hDataset);
 		return -1;
 	}
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	int i, j;
-	slc.re.create(ysize, xsize, CV_16S);
-	slc.im.create(ysize, xsize, CV_16S);
-	size_t offset = 0;
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
-		{
-			slc.re.ptr<short>(i)[j] = pbuf[offset];
-			offset++;
-		}
-	//获取指向波段2的指针
-	poBand = poDataset->GetRasterBand(2);
-	xsize = poBand->GetXSize();		//cols
-	ysize = poBand->GetYSize();		//rows
-	if (xsize < 0 || ysize < 0)
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Int16,
+		0, 0) != CE_None)
 	{
-		fprintf(stderr, "read_slc(): band rows and cols error!\n");
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-		return -1;
-	}
-	dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-	poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-	offset = 0;
-	for (i = 0; i < ysize; i++)
-		for (j = 0; j < xsize; j++)
-		{
-			slc.im.ptr<short>(i)[j] = pbuf[offset];
-			offset++;
-		}
-	if (pbuf)
-	{
+		fprintf(stderr, "read_slc(): RasterIO failed on band 1!\n");
 		free(pbuf);
-		pbuf = NULL;
+		GDALClose(hDataset);
+		return -1;
 	}
-	GDALClose(poDataset);
-	GDALDestroyDriverManager();
+
+	slc.re.create(ysize, xsize, CV_16S);
+
+	size_t offset = 0;
+	for (int i = 0; i < ysize; i++)
+	{
+		short* rowp = slc.re.ptr<short>(i);
+		for (int j = 0; j < xsize; j++)
+			rowp[j] = pbuf[offset++];
+	}
+
+	/* ================= Band 2 : Imag ================= */
+	hBand = GDALGetRasterBand(hDataset, 2);
+	if (hBand == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 2!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	if (GDALRasterIO(
+		hBand,
+		GF_Read,
+		0, 0,
+		xsize, ysize,
+		pbuf,
+		xsize, ysize,
+		GDT_Int16,
+		0, 0) != CE_None)
+	{
+		fprintf(stderr, "read_slc(): RasterIO failed on band 2!\n");
+		free(pbuf);
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	slc.im.create(ysize, xsize, CV_16S);
+
+	offset = 0;
+	for (int i = 0; i < ysize; i++)
+	{
+		short* rowp = slc.im.ptr<short>(i);
+		for (int j = 0; j < xsize; j++)
+			rowp[j] = pbuf[offset++];
+	}
+
+	free(pbuf);
+	GDALClose(hDataset);
 
 	return 0;
 }
@@ -13895,123 +14450,182 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 		fprintf(stderr, "read_slc(): input check failed!\n");
 		return -1;
 	}
-	GDALAllRegister();	//注册已知驱动
-	GDALDataset* poDataset = (GDALDataset*)GDALOpen(data_file, GA_ReadOnly);	//打开tiff文件
-	if (poDataset == NULL)
+
+	GDALAllRegister();
+
+	GDALDatasetH hDataset = GDALOpen(data_file, GA_ReadOnly);
+	if (hDataset == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
-		GDALDestroyDriverManager();
 		return -1;
 	}
-	int nBand = poDataset->GetRasterCount();	//获取波段数（cos应为1）
+
+	int nBand = GDALGetRasterCount(hDataset);
+
+	/* =========================================================
+	 * 情况一：单波段 packed complex（Int32）
+	 * 低 16 bit : Real
+	 * 高 16 bit : Imag
+	 * ========================================================= */
 	if (nBand == 1)
 	{
-		int xsize = 0;
-		int ysize = 0;
-		//获取指向波段1的指针
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);
-		xsize = poBand->GetXSize();		//cols
-		ysize = poBand->GetYSize();		//rows
-		if (xsize < 0 || ysize < 0)
+		GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+		if (hBand == NULL)
+		{
+			fprintf(stderr, "read_slc(): failed to get band 1!\n");
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		int xsize = GDALGetRasterBandXSize(hBand);
+		int ysize = GDALGetRasterBandYSize(hBand);
+		if (xsize <= 0 || ysize <= 0)
 		{
 			fprintf(stderr, "read_slc(): band rows and cols error!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
+			GDALClose(hDataset);
 			return -1;
 		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-		int* pbuf = NULL;
-		pbuf = (int*)malloc(sizeof(int) * xsize * ysize);		//分配数据指针空间
-		if (!pbuf)
-		{
-			fprintf(stderr, "read_slc_from_TSXcos(): out of memory!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-		int i, j;
-		slc.re.create(ysize, xsize, CV_16S);
-		slc.im.create(ysize, xsize, CV_16S);
-		for (i = 0; i < ysize; i++)
-			for (j = 0; j < xsize; j++)
-			{
-				slc.re.ptr<short>(i)[j] = (pbuf[j + i * xsize] << 16) >> 16;
-				slc.im.ptr<short>(i)[j] = (pbuf[j + i * xsize] >> 16);
-			}
-		if (pbuf)
-		{
-			free(pbuf);
-			pbuf = NULL;
-		}
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
-	}
-	else
-	{
-		int xsize = 0;
-		int ysize = 0;
-		//获取指向波段1的指针
-		GDALRasterBand* poBand = poDataset->GetRasterBand(1);
-		xsize = poBand->GetXSize();		//cols
-		ysize = poBand->GetYSize();		//rows
-		if (xsize < 0 || ysize < 0)
-		{
-			fprintf(stderr, "read_slc(): band rows and cols error!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
-			return -1;
-		}
-		GDALDataType dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-		short* pbuf = NULL;
-		pbuf = (short*)malloc(sizeof(short) * xsize * ysize);		//分配数据指针空间
+
+		int* pbuf = (int*)malloc(sizeof(int) * xsize * ysize);
 		if (!pbuf)
 		{
 			fprintf(stderr, "read_slc(): out of memory!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
+			GDALClose(hDataset);
 			return -1;
 		}
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-		int i, j;
+
+		if (GDALRasterIO(
+			hBand,
+			GF_Read,
+			0, 0,
+			xsize, ysize,
+			pbuf,
+			xsize, ysize,
+			GDT_Int32,
+			0, 0) != CE_None)
+		{
+			fprintf(stderr, "read_slc(): RasterIO failed!\n");
+			free(pbuf);
+			GDALClose(hDataset);
+			return -1;
+		}
+
 		slc.re.create(ysize, xsize, CV_16S);
 		slc.im.create(ysize, xsize, CV_16S);
-		size_t offset = 0;
-		for (i = 0; i < ysize; i++)
-			for (j = 0; j < xsize; j++)
-			{
-				slc.re.ptr<short>(i)[j] = pbuf[offset];
-				offset++;
-			}
-		//获取指向波段2的指针
-		poBand = poDataset->GetRasterBand(2);
-		xsize = poBand->GetXSize();		//cols
-		ysize = poBand->GetYSize();		//rows
-		if (xsize < 0 || ysize < 0)
+
+		for (int i = 0; i < ysize; i++)
 		{
-			fprintf(stderr, "read_slc(): band rows and cols error!\n");
-			GDALClose(poDataset);
-			GDALDestroyDriverManager();
+			short* re_row = slc.re.ptr<short>(i);
+			short* im_row = slc.im.ptr<short>(i);
+			for (int j = 0; j < xsize; j++)
+			{
+				int v = pbuf[j + i * xsize];
+				re_row[j] = (short)(v & 0xFFFF);
+				im_row[j] = (short)((v >> 16) & 0xFFFF);
+			}
+		}
+
+		free(pbuf);
+		GDALClose(hDataset);
+	}
+	/* =========================================================
+	 * 情况二：双波段 SLC
+	 * Band 1 : Real (Int16)
+	 * Band 2 : Imag (Int16)
+	 * ========================================================= */
+	else
+	{
+		GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+		if (hBand == NULL)
+		{
+			fprintf(stderr, "read_slc(): failed to get band 1!\n");
+			GDALClose(hDataset);
 			return -1;
 		}
-		dataType = poBand->GetRasterDataType();	//数据存储类型，cos应为GDT_CInt16
-		poBand->RasterIO(GF_Read, 0, 0, xsize, ysize, pbuf, xsize, ysize, dataType, 0, 0);		//读取复图像数据到pbuf中
-		offset = 0;
-		for (i = 0; i < ysize; i++)
-			for (j = 0; j < xsize; j++)
-			{
-				slc.im.ptr<short>(i)[j] = pbuf[offset];
-				offset++;
-			}
-		if (pbuf)
+
+		int xsize = GDALGetRasterBandXSize(hBand);
+		int ysize = GDALGetRasterBandYSize(hBand);
+		if (xsize <= 0 || ysize <= 0)
 		{
-			free(pbuf);
-			pbuf = NULL;
+			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+			GDALClose(hDataset);
+			return -1;
 		}
-		GDALClose(poDataset);
-		GDALDestroyDriverManager();
+
+		short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize);
+		if (!pbuf)
+		{
+			fprintf(stderr, "read_slc(): out of memory!\n");
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		/* ---------- Band 1 : Real ---------- */
+		if (GDALRasterIO(
+			hBand,
+			GF_Read,
+			0, 0,
+			xsize, ysize,
+			pbuf,
+			xsize, ysize,
+			GDT_Int16,
+			0, 0) != CE_None)
+		{
+			fprintf(stderr, "read_slc(): RasterIO failed on band 1!\n");
+			free(pbuf);
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		slc.re.create(ysize, xsize, CV_16S);
+
+		size_t offset = 0;
+		for (int i = 0; i < ysize; i++)
+		{
+			short* row = slc.re.ptr<short>(i);
+			for (int j = 0; j < xsize; j++)
+				row[j] = pbuf[offset++];
+		}
+
+		/* ---------- Band 2 : Imag ---------- */
+		hBand = GDALGetRasterBand(hDataset, 2);
+		if (hBand == NULL)
+		{
+			fprintf(stderr, "read_slc(): failed to get band 2!\n");
+			free(pbuf);
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		if (GDALRasterIO(
+			hBand,
+			GF_Read,
+			0, 0,
+			xsize, ysize,
+			pbuf,
+			xsize, ysize,
+			GDT_Int16,
+			0, 0) != CE_None)
+		{
+			fprintf(stderr, "read_slc(): RasterIO failed on band 2!\n");
+			free(pbuf);
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		slc.im.create(ysize, xsize, CV_16S);
+
+		offset = 0;
+		for (int i = 0; i < ysize; i++)
+		{
+			short* row = slc.im.ptr<short>(i);
+			for (int j = 0; j < xsize; j++)
+				row[j] = pbuf[offset++];
+		}
+
+		free(pbuf);
+		GDALClose(hDataset);
 	}
-	
 
 	return 0;
 }
