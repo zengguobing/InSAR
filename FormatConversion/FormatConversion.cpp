@@ -13764,7 +13764,11 @@ int Biomass1A_reader::read_slc(
 		fprintf(stderr, "read_slc(): input check failed!\n");
 		return -1;
 	}
-
+	int ix = 1;
+	if (this->polarization == "HH") ix = 1;
+	else if (this->polarization == "HV") ix = 2;
+	else if (this->polarization == "VH") ix = 3;
+	else  ix = 4;
 	GDALAllRegister();
 
 	/* ===================== ¶ÁÈ¡·ù¶È ===================== */
@@ -13775,7 +13779,7 @@ int Biomass1A_reader::read_slc(
 		return -1;
 	}
 
-	GDALRasterBandH hBand_amp = GDALGetRasterBand(hDS_amp, 1);
+	GDALRasterBandH hBand_amp = GDALGetRasterBand(hDS_amp, ix);
 	if (hBand_amp == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to get amplitude band!\n");
@@ -13836,7 +13840,7 @@ int Biomass1A_reader::read_slc(
 		return -1;
 	}
 
-	GDALRasterBandH hBand_phase = GDALGetRasterBand(hDS_phase, 1);
+	GDALRasterBandH hBand_phase = GDALGetRasterBand(hDS_phase, ix);
 	if (hBand_phase == NULL)
 	{
 		fprintf(stderr, "read_slc(): failed to get phase band!\n");
