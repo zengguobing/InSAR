@@ -9985,7 +9985,7 @@ int Utils::getCopernicusDEMFileName(double lonMin, double lonMax, double latMin,
 	}
 	for (int i = int(startLat); i > int(endLat); i--)
 	{
-		string NS_sign = i - 1 > 0 ? "N" : "S";
+		string NS_sign = i - 1 >= 0 ? "N" : "S";
 		memset(tmp, 0, 512);
 		if (abs(i - 1) < 10)
 		{
@@ -9999,7 +9999,7 @@ int Utils::getCopernicusDEMFileName(double lonMin, double lonMax, double latMin,
 		for (int j = int(startLon2); j < int(endLon2); j++)
 		{	
 			if (j >= 180) j = j - 360;
-			string EW_sign = j > 0 ? "E" : "W";
+			string EW_sign = j >= 0 ? "E" : "W";
 			memset(tmp, 0, 512);
 			if (fabs(j) < 100)
 			{
