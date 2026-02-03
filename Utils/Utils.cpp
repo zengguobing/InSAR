@@ -9337,6 +9337,238 @@ int Utils::getCopernicusDEM(
 
 
 	}
+	//DEM在3个方格内
+	else if (CopernicusDEMFileName.size() == 3)
+	{
+	int xx, yy, xx2, yy2, xx3,yy3;
+
+	if (CopernicusDEMFileName[0].substr(22, 1) == string("N") && CopernicusDEMFileName[0].substr(29, 1) == string("E"))
+	{
+		sscanf(CopernicusDEMFileName[0].c_str(), "Copernicus_DSM_COG_10_N%d_00_E%d_00_DEM.tif", &xx, &yy);
+	}
+	else if (CopernicusDEMFileName[0].substr(22, 1) == string("N") && CopernicusDEMFileName[0].substr(29, 1) == string("W"))
+	{
+		sscanf(CopernicusDEMFileName[0].c_str(), "Copernicus_DSM_COG_10_N%d_00_W%d_00_DEM.tif", &xx, &yy);
+		yy = -yy;
+	}
+	else if (CopernicusDEMFileName[0].substr(22, 1) == string("S") && CopernicusDEMFileName[0].substr(29, 1) == string("E"))
+	{
+		sscanf(CopernicusDEMFileName[0].c_str(), "Copernicus_DSM_COG_10_S%d_00_E%d_00_DEM.tif", &xx, &yy);
+		xx = -xx;
+	}
+	else if (CopernicusDEMFileName[0].substr(22, 1) == string("S") && CopernicusDEMFileName[0].substr(29, 1) == string("W"))
+	{
+		sscanf(CopernicusDEMFileName[0].c_str(), "Copernicus_DSM_COG_10_S%d_00_W%d_00_DEM.tif", &xx, &yy);
+		yy = -yy;
+		xx = -xx;
+	}
+	else
+	{
+		return -1;
+	}
+
+	if (CopernicusDEMFileName[1].substr(22, 1) == string("N") && CopernicusDEMFileName[1].substr(29, 1) == string("E"))
+	{
+		sscanf(CopernicusDEMFileName[1].c_str(), "Copernicus_DSM_COG_10_N%d_00_E%d_00_DEM.tif", &xx2, &yy2);
+	}
+	else if (CopernicusDEMFileName[1].substr(22, 1) == string("N") && CopernicusDEMFileName[1].substr(29, 1) == string("W"))
+	{
+		sscanf(CopernicusDEMFileName[1].c_str(), "Copernicus_DSM_COG_10_N%d_00_W%d_00_DEM.tif", &xx2, &yy2);
+		yy2 = -yy2;
+	}
+	else if (CopernicusDEMFileName[1].substr(22, 1) == string("S") && CopernicusDEMFileName[1].substr(29, 1) == string("E"))
+	{
+		sscanf(CopernicusDEMFileName[1].c_str(), "Copernicus_DSM_COG_10_S%d_00_E%d_00_DEM.tif", &xx2, &yy2);
+		xx2 = -xx2;
+	}
+	else if (CopernicusDEMFileName[1].substr(22, 1) == string("S") && CopernicusDEMFileName[1].substr(29, 1) == string("W"))
+	{
+		sscanf(CopernicusDEMFileName[1].c_str(), "Copernicus_DSM_COG_10_S%d_00_W%d_00_DEM.tif", &xx2, &yy2);
+		yy2 = -yy2;
+		xx2 = -xx2;
+	}
+	else
+	{
+		return -1;
+	}
+
+	if (CopernicusDEMFileName[2].substr(22, 1) == string("N") && CopernicusDEMFileName[0].substr(29, 1) == string("E"))
+	{
+		sscanf(CopernicusDEMFileName[2].c_str(), "Copernicus_DSM_COG_10_N%d_00_E%d_00_DEM.tif", &xx3, &yy3);
+	}
+	else if (CopernicusDEMFileName[2].substr(22, 1) == string("N") && CopernicusDEMFileName[0].substr(29, 1) == string("W"))
+	{
+		sscanf(CopernicusDEMFileName[2].c_str(), "Copernicus_DSM_COG_10_N%d_00_W%d_00_DEM.tif", &xx3, &yy3);
+		yy3 = -yy3;
+	}
+	else if (CopernicusDEMFileName[2].substr(22, 1) == string("S") && CopernicusDEMFileName[0].substr(29, 1) == string("E"))
+	{
+		sscanf(CopernicusDEMFileName[2].c_str(), "Copernicus_DSM_COG_10_S%d_00_E%d_00_DEM.tif", &xx3, &yy3);
+		xx3 = -xx3;
+	}
+	else if (CopernicusDEMFileName[2].substr(22, 1) == string("S") && CopernicusDEMFileName[0].substr(29, 1) == string("W"))
+	{
+		sscanf(CopernicusDEMFileName[2].c_str(), "Copernicus_DSM_COG_10_S%d_00_W%d_00_DEM.tif", &xx3, &yy3);
+		yy3 = -yy3;
+		xx3 = -xx3;
+	}
+	else
+	{
+		return -1;
+	}
+
+	//同一列
+	if (yy == yy2)
+	{
+		Mat outDEM, outDEM2, outDEM3;
+
+		string path = DEMPath + string("\\") + CopernicusDEMFileName[0];
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = CopernicusDEM_geotiffread(path.c_str(), outDEM);
+
+
+		path = DEMPath + string("\\") + CopernicusDEMFileName[1];
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = CopernicusDEM_geotiffread(path.c_str(), outDEM2);
+
+		path = DEMPath + string("\\") + CopernicusDEMFileName[2];
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = CopernicusDEM_geotiffread(path.c_str(), outDEM3);
+
+		latSpacing = 1.0 / double(outDEM3.rows);
+		lonSpacing = 1.0 / double(outDEM3.cols);
+
+		if (outDEM.size() != outDEM3.size())
+		{
+			resize(outDEM, outDEM, outDEM3.size());
+		}
+
+		if (outDEM2.size() != outDEM3.size())
+		{
+			resize(outDEM2, outDEM2, outDEM3.size());
+		}
+
+		cv::vconcat(outDEM, outDEM2, outDEM);
+		cv::vconcat(outDEM, outDEM3, outDEM);
+		total_rows = outDEM.rows;
+		total_cols = outDEM.cols;
+
+		latUpperLeft = xx + 1;
+		latLowerRight = xx - 2;
+		lonUpperLeft = yy;
+		lonLowerRight = yy + 1;
+
+		startRow = (latUpperLeft - latMax) / latSpacing;
+		startRow = startRow < 1 ? 1 : startRow;
+		startRow = startRow > total_rows ? total_rows : startRow;
+		endRow = (latUpperLeft - latMin) / latSpacing;
+		endRow = endRow < 1 ? 1 : endRow;
+		endRow = endRow > total_rows ? total_rows : endRow;
+		if (fabs(lonMax - lonMin) > 180.0)
+		{
+			startCol = (lonMax - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMin + 360.0 - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+		}
+		else
+		{
+			startCol = (lonMin - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMax - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+		}
+
+		outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+		*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+		*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+		*lon_spacing = lonSpacing;
+		*lat_spacing = latSpacing;
+	}
+	//同一行
+	else if (xx == xx2)
+	{
+		Mat outDEM, outDEM2, outDEM3;
+
+		string path = DEMPath + string("\\") + CopernicusDEMFileName[0];
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = CopernicusDEM_geotiffread(path.c_str(), outDEM);
+
+
+		path = DEMPath + string("\\") + CopernicusDEMFileName[1];
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = CopernicusDEM_geotiffread(path.c_str(), outDEM2);
+
+		path = DEMPath + string("\\") + CopernicusDEMFileName[2];
+		std::replace(path.begin(), path.end(), '/', '\\');
+		ret = CopernicusDEM_geotiffread(path.c_str(), outDEM3);
+
+		latSpacing = 1.0 / double(outDEM3.rows);
+		lonSpacing = 1.0 / double(outDEM3.cols);
+
+		if (outDEM.size() != outDEM3.size())
+		{
+			resize(outDEM, outDEM, outDEM3.size());
+		}
+		if (outDEM2.size() != outDEM3.size())
+		{
+			resize(outDEM2, outDEM2, outDEM3.size());
+		}
+
+		cv::hconcat(outDEM, outDEM2, outDEM);
+		cv::hconcat(outDEM, outDEM3, outDEM);
+		total_rows = outDEM.rows;
+		total_cols = outDEM.cols;
+
+		lonUpperLeft = yy;
+		lonLowerRight = yy + 3;
+		latUpperLeft = xx + 1;
+		latLowerRight = xx;
+
+		startRow = (latUpperLeft - latMax) / latSpacing;
+		startRow = startRow < 1 ? 1 : startRow;
+		startRow = startRow > total_rows ? total_rows : startRow;
+		endRow = (latUpperLeft - latMin) / latSpacing;
+		endRow = endRow < 1 ? 1 : endRow;
+		endRow = endRow > total_rows ? total_rows : endRow;
+		if (fabs(lonMax - lonMin) > 180.0)
+		{
+			startCol = (lonMax - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMin + 360.0 - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+		}
+		else
+		{
+			startCol = (lonMin - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMax - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+		}
+
+
+		outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+		*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+		*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+		*lon_spacing = lonSpacing;
+		*lat_spacing = latSpacing;
+	}
+	else
+	{
+		return -1;
+	}
+
+
+
+	}
 	//DEM在4个方格内
 	else if (CopernicusDEMFileName.size() == 4)
 	{
