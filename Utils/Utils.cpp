@@ -9975,6 +9975,37 @@ int Utils::getCopernicusDEM(
 		latLowerRight = xx[0] - 2;
 		lonUpperLeft = yy[0];
 		lonLowerRight = yy[0] + 3;
+
+		startRow = (latUpperLeft - latMax) / latSpacing;
+		startRow = startRow < 1 ? 1 : startRow;
+		startRow = startRow > total_rows ? total_rows : startRow;
+		endRow = (latUpperLeft - latMin) / latSpacing;
+		endRow = endRow < 1 ? 1 : endRow;
+		endRow = endRow > total_rows ? total_rows : endRow;
+		if (fabs(lonMax - lonMin) > 180.0)
+		{
+			startCol = (lonMax - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMin + 360.0 - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+		}
+		else
+		{
+			startCol = (lonMin - lonUpperLeft) / lonSpacing;
+			startCol = startCol < 1 ? 1 : startCol;
+			startCol = startCol > total_cols ? total_cols : startCol;
+			endCol = (lonMax - lonUpperLeft) / lonSpacing;
+			endCol = endCol < 1 ? 1 : endCol;
+			endCol = endCol > total_cols ? total_cols : endCol;
+		}
+
+		outDEM(cv::Range(startRow - 1, endRow), cv::Range(startCol - 1, endCol)).copyTo(DEM_out);
+		*lonUL = lonUpperLeft + (startCol - 1) * lonSpacing;
+		*latUL = latUpperLeft - (startRow - 1) * latSpacing;
+		*lon_spacing = lonSpacing;
+		*lat_spacing = latSpacing;
 	}
 	else return -1;
 	return 0;
