@@ -63,6 +63,8 @@ public:
 	bool isempty()const;
 	/*转换类型*/
 	void convertTo(ComplexMat& out, int type) const;
+	/*拷贝复制*/
+	ComplexMat clone() const;
 	Mat re;
 	Mat im;
 private:

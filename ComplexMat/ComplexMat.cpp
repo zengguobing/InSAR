@@ -521,3 +521,11 @@ void ComplexMat::convertTo(ComplexMat& out, int type) const
 		this->im.convertTo(out.im, type);
 	}
 }
+
+ComplexMat ComplexMat::clone() const
+{
+	ComplexMat out;
+	re.copyTo(out.re);
+	im.copyTo(out.im);
+	return out;
+}
