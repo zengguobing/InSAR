@@ -236,6 +236,8 @@ public:
 	* @param interp_times                 84坐标系DEM插值倍数（默认值为10）
 	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
 	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @param geocoding_cali_factor_rg     反向地理编码距离向校正因子（默认为0）
+	* @param geocoding_cali_factor_az     反向地理编码方位向校正因子（默认为0）
 	* @return 成功返回0，否则返回-1
 	*/
 	int demMapping(
@@ -258,7 +260,9 @@ public:
 		Mat& stateVector,
 		int interp_times = 10,
 		double lon_spacing = 5.0 / 6000.0,
-		double lat_spacing = 5.0 / 6000.0
+		double lat_spacing = 5.0 / 6000.0,
+		int geocoding_cali_factor_rg = 0,
+		int geocoding_cali_factor_az = 0
 	);
 	/*@brief 将WGS84坐标DEM投影到相应的SAR坐标系中
 	* @param DEM84                        84坐标系DEM（float型矩阵）
@@ -284,6 +288,49 @@ public:
 	int demMapping_float(
 		Mat& DEM84,
 		Mat& mappedDEM,
+		double lon_upperleft,
+		double lat_upperleft,
+		int offset_row,
+		int offset_col,
+		int sceneHeight,
+		int sceneWidth,
+		double prf,
+		double rangeSpacing,
+		double wavelength,
+		double nearRangeTime,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		Mat& stateVector,
+		int interp_times = 10,
+		double lon_spacing = 1.0 / 2400.0,
+		double lat_spacing = 1.0 / 3600.0
+	);
+	/*@brief 将WGS84坐标参数投影到相应的SAR坐标系中
+	* @param input                        84坐标系待投影参数（float型矩阵）
+	* @param DEM84                        84坐标系DEM（float型矩阵）
+	* @param output                       投影后参数（返回值,float型矩阵）
+	* @param lon_upperleft                84坐标系DEM左上角经度
+	* @param lat_upperleft                84坐标系DEM左上角纬度
+	* @param offset_row                   SAR图像在原场景中的行偏移量
+	* @param offset_col                   SAR图像在原场景中的列偏移量
+	* @param sceneHeight                  SAR图像场景高度
+	* @param sceneWidth                   SAR图像场景宽度
+	* @param prf                          SAR卫星雷达脉冲重复频率
+	* @param rangeSpacing                 距离向采样间隔（m）
+	* @param wavelength                   波长
+	* @param nearRangeTime                最近斜距时间
+	* @param acquisitionStartTime         方位向采样开始时间
+	* @param acquisitionStopTime          方位向采样结束时间
+	* @param stateVector                  卫星轨道数据（未插值）
+	* @param interp_times                 84坐标系DEM插值倍数（默认值为10）
+	* @param lon_spacing                  84坐标系DEM经度采样间隔（°）
+	* @param lat_spacing                  84坐标系DEM纬度采样间隔（°）
+	* @return 成功返回0，否则返回-1
+	*/
+	int paraMapping_float(
+		Mat& input,
+		Mat& DEM84,
+		Mat& output,
 		double lon_upperleft,
 		double lat_upperleft,
 		int offset_row,

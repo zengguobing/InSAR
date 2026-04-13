@@ -66,20 +66,69 @@ Registration::Registration()
 Registration::~Registration()
 {
 }
-int Registration::fft2(Mat& Src, Mat& Dst)
+//int Registration::fft2(Mat& Src, Mat& Dst)
+//{
+//	if (Src.rows < 1 ||
+//		Src.cols < 1 ||
+//		Src.channels() != 1||
+//		Src.type() != CV_64F)
+//	{
+//		fprintf(stderr, "fft2(): input check failed!\n\n");
+//		return -1;
+//	}
+//	Mat planes[] = { Mat_<double>(Src), Mat::zeros(Src.size(), CV_64F) };
+//	Mat complexImg;
+//	merge(planes, 2, complexImg);
+//	dft(complexImg, Dst);
+//	return 0;
+//}
+
+int Registration::fft2(cv::Mat& Src, cv::Mat& Dst)
 {
 	if (Src.rows < 1 ||
 		Src.cols < 1 ||
-		Src.channels() != 1||
-		Src.type() != CV_64F)
+		Src.channels() != 1)
 	{
 		fprintf(stderr, "fft2(): input check failed!\n\n");
 		return -1;
 	}
-	Mat planes[] = { Mat_<double>(Src), Mat::zeros(Src.size(), CV_64F) };
-	Mat complexImg;
-	merge(planes, 2, complexImg);
-	dft(complexImg, Dst);
+
+	const int srcType = Src.type();
+
+	// 支持 short / float / double
+	if (srcType != CV_16S &&
+		srcType != CV_32F &&
+		srcType != CV_64F)
+	{
+		fprintf(stderr, "fft2(): unsupported input type! Only CV_16S, CV_32F, CV_64F are supported.\n\n");
+		return -1;
+	}
+
+	cv::Mat srcConverted;
+	cv::Mat planes[2];
+	cv::Mat complexImg;
+
+	if (srcType == CV_64F)
+	{
+		// double 输入 -> double 复数输出
+		planes[0] = Src;
+		planes[1] = cv::Mat::zeros(Src.size(), CV_64F);
+		cv::merge(planes, 2, complexImg);   // complexImg: CV_64FC2
+	}
+	else
+	{
+		// short / float 输入 -> float 复数输出
+		if (srcType == CV_16S)
+			Src.convertTo(srcConverted, CV_32F);
+		else
+			srcConverted = Src;
+
+		planes[0] = srcConverted;
+		planes[1] = cv::Mat::zeros(Src.size(), CV_32F);
+		cv::merge(planes, 2, complexImg);   // complexImg: CV_32FC2
+	}
+
+	cv::dft(complexImg, Dst);
 	return 0;
 }
 
@@ -113,42 +162,96 @@ int Registration::fftshift2(Mat& matrix)
 
 int Registration::real_coherent(ComplexMat& Master, ComplexMat& Slave, int* offset_row, int* offset_col)
 {
+	//if (Master.GetRows() < 1 ||
+	//	Master.GetCols() < 1 ||
+	//	Master.GetRows() != Slave.GetRows() ||
+	//	Master.GetCols() != Slave.GetCols())
+	//{
+	//	fprintf(stderr, "real_coherent(): input check failed!\n\n");
+	//	return -1;
+	//}
+	//int ret;
+	//Mat img1;
+	//Mat img2;
+	//img1 = Master.GetMod();
+	//img2 = Slave.GetMod();
+	//Mat im1fft;
+	//Mat im2fft;
+	//ret = fft2(img1, im1fft);
+	//if (return_check(ret, "fft2(*, *)", error_head)) return -1;
+	//ret = fft2(img2, im2fft);
+	//if (return_check(ret, "fft2(*, *)", error_head)) return -1;
+	//Mat spectrum;
+	//mulSpectrums(im1fft, im2fft, spectrum, 0, true);
+
+	//Mat result;
+	//idft(spectrum, result, DFT_REAL_OUTPUT);//需要显示图像时可以用DFT_SCALE
+
+	//ret = fftshift2(result);
+	//if (return_check(ret, "fftshift2(*)", error_head)) return -1;
+	//normalize(result, result, 0, 1, NORM_MINMAX);
+
+	//int r = result.rows / 2;
+	//int c = result.cols / 2;
+	//Point peak_loc;
+	//minMaxLoc(result, NULL, NULL, NULL, &peak_loc);
+
+	//*offset_row = r - peak_loc.y;
+	//*offset_col = c - peak_loc.x;
+	//return 0;
+
+
 	if (Master.GetRows() < 1 ||
 		Master.GetCols() < 1 ||
 		Master.GetRows() != Slave.GetRows() ||
-		Master.GetCols() != Slave.GetCols())
+		Master.GetCols() != Slave.GetCols() ||
+		offset_row == nullptr ||
+		offset_col == nullptr)
 	{
 		fprintf(stderr, "real_coherent(): input check failed!\n\n");
 		return -1;
 	}
+
 	int ret;
-	Mat img1;
-	Mat img2;
-	img1 = Master.GetMod();
-	img2 = Slave.GetMod();
-	Mat im1fft;
-	Mat im2fft;
-	ret = fft2(img1, im1fft);
+
+	// 1) 幅度图
+	Mat img1 = Master.GetMod();
+	Mat img2 = Slave.GetMod();
+
+	// 2) FFT
+	Mat fft1, fft2_mat;
+	ret = fft2(img1, fft1);
 	if (return_check(ret, "fft2(*, *)", error_head)) return -1;
-	ret = fft2(img2, im2fft);
+	img1.release();
+
+	ret = fft2(img2, fft2_mat);
 	if (return_check(ret, "fft2(*, *)", error_head)) return -1;
-	Mat spectrum;
-	mulSpectrums(im1fft, im2fft, spectrum, 0, true);
+	img2.release();
 
-	Mat result;
-	idft(spectrum, result, DFT_REAL_OUTPUT);//需要显示图像时可以用DFT_SCALE
+	// 3) 直接复用 fft1 作为互功率谱结果，少开一个 spectrum
+	mulSpectrums(fft1, fft2_mat, fft1, 0, true);
+	fft2_mat.release();
 
-	ret = fftshift2(result);
-	if (return_check(ret, "fftshift2(*)", error_head)) return -1;
-	normalize(result, result, 0, 1, NORM_MINMAX);
+	// 4) IFFT 得到相关图
+	Mat corr;
+	idft(fft1, corr, DFT_REAL_OUTPUT);
+	fft1.release();
 
-	int r = result.rows / 2;
-	int c = result.cols / 2;
+	// 不再做 normalize，也不做 fftshift2
+	// 直接在未 shift 的相关图中找峰值
 	Point peak_loc;
-	minMaxLoc(result, NULL, NULL, NULL, &peak_loc);
+	minMaxLoc(corr, nullptr, nullptr, nullptr, &peak_loc);
 
-	*offset_row = r - peak_loc.y;
-	*offset_col = c - peak_loc.x;
+	const int rows = corr.rows;
+	const int cols = corr.cols;
+	const int half_r = rows / 2;
+	const int half_c = cols / 2;
+
+	// 将未 shift 的峰值位置转换为有符号偏移
+	// 对应原来 fftshift 后 center - peak 的效果
+	*offset_row = (peak_loc.y <= half_r) ? (-peak_loc.y) : (rows - peak_loc.y);
+	*offset_col = (peak_loc.x <= half_c) ? (-peak_loc.x) : (cols - peak_loc.x);
+
 	return 0;
 }
 

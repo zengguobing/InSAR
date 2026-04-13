@@ -1169,7 +1169,9 @@ int Deflat::demMapping(
 	Mat& stateVector, 
 	int interp_times, 
 	double lon_spacing,
-	double lat_spacing
+	double lat_spacing,
+	int geocoding_cali_factor_rg,
+	int geocoding_cali_factor_az
 )
 {
 	if (DEM84.empty() ||
@@ -1207,6 +1209,9 @@ int Deflat::demMapping(
 	//temp_lonlat.copyTo(mappedLat); temp_lonlat.copyTo(mappedLon);
 	short invalid = -999;
 	DEM_out = DEM_out + invalid;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + lat_spacing / 2.0 - lat_spacing / (double)interp_times * 0.5;
+	lon_upperleft = lon_upperleft - lon_spacing / 2.0 + lon_spacing / (double)interp_times * 0.5;
 	lon_spacing = lon_spacing / (double)interp_times;
 	lat_spacing = lat_spacing / (double)interp_times;
 	//初始化轨道类
@@ -1302,8 +1307,8 @@ int Deflat::demMapping(
 
 
 			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
-			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
-			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval + geocoding_cali_factor_az;
+			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing + geocoding_cali_factor_rg;
 			azimuthIndex = azimuthIndex - offset_row;
 			rangeIndex = rangeIndex - offset_col;
 			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
@@ -1608,6 +1613,9 @@ int Deflat::demMapping_float(
 
 	float invalid = -999.0;
 	DEM_out = DEM_out + invalid;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + lat_spacing / 2.0 - lat_spacing / (double)interp_times * 0.5;
+	lon_upperleft = lon_upperleft - lon_spacing / 2.0 + lon_spacing / (double)interp_times * 0.5;
 	lon_spacing = lon_spacing / (double)interp_times;
 	lat_spacing = lat_spacing / (double)interp_times;
 	//初始化轨道类
@@ -1821,6 +1829,272 @@ int Deflat::demMapping_float(
 	}
 
 	cv::GaussianBlur(DEM_out, mappedDEM, cv::Size(5, 5), 1, 1);
+	return 0;
+}
+
+int Deflat::paraMapping_float(
+	Mat& input, 
+	Mat& DEM84, 
+	Mat& output, 
+	double lon_upperleft, 
+	double lat_upperleft, 
+	int offset_row, int offset_col, int sceneHeight, int sceneWidth, double prf,
+	double rangeSpacing, double wavelength, double nearRangeTime,
+	double acquisitionStartTime, double acquisitionStopTime, Mat& stateVector,
+	int interp_times, double lon_spacing, double lat_spacing)
+{
+	if (DEM84.empty() ||
+		DEM84.type() != CV_32F ||
+		input.empty() ||
+		input.type() != CV_32F ||
+		input.rows != DEM84.rows ||
+		input.cols != DEM84.cols ||
+		sceneHeight < 10 ||
+		sceneWidth < 10 ||
+		prf <= 0 ||
+		wavelength <= 0 ||
+		rangeSpacing <= 0 ||
+		nearRangeTime <= 0 ||
+		acquisitionStartTime <= 0 ||
+		acquisitionStopTime <= 0 ||
+		lon_spacing <= 0.0 ||
+		lat_spacing <= 0.0 ||
+		fabs(lon_upperleft) > 180.0 ||
+		fabs(lat_upperleft) > 90.0 ||
+		stateVector.type() != CV_64F ||
+		stateVector.rows < 5 ||
+		stateVector.cols != 7
+		)
+	{
+		fprintf(stderr, "demMapping_float(): input check failed!\n");
+		return -1;
+	}
+
+	//84坐标系DEM插值
+	Mat DEM, parameter, stateVector_interp;
+	interp_times = interp_times < 1 ? 1 : interp_times;
+	cv::resize(DEM84, DEM, cv::Size(DEM84.cols * interp_times, DEM84.rows * interp_times));
+	cv::resize(input, parameter, cv::Size(DEM84.cols * interp_times, DEM84.rows * interp_times));
+	Mat DEM_out = Mat::zeros(sceneHeight, sceneWidth, CV_32F);
+
+	float invalid = -999.0;
+	DEM_out = DEM_out + invalid;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + lat_spacing / 2.0 - lat_spacing / (double)interp_times * 0.5;
+	lon_upperleft = lon_upperleft - lon_spacing / 2.0 + lon_spacing / (double)interp_times * 0.5;
+	lon_spacing = lon_spacing / (double)interp_times;
+	lat_spacing = lat_spacing / (double)interp_times;
+	//初始化轨道类
+	double delta_t = stateVector.at<double>(1, 0) - stateVector.at<double>(0, 0);
+	orbitStateVectors stateVectors(stateVector, acquisitionStartTime, acquisitionStopTime, delta_t);
+	stateVectors.applyOrbit();
+	int ret;
+	double time_interval = 1.0 / prf;
+
+	int DEM_rows = DEM.rows; int DEM_cols = DEM.cols;
+	double dopplerFrequency = 0.0;
+	//采用迭代计算每个DEM点在SAR图像中的坐标，以减小计算量
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < DEM_rows; i++)
+	{
+		for (int j = 0; j < DEM_cols; j++)
+		{
+			Position groundPosition;
+			double lat, lon, height;
+			lat = lat_upperleft - (double)i * lat_spacing;
+			lon = lon_upperleft + (double)j * lon_spacing;
+			lon = lon > 180.0 ? (lon - 360.0) : lon;
+			height = DEM.at<float>(i, j);
+			Utils::ell2xyz(lon, lat, height, groundPosition);
+			int numOrbitVec = stateVectors.newStateVectors.rows;
+			double firstVecTime = 0.0;
+			double secondVecTime = 0.0;
+			double firstVecFreq = 0.0;
+			double secondVecFreq = 0.0;
+			double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+			for (int ii = 0; ii < numOrbitVec; ii++) {
+				Position orb_pos(stateVectors.newStateVectors.at<double>(ii, 1), stateVectors.newStateVectors.at<double>(ii, 2),
+					stateVectors.newStateVectors.at<double>(ii, 3));
+				Velocity orb_vel(stateVectors.newStateVectors.at<double>(ii, 4), stateVectors.newStateVectors.at<double>(ii, 5),
+					stateVectors.newStateVectors.at<double>(ii, 6));
+				currentFreq = 0;
+				xdiff = groundPosition.x - orb_pos.x;
+				ydiff = groundPosition.y - orb_pos.y;
+				zdiff = groundPosition.z - orb_pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+				if (ii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+					firstVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					firstVecFreq = currentFreq;
+				}
+				else {
+					secondVecTime = stateVectors.newStateVectors.at<double>(ii, 0);
+					secondVecFreq = currentFreq;
+					break;
+				}
+			}
+
+			if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+				continue;
+			}
+
+			double lowerBoundTime = firstVecTime;
+			double upperBoundTime = secondVecTime;
+			double lowerBoundFreq = firstVecFreq;
+			double upperBoundFreq = secondVecFreq;
+			double midTime, midFreq;
+			double diffTime = fabs(upperBoundTime - lowerBoundTime);
+			double absLineTimeInterval = time_interval;
+
+			int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+			int numIterations = 0; Position pos; Velocity vel;
+			while (diffTime > absLineTimeInterval * 0.1 && numIterations <= totalIterations) {
+
+				midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+				stateVectors.getPosition(midTime, pos);
+				stateVectors.getVelocity(midTime, vel);
+				xdiff = groundPosition.x - pos.x;
+				ydiff = groundPosition.y - pos.y;
+				zdiff = groundPosition.z - pos.z;
+				distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+				midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+				if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+					lowerBoundTime = midTime;
+					lowerBoundFreq = midFreq;
+				}
+				else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+					upperBoundTime = midTime;
+					upperBoundFreq = midFreq;
+				}
+				else if (fabs(midFreq - dopplerFrequency) < 0.01) {
+					zeroDopplerTime = midTime;
+					break;
+				}
+
+				diffTime = fabs(upperBoundTime - lowerBoundTime);
+				numIterations++;
+			}
+
+
+			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval;
+			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing;
+			azimuthIndex = azimuthIndex - offset_row;
+			rangeIndex = rangeIndex - offset_col;
+			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
+			{
+
+			}
+			else
+			{
+				DEM_out.at<float>(azimuthIndex, rangeIndex) = parameter.at<float>(i, j);
+			}
+		}
+	}
+	//DEM_out.copyTo(mappedDEM);
+	//return 0;
+	//投影DEM插值
+	for (int i = 0; i < sceneHeight; i++)
+	{
+		for (int j = 0; j < sceneWidth; j++)
+		{
+			if (DEM_out.at<float>(i, j) > -998.0) continue;
+			int up, down, left, right, up_count, down_count, left_count, right_count;
+			double value1, value2, ratio1, ratio2;
+			//寻找上面有值的点
+			up = i;
+			while (true)
+			{
+				up--;
+				if (up < 0) break;
+				if (DEM_out.at<float>(up, j) > -998.0) break;
+			}
+			//寻找下面有值的点
+			down = i;
+			while (true)
+			{
+				down++;
+				if (down > sceneHeight - 1) break;
+				if (DEM_out.at<float>(down, j) > -998.0) break;
+			}
+			//寻找左边有值的点
+			left = j;
+			while (true)
+			{
+				left--;
+				if (left < 0) break;
+				if (DEM_out.at<float>(i, left) > -998.0) break;
+			}
+			//寻找右边有值的点
+			right = j;
+			while (true)
+			{
+				right++;
+				if (right > sceneWidth - 1) break;
+				if (DEM_out.at<float>(i, right) > -998.0) break;
+			}
+
+			//上下左右都有值
+			if (left >= 0 && right <= sceneWidth - 1 && up >= 0 && down <= sceneHeight - 1)
+			{
+				ratio1 = double(j - left) / double(right - left);
+				value1 = double(DEM_out.at<float>(i, left)) +
+					double(DEM_out.at<float>(i, right) - DEM_out.at<float>(i, left)) * ratio1;
+				ratio2 = double(i - up) / double(down - up);
+				value2 = double(DEM_out.at<float>(up, j)) +
+					double(DEM_out.at<float>(down, j) - DEM_out.at<float>(up, j)) * ratio2;
+				DEM_out.at<float>(i, j) = (value1 + value2) / 2.0;
+				continue;
+			}
+			//上下有值
+			if (up >= 0 && down <= sceneHeight - 1)
+			{
+				ratio2 = double(i - up) / double(down - up);
+				value2 = double(DEM_out.at<float>(up, j)) +
+					double(DEM_out.at<float>(down, j) - DEM_out.at<float>(up, j)) * ratio2;
+				DEM_out.at<float>(i, j) = value2;
+				continue;
+			}
+			//左右有值
+			if (left >= 0 && right <= sceneWidth - 1)
+			{
+				ratio1 = double(j - left) / double(right - left);
+				value1 = double(DEM_out.at<float>(i, left)) +
+					double(DEM_out.at<float>(i, right) - DEM_out.at<float>(i, left)) * ratio1;
+				DEM_out.at<float>(i, j) = value1;
+				continue;
+			}
+			//上边有值
+			if (up >= 0)
+			{
+				DEM_out.at<float>(i, j) = DEM_out.at<float>(up, j);
+				continue;
+			}
+			//下边有值
+			if (down <= sceneHeight - 1)
+			{
+				DEM_out.at<float>(i, j) = DEM_out.at<float>(down, j);
+				continue;
+			}
+			//左边有值
+			if (left >= 0)
+			{
+				DEM_out.at<float>(i, j) = DEM_out.at<float>(i, left);
+				continue;
+			}
+			//右边有值
+			if (right <= sceneWidth - 1)
+			{
+				DEM_out.at<float>(i, j) = DEM_out.at<float>(i, right);
+				continue;
+			}
+			//上下左右都没有值
+			DEM_out.at<float>(i, j) = 0;
+
+		}
+	}
+
+	cv::GaussianBlur(DEM_out, output, cv::Size(5, 5), 1, 1);
 	return 0;
 }
 

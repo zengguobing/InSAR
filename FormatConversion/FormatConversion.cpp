@@ -8492,6 +8492,218 @@ int FormatConversion::read_height_metric_from_GEDI_L2A(const char* gedi_h5_file,
 	return 0;
 }
 
+int FormatConversion::read_height_metric_from_ICESat_2_L3A(const char* ICESat_2_h5_file, Mat& rh, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index, int rh_percentile)
+{
+	if (!ICESat_2_h5_file || rh_percentile < 1 || rh_percentile > 18)
+	{
+		fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): input check failed!\n");
+		return -1;
+	}
+	vector<string> beam_name_list;
+	beam_name_list.push_back("/gt1l/");
+	beam_name_list.push_back("/gt1r/");
+	beam_name_list.push_back("/gt2l/");
+	beam_name_list.push_back("/gt2r/");
+	beam_name_list.push_back("/gt3l/");
+	beam_name_list.push_back("/gt3r/");
+	hid_t file_id = H5Fopen(ICESat_2_h5_file, H5F_ACC_RDWR, H5P_DEFAULT);
+	if (file_id < 0)
+	{
+		fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open %s!\n", ICESat_2_h5_file);
+		return -1;
+	}
+	Mat rh_tmp, zg_tmp, zt_tmp, lon_tmp, lat_tmp, dem_tmp, quality_index_tmp;
+	int count = 0;
+	for (int i = 0; i < beam_name_list.size(); i++)
+	{
+		//读取RH参数
+		string str = beam_name_list[i] + "land_segments/canopy/canopy_h_metrics";
+		hid_t dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataset %s!\n", str.c_str());
+			continue;
+		}
+		count++;
+		hid_t space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		hsize_t dims[3];
+		int ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		hid_t type = H5Dget_type(dataset_id);
+		herr_t status;
+		rh_tmp.create(dims[0], dims[1], CV_32F); rh_tmp = 0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)rh_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+		rh_tmp(cv::Range(0, dims[0]), cv::Range(rh_percentile-1, rh_percentile)).copyTo(rh_tmp);
+		//读取lat参数
+		str = beam_name_list[i] + "land_segments/latitude";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		lat_tmp.create(dims[0], 1, CV_32F); lat_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)lat_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取lon参数
+		str = beam_name_list[i] + "land_segments/longitude";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		lon_tmp.create(dims[0], 1, CV_32F); lon_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)lon_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取dem参数
+		str = beam_name_list[i] + "land_segments/dem_h";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		dem_tmp.create(dims[0], 1, CV_32F); dem_tmp = 0.0;
+		status = H5Dread(dataset_id, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)dem_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		//读取quality_index参数
+		str = beam_name_list[i] + "land_segments/canopy/can_quality_score";
+		dataset_id = H5Dopen(file_id, str.c_str(), H5P_DEFAULT);
+		if (dataset_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataset %s!\n", str.c_str());
+			H5Fclose(file_id);
+			return -1;
+		}
+		space_id = H5Dget_space(dataset_id);
+		if (space_id < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to open dataspace of %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Fclose(file_id);
+			return -1;
+		}
+		ndims = H5Sget_simple_extent_dims(space_id, dims, NULL);
+		type = H5Dget_type(dataset_id);
+		status;
+		quality_index_tmp.create(dims[0], 1, CV_8U); quality_index_tmp = 0;
+		status = H5Dread(dataset_id, H5T_NATIVE_INT8, H5S_ALL, H5S_ALL, H5P_DEFAULT, (void*)quality_index_tmp.data);
+		if (status < 0)
+		{
+			fprintf(stderr, "read_height_metric_from_ICESat_2_L3A(): failed to read from %s!\n", str.c_str());
+			H5Dclose(dataset_id);
+			H5Sclose(space_id);
+			H5Fclose(file_id);
+			H5Tclose(type);
+			return -1;
+		}
+
+		if (count == 1)
+		{
+			rh_tmp.copyTo(rh);
+			lon_tmp.copyTo(lon);
+			lat_tmp.copyTo(lat);
+			dem_tmp.copyTo(dem);
+			quality_index_tmp.copyTo(quality_index);
+		}
+		else
+		{
+			cv::vconcat(rh, rh_tmp, rh);
+			cv::vconcat(lon, lon_tmp, lon);
+			cv::vconcat(lat, lat_tmp, lat);
+			cv::vconcat(dem, dem_tmp, dem);
+			cv::vconcat(quality_index, quality_index_tmp, quality_index);
+		}
+
+
+		H5Dclose(dataset_id);
+		H5Sclose(space_id);
+		H5Tclose(type);
+	}
+	quality_index.convertTo(quality_index, CV_16S);
+	H5Fclose(file_id);
+	return 0;
+}
+
 int FormatConversion::ell2xyz(double lon, double lat, double elevation, Position& xyz)
 {
 	if (fabs(lon) > 180.0 || fabs(lat) > 90.0)
@@ -14447,6 +14659,193 @@ int Spacety_reader::init_test()
 	return 0;
 }
 
+//int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
+//{
+//	if (data_file == NULL)
+//	{
+//		fprintf(stderr, "read_slc(): input check failed!\n");
+//		return -1;
+//	}
+//
+//	GDALAllRegister();
+//
+//	GDALDatasetH hDataset = GDALOpen(data_file, GA_ReadOnly);
+//	if (hDataset == NULL)
+//	{
+//		fprintf(stderr, "read_slc(): failed to open %s!\n", data_file);
+//		return -1;
+//	}
+//
+//	int nBand = GDALGetRasterCount(hDataset);
+//
+//	/* =========================================================
+//	 * 情况一：单波段 packed complex（Int32）
+//	 * 低 16 bit : Real
+//	 * 高 16 bit : Imag
+//	 * ========================================================= */
+//	if (nBand == 1)
+//	{
+//		GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+//		if (hBand == NULL)
+//		{
+//			fprintf(stderr, "read_slc(): failed to get band 1!\n");
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		int xsize = GDALGetRasterBandXSize(hBand);
+//		int ysize = GDALGetRasterBandYSize(hBand);
+//		if (xsize <= 0 || ysize <= 0)
+//		{
+//			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		int* pbuf = (int*)malloc(sizeof(int) * xsize * ysize);
+//		if (!pbuf)
+//		{
+//			fprintf(stderr, "read_slc(): out of memory!\n");
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		if (GDALRasterIO(
+//			hBand,
+//			GF_Read,
+//			0, 0,
+//			xsize, ysize,
+//			pbuf,
+//			xsize, ysize,
+//			GDT_Int32,
+//			0, 0) != CE_None)
+//		{
+//			fprintf(stderr, "read_slc(): RasterIO failed!\n");
+//			free(pbuf);
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		slc.re.create(ysize, xsize, CV_16S);
+//		slc.im.create(ysize, xsize, CV_16S);
+//
+//		for (int i = 0; i < ysize; i++)
+//		{
+//			short* re_row = slc.re.ptr<short>(i);
+//			short* im_row = slc.im.ptr<short>(i);
+//			for (int j = 0; j < xsize; j++)
+//			{
+//				int v = pbuf[j + i * xsize];
+//				re_row[j] = (short)(v & 0xFFFF);
+//				im_row[j] = (short)((v >> 16) & 0xFFFF);
+//			}
+//		}
+//
+//		free(pbuf);
+//		GDALClose(hDataset);
+//	}
+//	/* =========================================================
+//	 * 情况二：双波段 SLC
+//	 * Band 1 : Real (Int16)
+//	 * Band 2 : Imag (Int16)
+//	 * ========================================================= */
+//	else
+//	{
+//		GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
+//		if (hBand == NULL)
+//		{
+//			fprintf(stderr, "read_slc(): failed to get band 1!\n");
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		int xsize = GDALGetRasterBandXSize(hBand);
+//		int ysize = GDALGetRasterBandYSize(hBand);
+//		if (xsize <= 0 || ysize <= 0)
+//		{
+//			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize);
+//		if (!pbuf)
+//		{
+//			fprintf(stderr, "read_slc(): out of memory!\n");
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		/* ---------- Band 1 : Real ---------- */
+//		if (GDALRasterIO(
+//			hBand,
+//			GF_Read,
+//			0, 0,
+//			xsize, ysize,
+//			pbuf,
+//			xsize, ysize,
+//			GDT_Int16,
+//			0, 0) != CE_None)
+//		{
+//			fprintf(stderr, "read_slc(): RasterIO failed on band 1!\n");
+//			free(pbuf);
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		slc.re.create(ysize, xsize, CV_16S);
+//
+//		size_t offset = 0;
+//		for (int i = 0; i < ysize; i++)
+//		{
+//			short* row = slc.re.ptr<short>(i);
+//			for (int j = 0; j < xsize; j++)
+//				row[j] = pbuf[offset++];
+//		}
+//
+//		/* ---------- Band 2 : Imag ---------- */
+//		hBand = GDALGetRasterBand(hDataset, 2);
+//		if (hBand == NULL)
+//		{
+//			fprintf(stderr, "read_slc(): failed to get band 2!\n");
+//			free(pbuf);
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		if (GDALRasterIO(
+//			hBand,
+//			GF_Read,
+//			0, 0,
+//			xsize, ysize,
+//			pbuf,
+//			xsize, ysize,
+//			GDT_Int16,
+//			0, 0) != CE_None)
+//		{
+//			fprintf(stderr, "read_slc(): RasterIO failed on band 2!\n");
+//			free(pbuf);
+//			GDALClose(hDataset);
+//			return -1;
+//		}
+//
+//		slc.im.create(ysize, xsize, CV_16S);
+//
+//		offset = 0;
+//		for (int i = 0; i < ysize; i++)
+//		{
+//			short* row = slc.im.ptr<short>(i);
+//			for (int j = 0; j < xsize; j++)
+//				row[j] = pbuf[offset++];
+//		}
+//
+//		free(pbuf);
+//		GDALClose(hDataset);
+//	}
+//
+//	return 0;
+//}
+
 int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 {
 	if (data_file == NULL)
@@ -14465,31 +14864,89 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 	}
 
 	int nBand = GDALGetRasterCount(hDataset);
+	if (nBand < 1)
+	{
+		fprintf(stderr, "read_slc(): no raster band found!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	GDALRasterBandH hBand1 = GDALGetRasterBand(hDataset, 1);
+	if (hBand1 == NULL)
+	{
+		fprintf(stderr, "read_slc(): failed to get band 1!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	int xsize = GDALGetRasterBandXSize(hBand1);
+	int ysize = GDALGetRasterBandYSize(hBand1);
+	if (xsize <= 0 || ysize <= 0)
+	{
+		fprintf(stderr, "read_slc(): band rows and cols error!\n");
+		GDALClose(hDataset);
+		return -1;
+	}
+
+	GDALDataType dt = GDALGetRasterDataType(hBand1);
+	printf("Band1 type = %s\n", GDALGetDataTypeName(dt));
 
 	/* =========================================================
-	 * 情况一：单波段 packed complex（Int32）
+	 * 情况一：单波段 GDAL 复数类型，例如 CInt16
+	 * ========================================================= */
+	if (nBand == 1 && dt == GDT_CInt16)
+	{
+		short* pbuf = (short*)malloc(sizeof(short) * xsize * ysize * 2);
+		if (!pbuf)
+		{
+			fprintf(stderr, "read_slc(): out of memory!\n");
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		if (GDALRasterIO(
+			hBand1,
+			GF_Read,
+			0, 0,
+			xsize, ysize,
+			pbuf,
+			xsize, ysize,
+			GDT_CInt16,
+			0, 0) != CE_None)
+		{
+			fprintf(stderr, "read_slc(): RasterIO failed on complex band!\n");
+			free(pbuf);
+			GDALClose(hDataset);
+			return -1;
+		}
+
+		slc.re.create(ysize, xsize, CV_16S);
+		slc.im.create(ysize, xsize, CV_16S);
+
+		size_t idx = 0;
+		for (int i = 0; i < ysize; i++)
+		{
+			short* re_row = slc.re.ptr<short>(i);
+			short* im_row = slc.im.ptr<short>(i);
+			for (int j = 0; j < xsize; j++)
+			{
+				re_row[j] = pbuf[idx++];   // real
+				im_row[j] = pbuf[idx++];   // imag
+			}
+		}
+
+		free(pbuf);
+		GDALClose(hDataset);
+		return 0;
+	}
+
+	/* =========================================================
+	 * 情况二：单波段 packed complex（自定义 Int32）
 	 * 低 16 bit : Real
 	 * 高 16 bit : Imag
 	 * ========================================================= */
-	if (nBand == 1)
+	if (nBand == 1 && dt == GDT_Int32)
 	{
-		GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
-		if (hBand == NULL)
-		{
-			fprintf(stderr, "read_slc(): failed to get band 1!\n");
-			GDALClose(hDataset);
-			return -1;
-		}
-
-		int xsize = GDALGetRasterBandXSize(hBand);
-		int ysize = GDALGetRasterBandYSize(hBand);
-		if (xsize <= 0 || ysize <= 0)
-		{
-			fprintf(stderr, "read_slc(): band rows and cols error!\n");
-			GDALClose(hDataset);
-			return -1;
-		}
-
 		int* pbuf = (int*)malloc(sizeof(int) * xsize * ysize);
 		if (!pbuf)
 		{
@@ -14499,7 +14956,7 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 		}
 
 		if (GDALRasterIO(
-			hBand,
+			hBand1,
 			GF_Read,
 			0, 0,
 			xsize, ysize,
@@ -14523,7 +14980,7 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 			short* im_row = slc.im.ptr<short>(i);
 			for (int j = 0; j < xsize; j++)
 			{
-				int v = pbuf[j + i * xsize];
+				unsigned int v = (unsigned int)pbuf[j + i * xsize];
 				re_row[j] = (short)(v & 0xFFFF);
 				im_row[j] = (short)((v >> 16) & 0xFFFF);
 			}
@@ -14531,27 +14988,20 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 
 		free(pbuf);
 		GDALClose(hDataset);
+		return 0;
 	}
-	/* =========================================================
-	 * 情况二：双波段 SLC
-	 * Band 1 : Real (Int16)
-	 * Band 2 : Imag (Int16)
-	 * ========================================================= */
-	else
-	{
-		GDALRasterBandH hBand = GDALGetRasterBand(hDataset, 1);
-		if (hBand == NULL)
-		{
-			fprintf(stderr, "read_slc(): failed to get band 1!\n");
-			GDALClose(hDataset);
-			return -1;
-		}
 
-		int xsize = GDALGetRasterBandXSize(hBand);
-		int ysize = GDALGetRasterBandYSize(hBand);
-		if (xsize <= 0 || ysize <= 0)
+	/* =========================================================
+	 * 情况三：双波段 SLC
+	 * Band 1 : Real
+	 * Band 2 : Imag
+	 * ========================================================= */
+	if (nBand >= 2)
+	{
+		GDALRasterBandH hBand2 = GDALGetRasterBand(hDataset, 2);
+		if (hBand2 == NULL)
 		{
-			fprintf(stderr, "read_slc(): band rows and cols error!\n");
+			fprintf(stderr, "read_slc(): failed to get band 2!\n");
 			GDALClose(hDataset);
 			return -1;
 		}
@@ -14564,9 +15014,8 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 			return -1;
 		}
 
-		/* ---------- Band 1 : Real ---------- */
 		if (GDALRasterIO(
-			hBand,
+			hBand1,
 			GF_Read,
 			0, 0,
 			xsize, ysize,
@@ -14582,27 +15031,14 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 		}
 
 		slc.re.create(ysize, xsize, CV_16S);
-
-		size_t offset = 0;
 		for (int i = 0; i < ysize; i++)
 		{
 			short* row = slc.re.ptr<short>(i);
-			for (int j = 0; j < xsize; j++)
-				row[j] = pbuf[offset++];
-		}
-
-		/* ---------- Band 2 : Imag ---------- */
-		hBand = GDALGetRasterBand(hDataset, 2);
-		if (hBand == NULL)
-		{
-			fprintf(stderr, "read_slc(): failed to get band 2!\n");
-			free(pbuf);
-			GDALClose(hDataset);
-			return -1;
+			memcpy(row, pbuf + (size_t)i * xsize, sizeof(short) * xsize);
 		}
 
 		if (GDALRasterIO(
-			hBand,
+			hBand2,
 			GF_Read,
 			0, 0,
 			xsize, ysize,
@@ -14618,20 +15054,20 @@ int Spacety_reader::read_slc(const char* data_file, ComplexMat& slc)
 		}
 
 		slc.im.create(ysize, xsize, CV_16S);
-
-		offset = 0;
 		for (int i = 0; i < ysize; i++)
 		{
 			short* row = slc.im.ptr<short>(i);
-			for (int j = 0; j < xsize; j++)
-				row[j] = pbuf[offset++];
+			memcpy(row, pbuf + (size_t)i * xsize, sizeof(short) * xsize);
 		}
 
 		free(pbuf);
 		GDALClose(hDataset);
+		return 0;
 	}
 
-	return 0;
+	fprintf(stderr, "read_slc(): unsupported data format!\n");
+	GDALClose(hDataset);
+	return -1;
 }
 
 int Spacety_reader::read_data(const char* xml_file, const char* data_file)
@@ -14710,7 +15146,8 @@ int Spacety_reader::read_data(const char* xml_file, const char* data_file)
 	//卫星名称
 	this->sensor = "fucheng-1";
 	//脉冲重复频率
-	ret = xmldoc.get_double_para("prf", &this->prf);
+	ret = xmldoc.get_double_para("azimuthTimeInterval", &this->prf);
+	this->prf = 1.0 / this->prf;
 	//中心频率
 	ret = xmldoc.get_double_para("radarFrequency", &this->carrier_frequency);
 	//this->carrier_frequency = this->carrier_frequency * 1e9;

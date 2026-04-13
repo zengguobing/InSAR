@@ -3,7 +3,9 @@
 #define __SLC_SIMULATOR__H__
 #include"..\include\Package.h"
 #include"..\include\ComplexMat.h"
-
+#include <atomic>
+#include <thread>
+#include <chrono>
 
 /*----------------------------------------*/
 /*          单视复图像仿真类              */
@@ -43,6 +45,8 @@ public:
 	* @param dem                                       场景DEM（来自SRTM）
 	* @param lon_upperleft                             DEM左上角经度
 	* @param lat_upperleft                             DEM左上角维度
+	* @param lon_space                                 经度采样间隔
+	* @param lat_space                                 纬度采样间隔
 	* @param sceneHeight                               仿真SLC场景高度
 	* @param sceneWidth                                仿真SLC场景宽度
 	* @param nearRange                                 最近斜距
@@ -62,6 +66,8 @@ public:
 		Mat& dem,
 		double lon_upperleft,
 		double lat_upperleft,
+		double lon_space,
+		double lat_space,
 		int sceneHeight,
 		int sceneWidth,
 		double nearRange,
@@ -78,7 +84,7 @@ public:
 	/*@brief 根据轨道和场景DEM以及成像参数生成单视复图像（单发双收或者单发单收，生成2幅图）
 	* @param stateVec1                                 轨道数据1（主星，信号发射轨道+信号接收轨道）
 	* @param stateVec2                                 轨道数据2（辅星，信号接收轨道）
-	* @param dem                                       场景DEM（来自SRTM）
+	* @param dem                                       场景DEM（仅支持来自SRTM）
 	* @param lon_upperleft                             DEM左上角经度
 	* @param lat_upperleft                             DEM左上角维度
 	* @param sceneHeight1                              主图仿真SLC场景高度
@@ -131,7 +137,7 @@ public:
 	/*@brief 根据轨道和场景DEM以及成像参数生成单视复图像（单发双收，乒乓模式，生成4幅图）
 	* @param stateVec1                                 轨道数据1（主星，信号发射轨道+信号接收轨道）
 	* @param stateVec2                                 轨道数据2（辅星，信号接收轨道）
-	* @param dem                                       场景DEM（来自SRTM）
+	* @param dem                                       场景DEM（仅支持来自SRTM）
 	* @param lon_upperleft                             DEM左上角经度
 	* @param lat_upperleft                             DEM左上角维度
 	* @param sceneHeight1                              主图仿真SLC场景高度

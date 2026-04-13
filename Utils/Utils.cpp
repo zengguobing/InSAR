@@ -13599,6 +13599,9 @@ int Utils::geocode(
 	double lat_per_meter = 360.0 / (C_long * cos(lat_upperleft / 180.0 * PI));//纬线上每米多少度
 	interp_times_x = lon_spacing / lon_per_meter / mapped_resolution_x;
 	interp_times_y = lat_spacing / lat_per_meter / mapped_resolution_y;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + lat_spacing / 2.0 - lat_spacing / (double)interp_times_y * 0.5;
+	lon_upperleft = lon_upperleft - lon_spacing / 2.0 + lon_spacing / (double)interp_times_x * 0.5;
 	//84坐标系DEM插值
 	Mat DEM, stateVector_interp;
 	interp_times_x = interp_times_x < 1 ? 1 : interp_times_x;

@@ -1003,6 +1003,17 @@ public:
 	* @return 成功返回0，否则返回-1
 	*/
 	int read_height_metric_from_GEDI_L2A(const char* gedi_h5_file, Mat& rh, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index, int rh_percentile = 100);
+	/** @brief 从ICESat-2 L3A级产品中读取树高及地理坐标等信息
+	* @param gedi_h5_file                        ICESat-2 L3A级产品文件（HDF5格式）
+	* @param rh                                  rh参数
+	* @param lon                                 经度信息
+	* @param lat                                 纬度信息
+	* @param dem                                 高程信息
+	* @param quality_index                       质量信息([80,100]则为质量合格数据，127为无效值)
+	* @param rh_percentile                       树高提取参数（rh_percentile = 10(1), 15(2), 20(3), 25(4), 30(...),..., 80(15), 85(16), 90(17), 95(18)，默认为95(18)）
+	* @return 成功返回0，否则返回-1
+	*/
+	int read_height_metric_from_ICESat_2_L3A(const char* ICESat_2_h5_file, Mat& rh, Mat& lon, Mat& lat, Mat& dem, Mat& quality_index, int rh_percentile = 18);
 
 
 

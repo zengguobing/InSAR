@@ -271,6 +271,8 @@ int SLC_simulator::generateSLC(
 	Mat& dem, 
 	double lon_upperleft,
 	double lat_upperleft,
+	double lon_space,
+	double lat_space,
 	int sceneHeight,
 	int sceneWidth,
 	double nearRange,
@@ -311,11 +313,14 @@ int SLC_simulator::generateSLC(
 	slc.re = 0.0; slc.im = 0.0;
 	//分块计算，确定DEM划分大小与方式
 
-	int interp_times_row = 90.0 / azimuthSpacing;
-	int interp_times_col = 90.0 / rangeSpacing;
+	int interp_times_row = 30.0 / azimuthSpacing;
+	int interp_times_col = 30.0 / rangeSpacing;
 	int interp_cell = 2;
-	double lon_spacing_old = 5.0 / 6000.0 / (double)interp_times_col;
-	double lat_spacing_old = 5.0 / 6000.0 / (double)interp_times_row;
+	double lon_spacing_old = lon_space / (double)interp_times_col;
+	double lat_spacing_old = lat_space / (double)interp_times_row;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + lat_space / 2.0 - lat_space / (double)interp_times_row * 0.5;
+	lon_upperleft = lon_upperleft - lon_space / 2.0 + lon_space / (double)interp_times_col * 0.5;
 	double lon_spacing = lon_spacing_old / (double)interp_cell;
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
@@ -344,8 +349,8 @@ int SLC_simulator::generateSLC(
 	{
 		for (int j = 0; j < num_block_col; j++)
 		{
-			bool flag = (i % 3 == 0) && (j % 3 == 0) && i != 0 && j != 0;
-			if (!flag) continue;
+			//bool flag = (i % 3 == 0) && (j % 3 == 0) && i != 0 && j != 0;
+			//if (!flag) continue;
 			seed++;
 			int row_start = i * block_rows - 1;
 			row_start = row_start < 0 ? 0 : row_start;
@@ -466,6 +471,30 @@ int SLC_simulator::generateSLC(
 					slant_range.at<double>(ii, jj) = distance;
 				}
 			}
+
+			for (int ii = 0; ii < DEM_rows; ii++)
+			{
+				for (int jj = 0; jj < DEM_cols; jj++)
+				{
+					double real, imaginary, theta;
+					double zeroDopplerTime = imaging_time.at<double>(ii, jj);
+					double distance = slant_range.at<double>(ii, jj);
+					int azimuthIndex = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
+					int rangeIndex = floor((distance - nearRange) / rangeSpacing);
+					if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
+					{
+
+					}
+					else
+					{
+						theta = -4.0 * PI * distance / wavelength + randomAngle.at<float>(ii, jj);
+						real = /*sigma.at<double>(ii, jj)*/ 1.0 * (cos(theta) + noise_real.at<float>(ii, jj));
+						imaginary = /*sigma.at<double>(ii, jj)*/ 1.0 * (sin(theta) + noise_imaginary.at<float>(ii, jj));
+						slc.re.at<float>(azimuthIndex, rangeIndex) += real;
+						slc.im.at<float>(azimuthIndex, rangeIndex) += imaginary;
+					}
+				}
+			}
 			//控制点信息
 			if ((i % 3 == 0) && (j % 3 == 0) && i != 0 && j != 0)
 			{
@@ -524,7 +553,6 @@ int SLC_simulator::generateSLC(
 				}
 			}
 			
-
 			printf("\rprocess %lf", (double)(i * num_block_col + j + 1) / (double)(num_block_row * num_block_col) * 100.0);
 			fflush(stdout);
 		}
@@ -619,6 +647,9 @@ int SLC_simulator::generateSLC(
 	int interp_cell = 4;
 	double lon_spacing_old = 5.0 / 6000.0 / (double)interp_times_col;
 	double lat_spacing_old = 5.0 / 6000.0 / (double)interp_times_row;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + 5.0 / 6000.0 / 2.0 - 5.0 / 6000.0 / (double)interp_times_row * 0.5;
+	lon_upperleft = lon_upperleft - 5.0 / 6000.0 / 2.0 + 5.0 / 6000.0 / (double)interp_times_col * 0.5;
 	double lon_spacing = lon_spacing_old / (double)interp_cell;
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
@@ -1196,6 +1227,9 @@ int SLC_simulator::generateSLC(
 	int interp_cell = 4;
 	double lon_spacing_old = 5.0 / 6000.0 / (double)interp_times_col;
 	double lat_spacing_old = 5.0 / 6000.0 / (double)interp_times_row;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + 5.0 / 6000.0 / 2.0 - 5.0 / 6000.0 / (double)interp_times_row * 0.5;
+	lon_upperleft = lon_upperleft - 5.0 / 6000.0 / 2.0 + 5.0 / 6000.0 / (double)interp_times_col * 0.5;
 	double lon_spacing = lon_spacing_old / (double)interp_cell;
 	double lat_spacing = lat_spacing_old / (double)interp_cell;
 	int rows = dem.rows * interp_times_row;
