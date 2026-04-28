@@ -81,6 +81,26 @@ public:
 		ComplexMat& slc,
 		Mat& GCP
 	);
+	int generateSLC_optimized(
+		Mat& stateVec,
+		Mat& dem,
+		double lon_upperleft,
+		double lat_upperleft,
+		double lon_space,
+		double lat_space,
+		int sceneHeight,
+		int sceneWidth,
+		double nearRange,
+		double prf,
+		double wavelength,
+		double rangeSpacing,
+		double azimuthSpacing,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		double SNR,
+		ComplexMat& slc,
+		Mat& GCP
+	);
 	/*@brief 根据轨道和场景DEM以及成像参数生成单视复图像（单发双收或者单发单收，生成2幅图）
 	* @param stateVec1                                 轨道数据1（主星，信号发射轨道+信号接收轨道）
 	* @param stateVec2                                 轨道数据2（辅星，信号接收轨道）
