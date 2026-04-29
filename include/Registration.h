@@ -86,6 +86,23 @@ public:
 		int* offset_row = NULL,
 		int* offset_col = NULL
 	);
+	/** @brief 精配准---sinc插值（支持16位整型和64位浮点型输入）
+
+	@param master              主图像
+	@param slave               辅图像
+	@param blocksize           主图像参考块分块大小（blocksize×blocksize，blocksize为2的n次幂）
+	@param interp_times        插值倍数(InSAR要求至少8倍插值)
+	@param offset_row          辅图像行偏移量（返回值）
+	@param offset_col          辅图像列偏移量（返回值）
+	*/
+	int coregistration_subpixel_sinc(
+		ComplexMat& master,
+		ComplexMat& slave,
+		int blocksize,
+		int interp_times,
+		int* offset_row = NULL,
+		int* offset_col = NULL
+	);
 	/*拟合像素偏移量
 	 参数1 行序列号
 	 参数2 列序列号
@@ -193,6 +210,29 @@ public:
 	* @return 成功返回0，否则返回-1
 	*/
 	int performBilinearResampling(
+		ComplexMat& slc,
+		int dstHeight,
+		int dstWidth,
+		double a0Rg, double a1Rg, double a2Rg,
+		double a0Az, double a1Az, double a2Az,
+		int* offset_row = NULL,
+		int* offset_col = NULL
+	);
+	/*@brief 复图像SINC插值重采样（inplace，原地操作）
+	* @param slc                                   待重采样图像（原地操作）
+	* @param dstHeight                             重采样图像高度
+	* @param dstWidth                              重采样图像宽度
+	* @param a0Rg                                  距离向偏移拟合系数
+	* @param a1Rg                                  距离向偏移拟合系数
+	* @param a2Rg                                  距离向偏移拟合系数
+	* @param a0Az                                  方位向偏移拟合系数
+	* @param a1Az                                  方位向偏移拟合系数
+	* @param a2Az                                  方位向偏移拟合系数
+	* @param offset_row                            辅图像左上角相对于主图像的行偏移量（返回值）
+	* @param offset_col                            辅图像左上角相对于主图像的列偏移量（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int performSincResampling(
 		ComplexMat& slc,
 		int dstHeight,
 		int dstWidth,

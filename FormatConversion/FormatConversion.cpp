@@ -15,6 +15,113 @@
 
 #endif // _DEBUG
 
+namespace
+{
+	constexpr double INSAR_PI = 3.141592653589793238462643383279502884;
+
+	inline double sinc_func(double x)
+	{
+		if (std::abs(x) < 1.0e-12) return 1.0;
+		double pix = INSAR_PI * x;
+		return std::sin(pix) / pix;
+	}
+
+	inline double hamming_window(double x, int radius)
+	{
+		double ax = std::abs(x);
+		if (ax > static_cast<double>(radius)) return 0.0;
+
+		// Hamming window: center = 1, edge ≈ 0.08
+		return 0.54 + 0.46 * std::cos(INSAR_PI * ax / static_cast<double>(radius));
+	}
+
+	inline double windowed_sinc_weight(double x, int radius)
+	{
+		if (std::abs(x) > static_cast<double>(radius)) return 0.0;
+		return sinc_func(x) * hamming_window(x, radius);
+	}
+
+	inline double mat_get_as_double(const cv::Mat& img, int r, int c)
+	{
+		switch (img.depth())
+		{
+		case CV_64F:
+			return img.at<double>(r, c);
+		case CV_32F:
+			return static_cast<double>(img.at<float>(r, c));
+		case CV_16S:
+			return static_cast<double>(img.at<short>(r, c));
+		default:
+			return 0.0;
+		}
+	}
+
+	inline void mat_set_from_double(cv::Mat& img, int r, int c, double v)
+	{
+		switch (img.depth())
+		{
+		case CV_64F:
+			img.at<double>(r, c) = v;
+			break;
+		case CV_32F:
+			img.at<float>(r, c) = static_cast<float>(v);
+			break;
+		case CV_16S:
+			img.at<short>(r, c) = cv::saturate_cast<short>(v);
+			break;
+		default:
+			break;
+		}
+	}
+
+	inline double sinc_interp2d(const cv::Mat& img, double row, double col, int radius)
+	{
+		const int rows = img.rows;
+		const int cols = img.cols;
+
+		// 坐标完全越界，直接置零
+		if (row < 0.0 || col < 0.0 || row > static_cast<double>(rows - 1) || col > static_cast<double>(cols - 1))
+		{
+			return 0.0;
+		}
+
+		// 为避免边界处 sinc 核不完整导致伪影，靠近边缘的像元直接置零
+		if (row < radius || col < radius ||
+			row > static_cast<double>(rows - 1 - radius) ||
+			col > static_cast<double>(cols - 1 - radius))
+		{
+			return 0.0;
+		}
+
+		int r0 = static_cast<int>(std::floor(row));
+		int c0 = static_cast<int>(std::floor(col));
+
+		double sum_val = 0.0;
+		double sum_w = 0.0;
+
+		for (int rr = r0 - radius; rr <= r0 + radius; rr++)
+		{
+			double wr = windowed_sinc_weight(row - static_cast<double>(rr), radius);
+			if (std::abs(wr) < 1.0e-15) continue;
+
+			for (int cc = c0 - radius; cc <= c0 + radius; cc++)
+			{
+				double wc = windowed_sinc_weight(col - static_cast<double>(cc), radius);
+				if (std::abs(wc) < 1.0e-15) continue;
+
+				double w = wr * wc;
+				sum_val += mat_get_as_double(img, rr, cc) * w;
+				sum_w += w;
+			}
+		}
+
+		if (std::abs(sum_w) < 1.0e-14) return 0.0;
+
+		// 归一化，避免有限窗截断导致幅度偏移
+		return sum_val / sum_w;
+	}
+}
+
 inline bool return_check(int ret, const char* detail_info, const char* error_head)
 {
 	if (ret < 0)
@@ -12278,6 +12385,78 @@ int Sentinel1BackGeocoding::performBilinearResampling(
 		}
 	}
 	slave = slcResampled;
+	return 0;
+}
+
+int Sentinel1BackGeocoding::performSincResampling(
+	ComplexMat& slave,
+	int dstHeight,
+	int dstWidth,
+	double a0Rg, double a1Rg, double a2Rg,
+	double a0Az, double a1Az, double a2Az
+)
+{
+	if (slave.isempty() || dstHeight < 2 || dstWidth < 2)
+	{
+		fprintf(stderr, "performBilinearResampling(): input check failed!\n");
+		return -1;
+	}
+
+	ComplexMat slcResampled;
+
+	// 统一转成 double，便于 sinc 插值
+	if (slave.type() != CV_64F)
+	{
+		slave.convertTo(slave, CV_64F);
+	}
+
+	slcResampled.re.create(dstHeight, dstWidth, CV_64F);
+	slcResampled.im.create(dstHeight, dstWidth, CV_64F);
+
+	int rows = dstHeight;
+	int cols = dstWidth;
+
+	// sinc 插值半径
+	// SINC_RADIUS = 4 表示 9 × 9 窗口
+	// 可改为 6，对应 13 × 13，精度略高但速度明显变慢
+	const int SINC_RADIUS = 4;
+
+	// 提前取出系数，避免每个像元创建 Mat 并做矩阵乘法
+	const double cr0 = a0Az;
+	const double cr1 = a1Az;
+	const double cr2 = a2Az;
+
+	const double cc0 = a0Rg;
+	const double cc1 = a1Rg;
+	const double cc2 = a2Rg;
+
+#pragma omp parallel for schedule(guided)
+	for (int i = 0; i < rows; i++)
+	{
+		for (int j = 0; j < cols; j++)
+		{
+			double ii = static_cast<double>(i);
+			double jj = static_cast<double>(j);
+
+			// 行方向偏移：azimuth offset
+			double offset_rows = cr0 + cr1 * jj + cr2 * ii;
+
+			// 列方向偏移：range offset
+			double offset_cols = cc0 + cc1 * jj + cc2 * ii;
+
+			double src_row = ii + offset_rows;  // /* + 0.0053 */ 如果你还需要这个经验修正，可加在这里
+			double src_col = jj + offset_cols;
+
+			double re_value = sinc_interp2d(slave.re, src_row, src_col, SINC_RADIUS);
+			double im_value = sinc_interp2d(slave.im, src_row, src_col, SINC_RADIUS);
+
+			slcResampled.re.at<double>(i, j) = re_value;
+			slcResampled.im.at<double>(i, j) = im_value;
+		}
+	}
+
+	slave = slcResampled;
+
 	return 0;
 }
 

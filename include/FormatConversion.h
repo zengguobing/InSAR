@@ -2273,6 +2273,25 @@ public:
 		double a0Rg, double a1Rg, double a2Rg,
 		double a0Az, double a1Az, double a2Az
 	);
+	/*@brief 复图像sinc插值重采样（inplace，原地操作）
+	* @param slc                                   待重采样图像（原地操作）
+	* @param dstHeight                             重采样图像高度
+	* @param dstWidth                              重采样图像宽度
+	* @param a0Rg                                  距离向偏移拟合系数
+	* @param a1Rg                                  距离向偏移拟合系数
+	* @param a2Rg                                  距离向偏移拟合系数
+	* @param a0Az                                  方位向偏移拟合系数
+	* @param a1Az                                  方位向偏移拟合系数
+	* @param a2Az                                  方位向偏移拟合系数
+	* @return 成功返回0，否则返回-1
+	*/
+	int performSincResampling(
+		ComplexMat& slc,
+		int dstHeight,
+		int dstWidth,
+		double a0Rg, double a1Rg, double a2Rg,
+		double a0Az, double a1Az, double a2Az
+	);
 	/*@brief 辅图像双线性插值重采样
 	* @param mBurstIndex                           主图像burst序号
 	* @param slaveImageIndex                       辅图像序号
