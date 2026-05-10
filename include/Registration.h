@@ -94,6 +94,7 @@ public:
 	@param interp_times        插值倍数(InSAR要求至少8倍插值)
 	@param offset_row          辅图像行偏移量（返回值）
 	@param offset_col          辅图像列偏移量（返回值）
+	@param coh_thresh          参与偏移量拟合的子块相干系数阈值（默认为0.0）
 	*/
 	int coregistration_subpixel_sinc(
 		ComplexMat& master,
@@ -101,7 +102,8 @@ public:
 		int blocksize,
 		int interp_times,
 		int* offset_row = NULL,
-		int* offset_col = NULL
+		int* offset_col = NULL,
+		double coh_thresh = 0.0
 	);
 	/*拟合像素偏移量
 	 参数1 行序列号

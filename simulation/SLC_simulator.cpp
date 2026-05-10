@@ -315,6 +315,8 @@ int SLC_simulator::generateSLC(
 
 	int interp_times_row = 30.0 / azimuthSpacing;
 	int interp_times_col = 30.0 / rangeSpacing;
+	interp_times_row = interp_times_row < 1 ? 1 : interp_times_row;
+	interp_times_col = interp_times_col < 1 ? 1 : interp_times_col;
 	int interp_cell = 1;
 	double lon_spacing_old = lon_space / (double)interp_times_col;
 	double lat_spacing_old = lat_space / (double)interp_times_row;
@@ -572,6 +574,253 @@ int SLC_simulator::generateSLC(
 			GCP.at<double>(i, 4) = GCPs[i * 7 + 4];
 			GCP.at<double>(i, 5) = GCPs[i * 7 + 5];
 			GCP.at<double>(i, 6) = GCPs[i * 7 + 6];
+		}
+	}
+	return 0;
+}
+
+int SLC_simulator::generateSLC_spacety(
+	Mat& stateVec,
+	Mat& dem,
+	double lon_upperleft,
+	double lat_upperleft,
+	double lon_space,
+	double lat_space,
+	int sceneHeight,
+	int sceneWidth,
+	double nearRange,
+	double prf,
+	double wavelength,
+	double rangeSpacing,
+	double azimuthSpacing,
+	double acquisitionStartTime,
+	double acquisitionStopTime,
+	double SNR,
+	ComplexMat& slc
+)
+{
+	if (stateVec.cols != 7 ||
+		stateVec.rows < 7 ||
+		stateVec.type() != CV_64F ||
+		dem.type() != CV_16S ||
+		dem.empty() ||
+		fabs(lon_upperleft) > 180.0 ||
+		fabs(lat_upperleft) > 90.0 ||
+		sceneHeight < 1 ||
+		sceneWidth < 1 ||
+		nearRange <= 0.0 ||
+		prf <= 0.0 ||
+		wavelength <= 0.0 ||
+		rangeSpacing <= 0.0 ||
+		azimuthSpacing <= 0.0 ||
+		acquisitionStartTime <= 0.0 ||
+		acquisitionStartTime >= acquisitionStopTime
+		)
+	{
+		fprintf(stderr, "generateSLC(): input check failed!\n");
+		return -1;
+	}
+	slc.re.create(sceneHeight, sceneWidth, CV_32F);
+	slc.im.create(sceneHeight, sceneWidth, CV_32F);
+	slc.re = 0.0; slc.im = 0.0;
+	//分块计算，确定DEM划分大小与方式
+
+	int interp_times_row = 30.0 / azimuthSpacing / 2.0;
+	int interp_times_col = 30.0 / rangeSpacing / 4.0;
+	interp_times_row = interp_times_row < 1 ? 1 : interp_times_row;
+	interp_times_col = interp_times_col < 1 ? 1 : interp_times_col;
+	int interp_cell = 1;
+	double lon_spacing_old = lon_space / (double)interp_times_col;
+	double lat_spacing_old = lat_space / (double)interp_times_row;
+	//考虑DEM像素中心与边缘差值
+	lat_upperleft = lat_upperleft + lat_space / 2.0 - lat_space / (double)interp_times_row * 0.5;
+	lon_upperleft = lon_upperleft - lon_space / 2.0 + lon_space / (double)interp_times_col * 0.5;
+	double lon_spacing = lon_spacing_old / (double)interp_cell;
+	double lat_spacing = lat_spacing_old / (double)interp_cell;
+	int rows = dem.rows * interp_times_row;
+	int cols = dem.cols * interp_times_col;
+	int block_rows = 1000;//分块大小
+	int block_cols = 1000;
+	Mat dem_interp, dem_temp;
+	dem.convertTo(dem_interp, CV_32F);
+	cv::resize(dem_interp, dem_interp, cv::Size(cols, rows), 0, 0, cv::INTER_CUBIC);
+	int num_block_row = rows / block_rows;
+	int num_block_col = cols / block_cols;
+	block_rows = rows / num_block_row;
+	block_cols = cols / num_block_col;
+	Utils util;
+	num_block_row = num_block_row;
+	num_block_col = num_block_col;
+	vector<double> GCPs;//控制点信息
+	//初始化轨道类
+	orbitStateVectors stateVectors(stateVec, acquisitionStartTime, acquisitionStopTime);
+	stateVectors.applyOrbit();
+	int ret;
+	double time_interval = 1.0 / prf;
+	double dopplerFrequency = 0.0;
+	uint64 seed = 0;
+	for (int i = 0; i < num_block_row; i++)
+	{
+		for (int j = 0; j < num_block_col; j++)
+		{
+			//bool flag = (i % 3 == 0) && (j % 3 == 0) && i != 0 && j != 0;
+			//if (!flag) continue;
+			seed++;
+			int row_start = i * block_rows - 1;
+			row_start = row_start < 0 ? 0 : row_start;
+			int row_end = (i + 1) * block_rows;
+			row_end = row_end > rows ? rows : row_end;
+			int col_start = j * block_cols - 1;
+			col_start = col_start < 0 ? 0 : col_start;
+			int col_end = (j + 1) * block_cols;
+			col_end = col_end > cols ? cols : col_end;
+			Mat dem_temp2;
+			dem_interp(cv::Range(row_start, row_end), cv::Range(col_start, col_end)).copyTo(dem_temp);
+			cv::resize(dem_temp, dem_temp2, cv::Size(dem_temp.cols * interp_cell, dem_temp.rows * interp_cell),
+				0, 0, cv::INTER_CUBIC);
+
+			double upper_left_lon = lon_upperleft + col_start * lon_spacing_old;
+			upper_left_lon = upper_left_lon > 180.0 ? upper_left_lon - 360.0 : upper_left_lon;
+			double upper_left_lat = lat_upperleft - row_start * lat_spacing_old;
+
+			//生成随机相位
+			Mat randomAngle(dem_temp2.rows, dem_temp2.cols, CV_32F);
+			cv::RNG rng(seed);
+			rng.fill(randomAngle, cv::RNG::UNIFORM, 0.0, 2.0 * PI);
+
+			//加入热噪声项
+			Mat noise_real(dem_temp2.rows, dem_temp2.cols, CV_32F), noise_imaginary(dem_temp2.rows, dem_temp2.cols, CV_32F);
+			double noise_sigma = sqrt(pow(10.0, -SNR / 10.0) / 2.0);
+			cv::RNG rng2(seed + 10000);
+			rng2.fill(noise_real, cv::RNG::NORMAL, 0, noise_sigma);
+			cv::RNG rng3(seed + 10001);
+			rng3.fill(noise_imaginary, cv::RNG::NORMAL, 0, noise_sigma);
+
+			//计算DEM点的成像卫星位置
+			Mat imaging_time(dem_temp2.rows, dem_temp2.cols, CV_64F), slant_range(dem_temp2.rows, dem_temp2.cols, CV_64F);
+			int DEM_rows = dem_temp2.rows;
+			int DEM_cols = dem_temp2.cols;
+#pragma omp parallel for schedule(guided)
+			for (int ii = 0; ii < DEM_rows; ii++)
+			{
+				for (int jj = 0; jj < DEM_cols; jj++)
+				{
+					Position groundPosition;
+					double lat, lon, height;
+					lat = upper_left_lat - (double)ii * lat_spacing;
+					lon = upper_left_lon + (double)jj * lon_spacing;
+					lon = lon > 180.0 ? (lon - 360.0) : lon;
+					height = dem_temp2.at<float>(ii, jj);
+					Utils::ell2xyz(lon, lat, height, groundPosition);
+					int numOrbitVec = stateVectors.newStateVectors.rows;
+					double firstVecTime = 0.0;
+					double secondVecTime = 0.0;
+					double firstVecFreq = 0.0;
+					double secondVecFreq = 0.0;
+					double currentFreq, xdiff, ydiff, zdiff, distance = 1.0, zeroDopplerTime;
+					for (int iii = 0; iii < numOrbitVec; iii++) {
+						Position orb_pos(stateVectors.newStateVectors.at<double>(iii, 1), stateVectors.newStateVectors.at<double>(iii, 2),
+							stateVectors.newStateVectors.at<double>(iii, 3));
+						Velocity orb_vel(stateVectors.newStateVectors.at<double>(iii, 4), stateVectors.newStateVectors.at<double>(iii, 5),
+							stateVectors.newStateVectors.at<double>(iii, 6));
+						currentFreq = 0;
+						xdiff = groundPosition.x - orb_pos.x;
+						ydiff = groundPosition.y - orb_pos.y;
+						zdiff = groundPosition.z - orb_pos.z;
+						distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+						currentFreq = 2.0 * (xdiff * orb_vel.vx + ydiff * orb_vel.vy + zdiff * orb_vel.vz) / (wavelength * distance);
+						if (iii == 0 || (firstVecFreq - dopplerFrequency) * (currentFreq - dopplerFrequency) > 0) {
+							firstVecTime = stateVectors.newStateVectors.at<double>(iii, 0);
+							firstVecFreq = currentFreq;
+						}
+						else {
+							secondVecTime = stateVectors.newStateVectors.at<double>(iii, 0);
+							secondVecFreq = currentFreq;
+							break;
+						}
+					}
+
+					if ((firstVecFreq - dopplerFrequency) * (secondVecFreq - dopplerFrequency) >= 0.0) {
+						continue;
+					}
+
+					double lowerBoundTime = firstVecTime;
+					double upperBoundTime = secondVecTime;
+					double lowerBoundFreq = firstVecFreq;
+					double upperBoundFreq = secondVecFreq;
+					double midTime, midFreq;
+					double diffTime = fabs(upperBoundTime - lowerBoundTime);
+					double absLineTimeInterval = time_interval;
+
+					int totalIterations = (int)(diffTime / absLineTimeInterval) + 1;
+					int numIterations = 0; Position pos; Velocity vel;
+					while (diffTime > absLineTimeInterval * 0.01 && numIterations <= totalIterations) {
+
+						midTime = (upperBoundTime + lowerBoundTime) / 2.0;
+						stateVectors.getPosition(midTime, pos);
+						stateVectors.getVelocity(midTime, vel);
+						xdiff = groundPosition.x - pos.x;
+						ydiff = groundPosition.y - pos.y;
+						zdiff = groundPosition.z - pos.z;
+						distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+						midFreq = 2.0 * (xdiff * vel.vx + ydiff * vel.vy + zdiff * vel.vz) / (wavelength * distance);
+						if ((midFreq - dopplerFrequency) * (lowerBoundFreq - dopplerFrequency) > 0.0) {
+							lowerBoundTime = midTime;
+							lowerBoundFreq = midFreq;
+						}
+						else if ((midFreq - dopplerFrequency) * (upperBoundFreq - dopplerFrequency) > 0.0) {
+							upperBoundTime = midTime;
+							upperBoundFreq = midFreq;
+						}
+						else if (fabs(midFreq - dopplerFrequency) < 0.0001) {
+							zeroDopplerTime = midTime;
+							break;
+						}
+
+						diffTime = fabs(upperBoundTime - lowerBoundTime);
+						numIterations++;
+					}
+					zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
+					// 用最终 zeroDopplerTime 重新计算卫星位置和斜距
+					stateVectors.getPosition(zeroDopplerTime, pos);
+					stateVectors.getVelocity(zeroDopplerTime, vel);
+
+					xdiff = groundPosition.x - pos.x;
+					ydiff = groundPosition.y - pos.y;
+					zdiff = groundPosition.z - pos.z;
+
+					distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+					imaging_time.at<double>(ii, jj) = zeroDopplerTime;
+					slant_range.at<double>(ii, jj) = distance;
+				}
+			}
+
+			for (int ii = 0; ii < DEM_rows; ii++)
+			{
+				for (int jj = 0; jj < DEM_cols; jj++)
+				{
+					double real, imaginary, theta;
+					double zeroDopplerTime = imaging_time.at<double>(ii, jj);
+					double distance = slant_range.at<double>(ii, jj);
+					int azimuthIndex = floor((zeroDopplerTime - acquisitionStartTime) / time_interval);
+					int rangeIndex = floor((distance - nearRange) / rangeSpacing);
+					if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
+					{
+
+					}
+					else
+					{
+						theta = -4.0 * PI * distance / wavelength + randomAngle.at<float>(ii, jj);
+						real = /*sigma.at<double>(ii, jj)*/ 1.0 * (cos(theta) + noise_real.at<float>(ii, jj));
+						imaginary = /*sigma.at<double>(ii, jj)*/ 1.0 * (sin(theta) + noise_imaginary.at<float>(ii, jj));
+						slc.re.at<float>(azimuthIndex, rangeIndex) += real;
+						slc.im.at<float>(azimuthIndex, rangeIndex) += imaginary;
+					}
+				}
+			}
+
+			printf("\rprocess %lf", (double)(i * num_block_col + j + 1) / (double)(num_block_row * num_block_col) * 100.0);
+			fflush(stdout);
 		}
 	}
 	return 0;
@@ -1156,6 +1405,8 @@ int SLC_simulator::generateSLC(
 
 	int interp_times_row = 90.0 / azimuthSpacing;
 	int interp_times_col = 90.0 / rangeSpacing;
+	interp_times_row = interp_times_row < 1 ? 1 : interp_times_row;
+	interp_times_col = interp_times_col < 1 ? 1 : interp_times_col;
 	int interp_cell = 4;
 	double lon_spacing_old = 5.0 / 6000.0 / (double)interp_times_col;
 	double lat_spacing_old = 5.0 / 6000.0 / (double)interp_times_row;
@@ -1736,6 +1987,8 @@ int SLC_simulator::generateSLC(
 
 	int interp_times_row = 90.0 / azimuthSpacing;
 	int interp_times_col = 90.0 / rangeSpacing;
+	interp_times_row = interp_times_row < 1 ? 1 : interp_times_row;
+	interp_times_col = interp_times_col < 1 ? 1 : interp_times_col;
 	int interp_cell = 4;
 	double lon_spacing_old = 5.0 / 6000.0 / (double)interp_times_col;
 	double lat_spacing_old = 5.0 / 6000.0 / (double)interp_times_row;

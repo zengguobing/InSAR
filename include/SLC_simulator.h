@@ -81,6 +81,45 @@ public:
 		ComplexMat& slc,
 		Mat& GCP
 	);
+	/*@brief 根据轨道和场景DEM以及成像参数生成单视复图像（单发单收）---给天仪
+	* @param stateVec                                  轨道数据
+	* @param dem                                       场景DEM（来自SRTM）
+	* @param lon_upperleft                             DEM左上角经度
+	* @param lat_upperleft                             DEM左上角维度
+	* @param lon_space                                 经度采样间隔
+	* @param lat_space                                 纬度采样间隔
+	* @param sceneHeight                               仿真SLC场景高度
+	* @param sceneWidth                                仿真SLC场景宽度
+	* @param nearRange                                 最近斜距
+	* @param prf                                       脉冲重复频率
+	* @param wavelength                                波长
+	* @param rangeSpacing                              距离向采样间隔（m）
+	* @param azimuthSpacing                            方位向采样间隔（m）
+	* @param acquisitionStartTime                      方位向起始时间
+	* @param acquisitionStopTime                       方位向结束时间
+	* @param SNR                                       热噪声信噪比（dB）
+	* @param slc                                       仿真SLC图像（返回值）
+	* @return 成功返回0，否则返回-1
+	*/
+	int generateSLC_spacety(
+		Mat& stateVec,
+		Mat& dem,
+		double lon_upperleft,
+		double lat_upperleft,
+		double lon_space,
+		double lat_space,
+		int sceneHeight,
+		int sceneWidth,
+		double nearRange,
+		double prf,
+		double wavelength,
+		double rangeSpacing,
+		double azimuthSpacing,
+		double acquisitionStartTime,
+		double acquisitionStopTime,
+		double SNR,
+		ComplexMat& slc
+	);
 	int generateSLC_optimized(
 		Mat& stateVec,
 		Mat& dem,

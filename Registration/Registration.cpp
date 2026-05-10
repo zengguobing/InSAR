@@ -1402,7 +1402,7 @@ int Registration::every_subpixel_move(int i, int j, Mat& coefficient, double* of
 }
 
 int Registration::coregistration_subpixel_sinc(ComplexMat& master, ComplexMat& slave, int blocksize, int interp_times, int* offset_row,
-	int* offset_col)
+	int* offset_col, double coh_thresh)
 {
 	if (master.isempty() ||
 		slave.isempty() ||
@@ -1506,11 +1506,11 @@ int Registration::coregistration_subpixel_sinc(ComplexMat& master, ComplexMat& s
 		ComplexMat master_sub, slave_sub, master_sub_interp, slave_sub_interp, master1, slave1;
 		Mat amplitude_slave, sign, coh1;
 		int offset_row, offset_col;
-		double mean_coh, coh_thresh = 0.05;
+		double mean_coh;
 		for (int j = 0; j < n; j++)
 		{
 			//计算相关系数判断是否是有效数据
-			/*master.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master1.re);
+			master.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master1.re);
 			master.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master1.im);
 			if (master1.type() != CV_64F) master1.convertTo(master1, CV_64F);
 			slave.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave1.re);
@@ -1523,7 +1523,7 @@ int Registration::coregistration_subpixel_sinc(ComplexMat& master, ComplexMat& s
 			{
 				sentinel0.at<double>(i, j) = 1.0;
 				continue;
-			}*/
+			}
 			//主图像子块插值
 			master.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master_sub.re);
 			master.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(master_sub.im);
@@ -1533,22 +1533,22 @@ int Registration::coregistration_subpixel_sinc(ComplexMat& master, ComplexMat& s
 			slave.re(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave_sub.re);
 			slave.im(Range(i * blocksize, (i + 1) * blocksize), Range(j * blocksize, (j + 1) * blocksize)).copyTo(slave_sub.im);
 			if (slave_sub.type() != CV_64F) slave_sub.convertTo(slave_sub, CV_64F);
-			//amplitude_slave = slave_sub.re;
-			//int count_zero = 0;
-			//for (int ii = 0; ii < amplitude_slave.rows; ii++)
-			//{
-			//	for (int jj = 0; jj < amplitude_slave.cols; jj++)
-			//	{
-			//		if (fabs(amplitude_slave.at<double>(ii, jj)) < 0.0000001) count_zero++;
-			//	}
-			//}
-			////sign = amplitude_slave < 0.0000001;
-			//int thresh = blocksize * blocksize / 4;
-			//if (count_zero > thresh)
-			//{
-			//	sentinel0.at<double>(i, j) = 1.0;
-			//	continue;
-			//}
+			amplitude_slave = slave_sub.re;
+			int count_zero = 0;
+			for (int ii = 0; ii < amplitude_slave.rows; ii++)
+			{
+				for (int jj = 0; jj < amplitude_slave.cols; jj++)
+				{
+					if (fabs(amplitude_slave.at<double>(ii, jj)) < 0.0000001) count_zero++;
+				}
+			}
+			//sign = amplitude_slave < 0.0000001;
+			int thresh = blocksize * blocksize / 4;
+			if (count_zero > thresh)
+			{
+				sentinel0.at<double>(i, j) = 1.0;
+				continue;
+			}
 			interp_paddingzero(slave_sub, slave_sub_interp, interp_times);
 			//求取偏移量
 			real_coherent(master_sub_interp, slave_sub_interp, &offset_row, &offset_col);

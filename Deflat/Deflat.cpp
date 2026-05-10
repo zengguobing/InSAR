@@ -1307,10 +1307,29 @@ int Deflat::demMapping(
 
 
 			zeroDopplerTime = lowerBoundTime - lowerBoundFreq * (upperBoundTime - lowerBoundTime) / (upperBoundFreq - lowerBoundFreq);
-			int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval + geocoding_cali_factor_az;
+			// 用最终 zeroDopplerTime 重新计算卫星位置和斜距
+			stateVectors.getPosition(zeroDopplerTime, pos);
+			stateVectors.getVelocity(zeroDopplerTime, vel);
+
+			xdiff = groundPosition.x - pos.x;
+			ydiff = groundPosition.y - pos.y;
+			zdiff = groundPosition.z - pos.z;
+
+			distance = sqrt(xdiff * xdiff + ydiff * ydiff + zdiff * zdiff);
+
+			double azimuthIndexD = (zeroDopplerTime - acquisitionStartTime) / time_interval
+				+ geocoding_cali_factor_az - offset_row;
+
+			double rangeIndexD = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing
+				+ geocoding_cali_factor_rg - offset_col;
+
+			int azimuthIndex = cvRound(azimuthIndexD);
+			int rangeIndex = cvRound(rangeIndexD);
+
+			/*int azimuthIndex = (zeroDopplerTime - acquisitionStartTime) / time_interval + geocoding_cali_factor_az;
 			int rangeIndex = (distance - nearRangeTime * VEL_C * 0.5) / rangeSpacing + geocoding_cali_factor_rg;
 			azimuthIndex = azimuthIndex - offset_row;
-			rangeIndex = rangeIndex - offset_col;
+			rangeIndex = rangeIndex - offset_col;*/
 			if (azimuthIndex < 0 || azimuthIndex > sceneHeight - 1 || rangeIndex < 0 || rangeIndex > sceneWidth - 1)
 			{
 
