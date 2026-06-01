@@ -7,3 +7,7 @@ If you have any problems, feel free to contact me at guobing.zeng@ntu.edu.sg or 
 # Applicable SAR dataset
 
 BIOMASS, Sentinel-1A/B/C, TerraSAR-X/TanDEM-X, ALOS2, COSMO-SkyMed, LuTan-1, Hongtu-1 constellation, Fucheng-1(Spacety), AIRSAT.
+
+## License
+This project is licensed for **non-commercial use only**. See the [LICENSE](LICENSE) file for details.
+For commercial use, please contact guobing.zeng@ntu.edu.sg.
